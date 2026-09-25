@@ -13991,8 +13991,8 @@ class FPSController(_GameBlueprint):
                 self._vignette = max(0.0, self._vignette - dt * 1.4)
             frac = _clamp(self.hp / max(self.max_hp, 1e-6), 0.0, 1.0)
             fg = (0.25 + (1.0 - frac) * 0.7, 0.85 * frac + 0.1, 0.15, 1.0)
-            e.hud.bar(0.025, 0.925, 0.22, 0.022, frac, fg=fg)
-            e.hud.text(0.028, 0.895, f"HP {int(round(self.hp))}", size=18)
+            e.hud.bar(0.07, 0.925, 0.22, 0.022, frac, fg=fg)
+            e.hud.text(0.07, 0.895, f"HP {int(round(self.hp))}", size=18)
 
     # ---------------------------------------------------------------- damage
     def on_message(self, event: str, data: Any):
