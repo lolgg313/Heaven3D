@@ -36,7 +36,7 @@ from tkinter import filedialog, messagebox, scrolledtext, ttk
 #: All recognised media extensions (lowercase, with leading dot).
 MEDIA_EXTS = {
     # meshes
-    ".glb", ".gltf", ".obj", ".egg", ".ply", ".stl", ".fbx", ".dae",
+    ".glb", ".gltf", ".blend", ".obj", ".egg", ".ply", ".stl", ".fbx", ".dae",
     # images (incl. gif)
     ".png", ".jpg", ".jpeg", ".tga", ".bmp", ".webp", ".dds", ".hdr",
     ".tif", ".tiff", ".gif",

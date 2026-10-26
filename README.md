@@ -2,13 +2,15 @@
 
 # ☁️ Heaven3D
 
+<img src="branding/heaven3d_logo.png" width="140" alt="Heaven3D logo" />
+
 <img width="1690" height="979" alt="gameeglory" src="https://github.com/user-attachments/assets/f4865664-c6f7-41f7-b977-88398f1833ea" />
 
 **A complete 3D game engine built from the metal up — in Python.**
 
 Deferred PBR rendering · CPU physics · Built-in editor · Standalone runtime
 
-![Version](https://img.shields.io/badge/version-2.6.0-blue)
+![Version](https://img.shields.io/badge/version-2.7.0-blue)
 ![Python](https://img.shields.io/badge/python-3.10%2B-yellow)
 ![OpenGL](https://img.shields.io/badge/OpenGL-4.6%20Core-green)
 ![License](https://img.shields.io/badge/license-Apache%202.0-orange)
@@ -22,6 +24,16 @@ Deferred PBR rendering · CPU physics · Built-in editor · Standalone runtime
 Heaven3D is a from-scratch 3D game engine written in Python on top of [ModernGL](https://github.com/moderngl/moderngl), giving direct access to the OpenGL Core profile. No Panda3D, Unity, Unreal, or GameGuru under the hood: the renderer, physics, editor, importers, audio, and gameplay systems are all written specifically for Heaven3D.
 
 The whole engine ships as a single file, `Heaven3D.py`, so it is easy to read, hack on, and bundle into your own projects.
+
+## 🆕 What's new in 2.7.0
+
+- **Standalone editions for Windows and Linux**: unzip and double-click. Python and every library are inside, so there's nothing to install.
+- **Export your game** for **Windows (.exe)** and **Linux** from either system, with the Heaven3D logo as its icon. Your players install nothing either.
+- **Portable projects** (FILE BURNER built in): every save stores asset paths inside the project folder, and anything imported from outside is copied in. Projects open on any PC and either OS.
+- **Save games** for your scripts: `engine.save_game()` / `engine.load_game()`, crash-safe, and they travel with the exported game.
+- **Heaven3D Hub** (`Heaven3D_Hub.py`): a launcher like Unity Hub. Create projects from templates, open them in the editor or play them, export them, and follow offline tutorials.
+- **New `.blend`, `.gltf` and `.glb` importers**, tested against Blender and the Khronos samples with 8 hard test files per format (31/31 pass, see [tests/importers](tests/importers/README.md)).
+- **Imported models are one object**: children and material parts are locked to the main object, so you can't select, move or delete them separately.
 
 ## ✨ Features
 
@@ -60,28 +72,83 @@ The whole engine ships as a single file, `Heaven3D.py`, so it is easy to read, h
 - **HUD**: crosshair, bars, text, and vignette for in-game UI
 
 ### Asset import
-- **glTF / GLB** (via `trimesh`)
+- **glTF / GLB**, full glTF 2.0: every accessor type (sparse, strided, normalized), all 7 primitive modes, skins (bind pose), morph targets, `EXT_mesh_gpu_instancing`, `KHR_meshopt_compression`, `KHR_draco_mesh_compression` (optional `DracoPy`), `KHR_texture_transform`, unlit, emissive strength, spec-gloss, transmission, punctual lights, texture wrap modes, vertex colours and a second UV set
+- **Blender `.blend`** read directly, no Blender install needed: Blender 2.5x up to **5.0**, gzip/zstd compressed, 32-bit and big-endian files, parented objects, linked duplicates, collection instances, lights, materials and textures (packed or external), colour attributes, 2 UV maps, custom/sharp normals and the modifiers Mirror, Array, Subdivision Surface, Solidify, Weld, Edge Split, Triangulate, Smooth by Angle and Multires (levels)
 - **OBJ + MTL** with texture resolution
-- **Blender `.blend`** files read directly by parsing the Blender file format (no Blender install required)
+- **One model = one object**: every imported model shows as a single object in the Hierarchy; its children and material parts are locked to it, and colliders cover the whole model
 
 ### Performance
 - Optional **Numba** acceleration for hot paths, with automatic, bit-identical fallback to plain Python if Numba is unavailable
 
-## 📦 Requirements
+## 💾 Standalone editions (no install)
+
+| Download | Contents | Start |
+| --- | --- | --- |
+| `Heaven3D-2.7.0-Windows.zip` | Hub, editor and a bundled Windows Python | double-click **Heaven3D Hub.exe** |
+| `Heaven3D-2.7.0-Linux.zip` | Hub, editor and a bundled Linux Python (glibc 2.17+) | run **./Heaven3D-Hub** (`./install-desktop-shortcuts.sh` adds menu entries) |
+
+Unzip anywhere, even a USB stick. Each edition also contains the other platform's game player, so you can export Windows **and** Linux games from either one. The editions are built by `tools/standalone/build_standalone.py`.
+
+## 🚢 Exporting a game
+
+In the Hub, press **Export** on a project (or press the **Export** button in the editor's toolbar). Choose Windows and/or Linux and a window size. You get:
+
+```
+My Game-Windows/                     My Game-Linux/
+├── My Game.exe   ← double-click     ├── My Game   ← ./My Game
+├── game/         your project       ├── game/
+├── engine/       Heaven3D + Python  ├── engine/
+└── saves/        player saves       ├── saves/
+                                     ├── icon.png + install-shortcut.sh
+```
+
+…and a `.zip` of each, ready to upload. From a terminal:
+
+```bash
+python Heaven3D.py --export-game "path/to/My Game" --targets windows,linux --out builds
+```
+
+Exporting needs the standalone edition (it carries the game players in `runtime/`).
+
+## 📂 Portable projects and save games
+
+- **Saving a project** stores every model, texture and sound path relative to the project (`assets/...`, `/` separators). Files imported from outside the project are copied into `assets/imported/` with their side files (`.gltf` buffers and textures, `.obj` + `.mtl`, `.blend` external images). File names are made safe for Windows and Linux, and the previous save is kept as `main.heaven3d.bak`.
+- **Loading** resolves paths from older versions and other machines: either slash style, different letter case, home-relative and absolute paths, and FILE BURNER `media/` output.
+- **Save games** in scripts:
+
+```python
+self.engine.save_game("slot1", {"coins": 7, "level": 2})
+progress = self.engine.load_game("slot1", default={})
+path = self.engine.asset_path("assets/music/theme.ogg")   # finds project files anywhere
+```
+
+Saves are written atomically (a crash can't corrupt them) with an automatic backup. They're stored in the game's `saves/` folder, so they move with the game. If that folder can't be written to, they go to `%APPDATA%\Heaven3D\<Game>` on Windows or `~/.local/share/heaven3d/<Game>` on Linux.
+
+## 📦 Requirements (running from source)
 
 - Python **3.10+**
 - A GPU and driver supporting **OpenGL 4.6 Core**
 
-Install the core dependencies:
+The easiest way is the installer, which creates a virtual environment and checks everything:
 
 ```bash
-pip install moderngl pygame pyglm numpy numba
+python install.py
 ```
 
-Optional, for GLB/glTF import:
+Or install the core dependencies by hand:
 
 ```bash
-pip install trimesh
+pip install moderngl pygame pyglm numpy numba zstandard
+```
+
+- `zstandard` reads compressed `.blend` files saved by Blender 3.0 and newer (not needed on Python 3.14+).
+- `tkinter` (included with Python on Windows and macOS; `sudo apt install python3-tk` on Linux) is needed for the Hub.
+
+Optional:
+
+```bash
+pip install trimesh    # .obj import
+pip install DracoPy    # Draco-compressed glTF / GLB
 ```
 
 ## 🚀 Getting Started
@@ -91,6 +158,27 @@ Clone the repository:
 ```bash
 git clone https://github.com/lolgg313/Heaven3D.git
 cd Heaven3D
+```
+
+### Heaven3D Hub (recommended)
+
+```bash
+python Heaven3D_Hub.py
+```
+
+On Windows you can also double-click `Heaven3D_Hub.pyw`.
+
+- **Projects**: all your projects with thumbnails. Open them in the editor, press Play to run the game, add an existing project, rename or remove from the list.
+- **New project**: pick a template (Empty, FPS Arena, Coin Collector, Outdoor Terrain), a name and a folder.
+- **Learn**: 9 offline step-by-step tutorials, from the first launch to sharing your game. Each one can create its own practice project.
+- **Templates** and **Settings**: engine file, Python interpreter, project folder, window size, dependency check.
+
+The Hub also works from the command line:
+
+```bash
+python Heaven3D_Hub.py --list-templates
+python Heaven3D_Hub.py --create MyGame --template fps_arena --location "~/Heaven3D Projects"
+python Heaven3D_Hub.py --list
 ```
 
 ### Editor mode
@@ -159,18 +247,38 @@ Heaven3D/
 ├── Heaven3D.py    # The engine: renderer, physics, editor, importers, runtime
 ├── Heaven3D_runtime.py    # The Standalone Game Out Put that only runs on main.heaven3d save file.
 ├── FILEBURNER.py    # Fixing file path for in game used assets and media compatible with linux and windows.  
+├── Heaven3D_Hub.py    # The Hub: projects, templates and offline tutorials
+├── Heaven3D_Hub.pyw   # Double-click launcher for the Hub on Windows (no console window)
+├── branding/          # Heaven3D logo (PNG sizes + .ico) used by the Hub, editor, launchers and exported games
+├── install.py         # Creates a virtual environment and installs/checks dependencies
+├── templates/         # Starter projects used by the Hub (main.heaven3d + thumbnail + scripts)
+├── tutorials/         # Offline tutorials shown in the Hub (Markdown)
+├── tools/standalone/  # Builds the Windows/Linux standalone editions + the logo-stamped .exe launchers
+├── tests/
+│   ├── test_one_object.py        # Imported model = one locked object (editor checks)
+│   ├── test_portable_projects.py # Portable paths, outside assets, moved projects, save games
+│   ├── test_portable_editor.py   # Same, end to end in the real editor (needs a GPU)
+│   └── importers/                # 8 hard .blend / .gltf / .glb files each + test runner
 ├── LICENSE        # Apache License 2.0
 └── README.md
 ```
 
-## 🛠️ Building an Executable
-
-You can package a game into a single executable with [PyInstaller](https://pyinstaller.org/):
+### Running the tests
 
 ```bash
-pip install pyinstaller
-pyinstaller --onefile Heaven3D.py
+python tests/importers/run_importer_tests.py   # 31 importer files, no GPU needed
+python tests/test_portable_projects.py         # portable projects + save games, no GPU needed
+python tests/test_one_object.py                # editor checks, needs a GPU
 ```
+
+## 🛠️ Building the standalone editions
+
+```bash
+# on Linux, with curl, msitools, mingw-w64, binutils, uv and python3.12
+python3.12 tools/standalone/build_standalone.py --out dist
+```
+
+This downloads the official python.org Windows Python and a conda-forge Linux Python, installs the engine's libraries into each, compiles the logo-stamped Windows launchers and writes `dist/Heaven3D-<version>-Windows.zip` and `dist/Heaven3D-<version>-Linux.zip`.
 
 ## 🤝 Contributing
 

@@ -22,7 +22,7 @@
        Ubuntu 23.04+ / Fedora.
     4. Installs a PINNED, mutually-compatible set of Python packages
        (the pins are chosen so numba / numpy / moderngl / pygame / pyglm /
-       trimesh / Pillow always agree with each other).
+       trimesh / Pillow / zstandard always agree with each other).
     5. Verifies every import the engine performs at startup, checks for a
        working OpenGL 3.3+ context, and prints an exact launch command.
 
@@ -56,6 +56,8 @@ PIP_PACKAGES = [
     ("numba",               "numba==0.61.2"),
     ("trimesh",             "trimesh==4.6.8"),
     ("Pillow",              "Pillow==11.3.0"),
+    # 2.7: Blender 3.0+ "Compress"ed .blend files are zstd streams
+    ("zstandard",           "zstandard==0.25.0"),
 ]
 
 VENV_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)),
@@ -288,6 +290,8 @@ mods = {
     "numba":    "numba",
     "trimesh":  "trimesh",
     "PIL":      "Pillow",
+    "zstandard": "zstandard",
+    "tkinter":  "tkinter",
 }
 for module, label in mods.items():
     try:
@@ -301,7 +305,7 @@ for module, label in mods.items():
 # Import the engine modules themselves (syntax + import-time checks).
 import os, importlib.util
 here = os.path.dirname(os.path.abspath(sys.argv[1])) if len(sys.argv) > 1 else os.getcwd()
-for fname in ("Heaven3D.py", "Heaven3D_runtime.py", "FILEBURNER.py"):
+for fname in ("Heaven3D.py", "Heaven3D_runtime.py", "FILEBURNER.py", "Heaven3D_Hub.py"):
     path = os.path.join(here, fname)
     if not os.path.isfile(path):
         print(f"  [SKIP] {fname} not found next to install.py")
@@ -420,8 +424,11 @@ def main():
     Step.ok("INSTALLATION COMPLETE — your engine is ready.")
     print("=" * 70)
     print(f"""
-  Run the editor:
+  Open the Heaven3D Hub (projects + offline tutorials):
       cd {here}
+      ./{os.path.basename(os.path.join(here, 'run_heaven3d.sh'))} Heaven3D_Hub.py
+
+  Run the editor directly:
       ./{os.path.basename(os.path.join(here, 'run_heaven3d.sh'))} Heaven3D.py
 
   Run a game (standalone runtime, no editor UI):

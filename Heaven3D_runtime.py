@@ -180,7 +180,7 @@ class Log:
 # --------------------------------------------------------------------------- #
 #  Constants
 # --------------------------------------------------------------------------- #
-HEAVEN_VERSION = "2.6.0"
+HEAVEN_VERSION = "2.7.0"
 PROJECT_EXT = ".heaven3d"
 
 
@@ -33573,5 +33573,5700 @@ if not globals().get("_GREATUPDATE_INSTALLED"):
 
     _gu_install_all()
 # [GREATUPDATE:core END]
+
+# #############################################################################
+# [H3D27:importers BEGIN]
+#  Heaven3D 2.7 — rewritten model importers + engine hooks (append-only patch
+#  module, same capture-previous + wrap + reassign idiom as the other
+#  [TRIPLEA]/[FINALPATCH]/[GREATUPDATE] blocks; double-install guarded).
+#
+#  .blend  : Blender 2.4x -> 5.x, gzip/zstd compressed, 32/64-bit pointers,
+#            little AND big endian, Blender 5 "BLENDER17" headers + per-ID
+#            address scopes.  Meshes from every storage generation (MFace,
+#            MPoly/MLoop, generic attributes, 5.x AttributeStorage), split
+#            normals (sharp edges / auto smooth / custom), n-gon ear clipping,
+#            UV maps x2, colour attributes, collection instances, parenting,
+#            lights, Principled/legacy materials, packed + external images,
+#            and a modifier evaluator: Mirror, Array, Subdivision Surface
+#            (OpenSubdiv-matching Catmull-Clark incl. limit surface),
+#            Solidify, Weld, Edge Split, Smooth-by-Angle, Multires(levels).
+#  .gltf / .glb : full glTF 2.0 — every accessor form (strided, sparse,
+#            normalized, no-bufferView), all 7 primitive modes (lines/points
+#            become thin geometry), skins in their default pose, morph
+#            weights, EXT_mesh_gpu_instancing, KHR_node_visibility, multiple
+#            scenes, KHR_lights_punctual, data/percent-encoded/unicode URIs,
+#            EXT/KHR_meshopt_compression (pure-Python port of meshoptimizer,
+#            byte-identical), KHR_draco_mesh_compression (via DracoPy if
+#            installed), KHR_texture_transform, KHR_materials_unlit /
+#            emissive_strength / pbrSpecularGlossiness / transmission,
+#            per-texture UV set + sampler wrap modes, vertex colours.
+#  ONE OBJECT: every import is a single scene object; extra material parts
+#  are locked children (never listed, never selectable, collide as one).
+# #############################################################################
+if not globals().get("_H3D27_IMPORTERS_INSTALLED"):
+    _H3D27_IMPORTERS_INSTALLED = True
+    import types as _h3d27_types
+
+    def _h3d27_build_importers():
+        """Importer modules, scoped inside one factory so their helper
+        names never collide with the engine's globals."""
+        # ------------------------------------------------ h3d_meshutil
+        # ---------------------------------------------------------------------------
+        #  Shared polygon-mesh utilities for the Heaven3D importers.
+        #  A "PolyMesh" is the common intermediate form:
+        #     V            (nv,3)  float64 vertex positions
+        #     face_off     (nf+1,) int64   corner offset of every face
+        #     corner_vert  (nc,)   int64   vertex index of every face corner
+        #     face_mat     (nf,)   int64   material slot per face
+        #     face_smooth  (nf,)   bool    smooth shading per face
+        #     sharp_edges  set of (a,b) vertex pairs (a<b) that split normals
+        #     corner attrs (nc,k): uv0, uv1, col (linear RGBA), cnormal (custom)
+        # ---------------------------------------------------------------------------
+        import math
+        import numpy as np
+
+
+        class PolyMesh:
+            __slots__ = ("V", "face_off", "corner_vert", "face_mat", "face_smooth",
+                         "sharp_edges", "uv0", "uv1", "col", "cnormal",
+                         "auto_smooth", "name")
+
+            def __init__(self, V, face_off, corner_vert, face_mat=None,
+                         face_smooth=None, name="mesh"):
+                self.V = np.asarray(V, dtype=np.float64).reshape(-1, 3)
+                self.face_off = np.asarray(face_off, dtype=np.int64)
+                self.corner_vert = np.asarray(corner_vert, dtype=np.int64)
+                nf = len(self.face_off) - 1
+                self.face_mat = (np.zeros(nf, np.int64) if face_mat is None
+                                 else np.asarray(face_mat, np.int64))
+                self.face_smooth = (np.zeros(nf, bool) if face_smooth is None
+                                    else np.asarray(face_smooth, bool))
+                self.sharp_edges = None        # (k,2) int array, a<b, or None
+                self.uv0 = self.uv1 = self.col = self.cnormal = None
+                self.auto_smooth = None        # radians, or None
+                self.name = name
+
+            @property
+            def nf(self):
+                return len(self.face_off) - 1
+
+            @property
+            def nc(self):
+                return len(self.corner_vert)
+
+            def face_sizes(self):
+                return np.diff(self.face_off)
+
+            def corner_face(self):
+                return np.repeat(np.arange(self.nf), self.face_sizes())
+
+            def corner_next(self):
+                """index of the next corner around each face."""
+                sizes = self.face_sizes()
+                start = np.repeat(self.face_off[:-1], sizes)
+                local = np.arange(self.nc) - start
+                size_c = np.repeat(sizes, sizes)
+                return start + (local + 1) % size_c
+
+            def corner_prev(self):
+                sizes = self.face_sizes()
+                start = np.repeat(self.face_off[:-1], sizes)
+                local = np.arange(self.nc) - start
+                size_c = np.repeat(sizes, sizes)
+                return start + (local - 1) % size_c
+
+            def corner_attrs(self):
+                return [n for n in ("uv0", "uv1", "col", "cnormal")
+                        if getattr(self, n) is not None]
+
+            def copy(self):
+                m = PolyMesh(self.V.copy(), self.face_off.copy(),
+                             self.corner_vert.copy(), self.face_mat.copy(),
+                             self.face_smooth.copy(), self.name)
+                m.sharp_edges = None if self.sharp_edges is None else self.sharp_edges.copy()
+                for a in ("uv0", "uv1", "col", "cnormal"):
+                    v = getattr(self, a)
+                    setattr(m, a, None if v is None else v.copy())
+                m.auto_smooth = self.auto_smooth
+                return m
+
+            def drop_degenerate(self):
+                """Remove faces with <3 corners or repeated consecutive verts."""
+                sizes = self.face_sizes()
+                nxt = self.corner_next()
+                dup = self.corner_vert == self.corner_vert[nxt]
+                if not dup.any() and (sizes >= 3).all():
+                    return self
+                keep_c = ~dup
+                cf = self.corner_face()
+                new_sizes = np.bincount(cf[keep_c], minlength=self.nf)
+                keep_f = new_sizes >= 3
+                keep_c &= keep_f[cf]
+                self.corner_vert = self.corner_vert[keep_c]
+                for a in self.corner_attrs():
+                    setattr(self, a, getattr(self, a)[keep_c])
+                new_sizes = new_sizes[keep_f]
+                self.face_off = np.concatenate([[0], np.cumsum(new_sizes)]).astype(np.int64)
+                self.face_mat = self.face_mat[keep_f]
+                self.face_smooth = self.face_smooth[keep_f]
+                return self
+
+
+            def remove_duplicate_faces(self):
+                """Drop faces that use exactly the same vertex set as an earlier
+                face (Blender's merge/weld keeps one copy)."""
+                sizes = self.face_sizes()
+                if not len(sizes):
+                    return self
+                kmax = int(sizes.max())
+                pad = np.full((self.nf, kmax), -1, np.int64)
+                cf = self.corner_face()
+                local = np.arange(self.nc) - np.repeat(self.face_off[:-1], sizes)
+                pad[cf, local] = self.corner_vert
+                pad.sort(1)
+                _, first = np.unique(pad, axis=0, return_index=True)
+                keep_f = np.zeros(self.nf, bool); keep_f[first] = True
+                if keep_f.all():
+                    return self
+                keep_c = keep_f[cf]
+                self.corner_vert = self.corner_vert[keep_c]
+                for a in self.corner_attrs():
+                    setattr(self, a, getattr(self, a)[keep_c])
+                self.face_off = np.concatenate([[0], np.cumsum(sizes[keep_f])]).astype(np.int64)
+                self.face_mat = self.face_mat[keep_f]
+                self.face_smooth = self.face_smooth[keep_f]
+                return self
+
+
+        # ------------------------------------------------------------ edges
+        def edge_keys(a, b, nv):
+            lo = np.minimum(a, b)
+            hi = np.maximum(a, b)
+            return lo * np.int64(nv) + hi
+
+
+        def build_edges(m):
+            """-> (edges (ne,2), corner_edge (nc,), edge_face_count (ne,))
+            corner_edge[c] = edge from corner c to the next corner."""
+            nxt = m.corner_next()
+            a = m.corner_vert
+            b = m.corner_vert[nxt]
+            keys = edge_keys(a, b, len(m.V))
+            uk, inv, cnt = np.unique(keys, return_inverse=True, return_counts=True)
+            edges = np.stack([uk // len(m.V), uk % len(m.V)], 1)
+            return edges, inv, cnt
+
+
+        # ------------------------------------------------------------ normals
+        def face_normals(m):
+            """Newell normals (robust for n-gons), unit length."""
+            V = m.V
+            p = V[m.corner_vert]
+            q = V[m.corner_vert[m.corner_next()]]
+            cross = np.stack([(p[:, 1] - q[:, 1]) * (p[:, 2] + q[:, 2]),
+                              (p[:, 2] - q[:, 2]) * (p[:, 0] + q[:, 0]),
+                              (p[:, 0] - q[:, 0]) * (p[:, 1] + q[:, 1])], 1)
+            fn = np.zeros((m.nf, 3))
+            np.add.at(fn, m.corner_face(), cross)
+            ln = np.linalg.norm(fn, axis=1, keepdims=True)
+            ok = ln[:, 0] > 1e-20
+            fn[ok] /= ln[ok]
+            fn[~ok] = (0.0, 0.0, 1.0)
+            return fn
+
+
+        def corner_angles(m):
+            V = m.V
+            c = V[m.corner_vert]
+            a = V[m.corner_vert[m.corner_prev()]] - c
+            b = V[m.corner_vert[m.corner_next()]] - c
+            la = np.linalg.norm(a, axis=1)
+            lb = np.linalg.norm(b, axis=1)
+            d = np.einsum("ij,ij->i", a, b) / np.maximum(la * lb, 1e-30)
+            return np.arccos(np.clip(d, -1.0, 1.0))
+
+
+        class _UF:
+            def __init__(self, n):
+                self.p = np.arange(n)
+
+            def find_all(self):
+                p = self.p
+                while True:
+                    q = p[p]
+                    if np.array_equal(q, p):
+                        return p
+                    p = q
+
+            def union_pairs(self, a, b):
+                """Vectorised union of many pairs (label propagation)."""
+                p = self.p
+                a = np.asarray(a); b = np.asarray(b)
+                if not len(a):
+                    return
+                while True:
+                    ra = p[a]; rb = p[b]
+                    # compress
+                    while True:
+                        ra2 = p[ra]; rb2 = p[rb]
+                        if np.array_equal(ra2, ra) and np.array_equal(rb2, rb):
+                            break
+                        ra, rb = ra2, rb2
+                    diff = ra != rb
+                    if not diff.any():
+                        break
+                    lo = np.minimum(ra[diff], rb[diff])
+                    hi = np.maximum(ra[diff], rb[diff])
+                    # point every hi root at the smallest lo seen for it
+                    order = np.lexsort((lo, hi))
+                    hi_s, lo_s = hi[order], lo[order]
+                    first = np.ones(len(hi_s), bool)
+                    first[1:] = hi_s[1:] != hi_s[:-1]
+                    p[hi_s[first]] = lo_s[first]
+                    # full path compression
+                    p[:] = p[p]
+                self.p = p
+
+
+        def corner_normals(m, fn=None):
+            """Per-corner normals following Blender's rules:
+               flat faces -> face normal; smooth faces -> angle-weighted average
+               over the 'smooth fan' around each vertex, where fans are split at
+               sharp edges, boundary/non-manifold edges, flat neighbours and (if
+               auto_smooth is set) edges sharper than the auto-smooth angle.
+               Custom normals (cnormal) win when present."""
+            if fn is None:
+                fn = face_normals(m)
+            nc = m.nc
+            cf = m.corner_face()
+            if m.cnormal is not None and len(m.cnormal) == nc:
+                n = np.asarray(m.cnormal, np.float64)
+                ln = np.linalg.norm(n, axis=1, keepdims=True)
+                bad = ln[:, 0] < 1e-12
+                n = n / np.maximum(ln, 1e-12)
+                n[bad] = fn[cf[bad]]
+                return n
+            smooth_c = m.face_smooth[cf]
+            out = fn[cf].copy()
+            if not smooth_c.any():
+                return out
+            w = corner_angles(m)[:, None] * fn[cf]
+            needs_split = (m.sharp_edges is not None and len(m.sharp_edges)) or \
+                (m.auto_smooth is not None) or (not m.face_smooth.all())
+            edges, corner_edge, ecount = build_edges(m)
+            manifold_ok = (ecount <= 2).all()
+            if not needs_split and manifold_ok:
+                # fast path: plain per-vertex smooth normals
+                vn = np.zeros((len(m.V), 3))
+                np.add.at(vn, m.corner_vert, w)
+                ln = np.linalg.norm(vn, axis=1, keepdims=True)
+                vn = vn / np.maximum(ln, 1e-20)
+                sel = smooth_c
+                out[sel] = vn[m.corner_vert[sel]]
+                return out
+            # ---- fan splitting with union-find over corners ----
+            nv = len(m.V)
+            ne = len(edges)
+            sharp = np.zeros(ne, bool)
+            sharp |= ecount != 2
+            if m.sharp_edges is not None and len(m.sharp_edges):
+                sk = edge_keys(m.sharp_edges[:, 0], m.sharp_edges[:, 1], nv)
+                ek = edges[:, 0] * nv + edges[:, 1]
+                sharp |= np.isin(ek, sk)
+            # each manifold edge: its two corners (corner c owns edge c->next)
+            order = np.argsort(corner_edge, kind="stable")
+            ce_sorted = corner_edge[order]
+            two = ecount[ce_sorted] == 2
+            oc = order[two]
+            ce2 = ce_sorted[two]
+            c1 = oc[0::2]; c2 = oc[1::2]
+            e_ids = ce2[0::2]
+            f1 = cf[c1]; f2 = cf[c2]
+            ok = ~sharp[e_ids] & m.face_smooth[f1] & m.face_smooth[f2]
+            if m.auto_smooth is not None:
+                cosang = np.einsum("ij,ij->i", fn[f1], fn[f2])
+                ok &= cosang >= math.cos(m.auto_smooth) - 1e-9
+            c1, c2 = c1[ok], c2[ok]
+            nxt = m.corner_next()
+            # edge c1: v(c1) -> v(nxt c1); in face f2 the same edge runs
+            # v(c2) -> v(nxt c2) reversed, so v(c1) == v(nxt c2) for consistent
+            # winding, or v(c1) == v(c2) when the neighbour is flipped.
+            v_c1 = m.corner_vert[c1]
+            same = m.corner_vert[c2] == v_c1
+            a1 = c1
+            b1 = np.where(same, c2, nxt[c2])
+            a2 = nxt[c1]
+            b2 = np.where(same, nxt[c2], c2)
+            uf = _UF(nc)
+            uf.union_pairs(np.concatenate([a1, a2]), np.concatenate([b1, b2]))
+            root = uf.find_all()
+            acc = np.zeros((nc, 3))
+            np.add.at(acc, root, w)
+            gn = acc[root]
+            ln = np.linalg.norm(gn, axis=1, keepdims=True)
+            gn = gn / np.maximum(ln, 1e-20)
+            out[smooth_c] = gn[smooth_c]
+            return out
+
+
+        # ------------------------------------------------------------ triangulate
+        def _ear_clip(pts2):
+            """Ear clipping of a simple polygon given as (k,2) points (any
+            winding).  Returns list of (i,j,k) local index triples."""
+            k = len(pts2)
+            idx = list(range(k))
+            area = 0.0
+            for i in range(k):
+                x1, y1 = pts2[i]; x2, y2 = pts2[(i + 1) % k]
+                area += x1 * y2 - x2 * y1
+            sign = 1.0 if area >= 0 else -1.0
+            tris = []
+
+            def cross(o, a, b):
+                return ((a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0])) * sign
+
+            guard = 0
+            while len(idx) > 3 and guard < 10 * k * k:
+                guard += 1
+                n = len(idx)
+                clipped = False
+                for t in range(n):
+                    i0, i1, i2 = idx[(t - 1) % n], idx[t], idx[(t + 1) % n]
+                    a, b, c = pts2[i0], pts2[i1], pts2[i2]
+                    if cross(a, b, c) <= 1e-18:
+                        continue
+                    inside = False
+                    for j in idx:
+                        if j in (i0, i1, i2):
+                            continue
+                        p = pts2[j]
+                        if cross(a, b, p) >= -1e-15 and cross(b, c, p) >= -1e-15 and cross(c, a, p) >= -1e-15:
+                            inside = True
+                            break
+                    if inside:
+                        continue
+                    tris.append((i0, i1, i2))
+                    idx.pop(t)
+                    clipped = True
+                    break
+                if not clipped:
+                    break
+            if len(idx) == 3:
+                tris.append(tuple(idx))
+            elif len(idx) > 3:          # degenerate leftovers: fan them
+                for t in range(1, len(idx) - 1):
+                    tris.append((idx[0], idx[t], idx[t + 1]))
+            return tris
+
+
+        def triangulate(m, fn=None):
+            """-> (T,3) array of CORNER indices + (T,) face index."""
+            sizes = m.face_sizes()
+            starts = m.face_off[:-1]
+            out_c, out_f = [], []
+            tri = np.nonzero(sizes == 3)[0]
+            if len(tri):
+                s = starts[tri]
+                out_c.append(np.stack([s, s + 1, s + 2], 1)); out_f.append(tri)
+            quad = np.nonzero(sizes == 4)[0]
+            if len(quad):
+                s = starts[quad]
+                c = np.stack([s, s + 1, s + 2, s + 3], 1)
+                P = m.V[m.corner_vert[c]]
+                # split along 0-2 unless the quad is concave at 1 or 3
+                d02 = np.linalg.norm(P[:, 0] - P[:, 2], axis=1)
+                d13 = np.linalg.norm(P[:, 1] - P[:, 3], axis=1)
+                n_a = np.cross(P[:, 1] - P[:, 0], P[:, 2] - P[:, 0])
+                n_b = np.cross(P[:, 2] - P[:, 0], P[:, 3] - P[:, 0])
+                concave02 = np.einsum("ij,ij->i", n_a, n_b) <= 0
+                n_c = np.cross(P[:, 2] - P[:, 1], P[:, 3] - P[:, 1])
+                n_d = np.cross(P[:, 3] - P[:, 1], P[:, 0] - P[:, 1])
+                concave13 = np.einsum("ij,ij->i", n_c, n_d) <= 0
+                use13 = concave02 & ~concave13
+                t1 = np.where(use13[:, None], c[:, [0, 1, 3]], c[:, [0, 1, 2]])
+                t2 = np.where(use13[:, None], c[:, [1, 2, 3]], c[:, [0, 2, 3]])
+                out_c += [t1, t2]; out_f += [quad, quad]
+                del d02, d13
+            big = np.nonzero(sizes > 4)[0]
+            if len(big):
+                if fn is None:
+                    fn = face_normals(m)
+                lc, lf = [], []
+                for f in big:
+                    s, e = starts[f], m.face_off[f + 1]
+                    P = m.V[m.corner_vert[s:e]]
+                    n = fn[f]
+                    ax = np.argmax(np.abs(n))
+                    u = np.array([0.0, 0.0, 0.0]); u[(ax + 1) % 3] = 1.0
+                    u = u - n * np.dot(u, n); u /= max(np.linalg.norm(u), 1e-30)
+                    v = np.cross(n, u)
+                    pts = np.stack([P @ u, P @ v], 1)
+                    for (i, j, k) in _ear_clip(pts):
+                        lc.append((s + i, s + j, s + k)); lf.append(f)
+                if lc:
+                    out_c.append(np.array(lc, np.int64)); out_f.append(np.array(lf, np.int64))
+            if not out_c:
+                return np.zeros((0, 3), np.int64), np.zeros(0, np.int64)
+            C = np.concatenate(out_c).astype(np.int64)
+            F = np.concatenate(out_f).astype(np.int64)
+            order = np.argsort(F, kind="stable")
+            return C[order], F[order]
+
+
+        # ------------------------------------------------------------ welding
+        def weld(pos, nrm, uv0=None, uv1=None, col=None, tan=None, decimals=6):
+            """Merge identical vertices (all attributes equal) -> (unique arrays..., inverse)."""
+            cols = [np.round(pos, decimals), np.round(nrm, 4)]
+            if uv0 is not None: cols.append(np.round(uv0, 5))
+            if uv1 is not None: cols.append(np.round(uv1, 5))
+            if col is not None: cols.append(np.round(col, 4))
+            if tan is not None: cols.append(np.round(tan, 4))
+            key = np.ascontiguousarray(np.concatenate(cols, 1).astype(np.float32))
+            kv = key.view(np.dtype((np.void, key.dtype.itemsize * key.shape[1]))).ravel()
+            _, first, inv = np.unique(kv, return_index=True, return_inverse=True)
+            return first, inv.ravel()
+
+
+        # ------------------------------------------------------------ transforms
+        def bake(pos, nrm, tan, M4, flip_winding_indices=None):
+            """Apply a 4x4 matrix to positions / normals / tangents (in place
+            returns new arrays) and report whether winding must be flipped."""
+            M4 = np.asarray(M4, np.float64)
+            M3 = M4[:3, :3]
+            pos = pos @ M3.T + M4[:3, 3]
+            det = float(np.linalg.det(M3))
+            if nrm is not None:
+                try:
+                    N = np.linalg.inv(M3).T
+                except np.linalg.LinAlgError:
+                    N = M3
+                nrm = nrm @ N.T
+                ln = np.linalg.norm(nrm, axis=1, keepdims=True)
+                nrm = nrm / np.maximum(ln, 1e-20)
+            if tan is not None:
+                t3 = tan[:, :3] @ M3.T
+                ln = np.linalg.norm(t3, axis=1, keepdims=True)
+                t3 = t3 / np.maximum(ln, 1e-20)
+                w = tan[:, 3] * (1.0 if det >= 0 else -1.0)
+                tan = np.concatenate([t3, w[:, None]], 1)
+            return pos, nrm, tan, det < 0
+
+
+        def srgb_to_linear(c):
+            c = np.asarray(c, np.float64)
+            return np.where(c <= 0.04045, c / 12.92, ((c + 0.055) / 1.055) ** 2.4)
+
+
+        def linear_to_srgb(c):
+            c = np.clip(np.asarray(c, np.float64), 0.0, None)
+            return np.where(c <= 0.0031308, c * 12.92, 1.055 * np.power(c, 1 / 2.4) - 0.055)
+        # ------------------------------------------------ h3d_blendfile
+        # ---------------------------------------------------------------------------
+        #  Low-level .blend reader: every Blender version from 2.4x to 5.x.
+        #    * legacy 12-byte header  "BLENDER" + ptr('_'|'-') + endian('v'|'V') + "NNN"
+        #    * 5.x 17-byte header     "BLENDER" + "17" + "-" + "01" + 'v' + "NNNN"
+        #      (large BHead: code i32, sdna i32, old u64, len i64, nr i64)
+        #    * gzip (<= 2.9x "compress") and zstd (3.0+ "compress") containers
+        #    * 32/64-bit pointers, little AND big endian
+        #  Fields are always resolved by NAME through the file's own SDNA, so no
+        #  byte offsets are hard-coded anywhere.
+        # ---------------------------------------------------------------------------
+        import os, struct, bisect, gzip, io
+        import numpy as np
+
+
+        class BlendFormatError(ValueError):
+            pass
+
+
+        def _decompress(data, path):
+            if data[:2] == b"\x1f\x8b":
+                try:
+                    return gzip.decompress(data)
+                except Exception as ex:
+                    raise BlendFormatError(f"gzip-compressed .blend could not be "
+                                           f"decompressed: {ex}")
+            if data[:4] == b"\x28\xb5\x2f\xfd":
+                # Blender 3.0+ writes a SEEKABLE zstd stream = several frames.
+                try:                                   # Python 3.14+
+                    from compression import zstd as _z
+                    return _z.decompress(data)
+                except ImportError:
+                    pass
+                try:
+                    import zstandard as _zs
+                    with _zs.ZstdDecompressor().stream_reader(
+                            io.BytesIO(data), read_across_frames=True) as r:
+                        return r.read()
+                except ImportError:
+                    raise BlendFormatError(
+                        f"'{os.path.basename(path)}' was saved with Blender's "
+                        f"'Compress' option (zstd). Install the decoder with:  "
+                        f"pip install zstandard   (or re-save the file in Blender "
+                        f"with File > Save As > Compress turned off).")
+                except Exception as ex:
+                    raise BlendFormatError(f"zstd-compressed .blend could not be "
+                                           f"decompressed: {ex}")
+            return data
+
+
+        class SDNAField:
+            __slots__ = ("name", "type", "offset", "size", "is_ptr", "dims",
+                         "elem_size", "is_func")
+
+            def __init__(self, name, type_, offset, size, is_ptr, dims, elem_size,
+                         is_func):
+                self.name, self.type, self.offset, self.size = name, type_, offset, size
+                self.is_ptr, self.dims, self.elem_size = is_ptr, dims, elem_size
+                self.is_func = is_func
+
+
+        class SDNA:
+            def __init__(self, raw, endian, ptrsize):
+                self.endian = endian
+                self.ptrsize = ptrsize
+                p = 0
+                u32 = struct.Struct(endian + "I")
+                u16 = struct.Struct(endian + "H")
+                i16 = struct.Struct(endian + "h")
+
+                def tag(t):
+                    nonlocal p
+                    if raw[p:p + 4] != t:
+                        raise BlendFormatError(f"corrupt SDNA (expected {t!r})")
+                    p += 4
+
+                def align():
+                    nonlocal p
+                    p = (p + 3) & ~3
+
+                def strings(n):
+                    nonlocal p
+                    out = []
+                    for _ in range(n):
+                        e = raw.index(b"\0", p)
+                        out.append(raw[p:e].decode("latin-1"))
+                        p = e + 1
+                    return out
+
+                tag(b"SDNA")
+                tag(b"NAME")
+                n = u32.unpack_from(raw, p)[0]; p += 4
+                self.names = strings(n)
+                align(); tag(b"TYPE")
+                n = u32.unpack_from(raw, p)[0]; p += 4
+                self.types = strings(n)
+                align(); tag(b"TLEN")
+                self.tlen = [u16.unpack_from(raw, p + 2 * i)[0] for i in range(n)]
+                p += 2 * n
+                align(); tag(b"STRC")
+                n = u32.unpack_from(raw, p)[0]; p += 4
+                self.struct_type = []           # sdna index -> type index
+                self.structs = {}               # struct name -> {field: SDNAField}
+                self.struct_by_index = []       # sdna index -> struct name
+                self.struct_size = {}
+                type_to_struct = {}
+                raw_structs = []
+                for si in range(n):
+                    t, nf = u16.unpack_from(raw, p)[0], u16.unpack_from(raw, p + 2)[0]
+                    p += 4
+                    fl = []
+                    for _ in range(nf):
+                        ft, fn = u16.unpack_from(raw, p)[0], u16.unpack_from(raw, p + 2)[0]
+                        p += 4
+                        fl.append((ft, fn))
+                    raw_structs.append((t, fl))
+                    type_to_struct[t] = si
+                for si, (t, fl) in enumerate(raw_structs):
+                    sname = self.types[t]
+                    self.struct_by_index.append(sname)
+                    self.struct_type.append(t)
+                    fields = {}
+                    off = 0
+                    for ft, fn in fl:
+                        full = self.names[fn]
+                        is_func = full.startswith("(*")
+                        is_ptr = full.startswith("*") or is_func
+                        base = full
+                        dims = []
+                        if "[" in full:
+                            base = full[:full.index("[")]
+                            rest = full[full.index("["):]
+                            for part in rest.split("]")[:-1]:
+                                dims.append(int(part.lstrip("[")))
+                        base = base.lstrip("*")
+                        if is_func:
+                            base = full[2:full.index(")")]
+                        elem = ptrsize if is_ptr else self.tlen[ft]
+                        count = 1
+                        for d in dims:
+                            count *= d
+                        size = elem * count
+                        fields[base] = SDNAField(base, self.types[ft], off, size,
+                                                 is_ptr, dims, elem, is_func)
+                        off += size
+                    self.structs[sname] = fields
+                    self.struct_size[sname] = self.tlen[t]
+
+            def struct_name(self, sdna_index):
+                if 0 <= sdna_index < len(self.struct_by_index):
+                    return self.struct_by_index[sdna_index]
+                return None
+
+
+        class Block:
+            __slots__ = ("code", "sdna", "old", "size", "count", "data", "struct",
+                         "scope")
+
+            def __init__(self, code, sdna, old, size, count, data):
+                # 2-letter ID codes are written as an int: big-endian files store
+                # "ME" as b"\0\0ME" — normalise to b"ME\0\0" for every endianness.
+                if code[:2] == b"\0\0" and code[2:] != b"\0\0":
+                    code = code[2:] + b"\0\0"
+                self.code, self.sdna, self.old = code, sdna, old
+                self.size, self.count, self.data = size, count, data
+                self.struct = None
+                self.scope = 0
+
+
+        class BlendFile:
+            """Parsed .blend file: blocks + SDNA + pointer resolution."""
+
+            def __init__(self, path):
+                self.path = os.fspath(path)
+                with open(self.path, "rb") as fh:
+                    data = fh.read()
+                data = _decompress(data, self.path)
+                if data[:7] != b"BLENDER":
+                    raise BlendFormatError(
+                        f"'{os.path.basename(self.path)}' is not a Blender file")
+                self.raw = data
+                if data[7:9] == b"17" and data[9:10] == b"-":
+                    # Blender 5.x header: BLENDER17-01v0500
+                    fmt = int(data[10:12])
+                    if fmt != 1:
+                        raise BlendFormatError(
+                            f"unknown .blend file-format version {fmt} — this file "
+                            f"is newer than Heaven3D understands")
+                    self.ptrsize = 8
+                    self.endian = "<" if data[12:13] == b"v" else ">"
+                    self.version = int(data[13:17])
+                    hdr_len = 17
+                    self.large_bhead = True
+                else:
+                    self.ptrsize = {b"_": 4, b"-": 8}.get(data[7:8])
+                    self.endian = {b"v": "<", b"V": ">"}.get(data[8:9])
+                    if self.ptrsize is None or self.endian is None:
+                        raise BlendFormatError("corrupt .blend header")
+                    self.version = int(data[9:12])
+                    hdr_len = 12
+                    self.large_bhead = False
+                self.blocks = []
+                self._parse_blocks(hdr_len)
+                dna = next((b for b in self.blocks if b.code == b"DNA1"), None)
+                if dna is None:
+                    raise BlendFormatError("corrupt .blend: no SDNA block")
+                self.sdna = SDNA(dna.data, self.endian, self.ptrsize)
+                for b in self.blocks:
+                    b.struct = self.sdna.struct_name(b.sdna)
+                # Address scopes.  Blender 5.x writes DETERMINISTIC per-ID
+                # addresses, so DATA pointers are only unique inside the group
+                # "ID block + the DATA blocks that follow it".  Pointers are
+                # resolved inside their own scope first, then file-wide.
+                scope = 0
+                self._scopes = {0: []}
+                for b in self.blocks:
+                    if b.code != b"DATA":
+                        scope += 1
+                        self._scopes[scope] = []
+                    b.scope = scope
+                    if b.old:
+                        self._scopes[scope].append(b)
+                self._scope_index = {}
+                for sc, bl in self._scopes.items():
+                    bl.sort(key=lambda b: b.old)
+                    self._scope_index[sc] = ([b.old for b in bl], bl)
+                live = [b for b in self.blocks if b.old]
+                # file-wide fallback: ID blocks win over DATA blocks on collision
+                live.sort(key=lambda b: (b.old, b.code == b"DATA"))
+                self._addrs = [b.old for b in live]
+                self._live = live
+                self._by_code = {}
+                for b in self.blocks:
+                    self._by_code.setdefault(b.code, []).append(b)
+
+            # ------------------------------------------------------------ blocks
+            def _parse_blocks(self, pos):
+                d, e = self.raw, self.endian
+                n = len(d)
+                if self.large_bhead:
+                    st = struct.Struct(e + "4siQqq")       # code sdna old len nr
+                    hs = st.size
+                    while pos + hs <= n:
+                        code, sdna, old, size, nr = st.unpack_from(d, pos)
+                        pos += hs
+                        if size < 0 or pos + size > n:
+                            raise BlendFormatError("truncated .blend (block data)")
+                        self.blocks.append(Block(code, sdna, old, size, nr,
+                                                 d[pos:pos + size]))
+                        pos += size
+                        if code == b"ENDB":
+                            return
+                else:
+                    ps = self.ptrsize
+                    st = struct.Struct(e + ("4sII" if ps == 4 else "4sIQ") + "II")
+                    hs = st.size
+                    while pos + hs <= n:
+                        code, size, old, sdna, nr = st.unpack_from(d, pos)
+                        pos += hs
+                        if pos + size > n:
+                            raise BlendFormatError("truncated .blend (block data)")
+                        self.blocks.append(Block(code, sdna, old, size, nr,
+                                                 d[pos:pos + size]))
+                        pos += size
+                        if code == b"ENDB":
+                            return
+                # ENDB missing: tolerate (some writers), as long as DNA1 was read
+
+            def _ptr_at(self, blk, off):
+                n = self.ptrsize
+                if off + n > len(blk.data):
+                    return 0
+                return struct.unpack_from(self.endian + ("I" if n == 4 else "Q"),
+                                          blk.data, off)[0]
+
+            def blocks_by_code(self, code):
+                return self._by_code.get(code, [])
+
+            @staticmethod
+            def _lookup(addrs, blocks, ptr):
+                i = bisect.bisect_right(addrs, ptr) - 1
+                if i < 0:
+                    return None
+                # several blocks may share the start address: take the first
+                # (lowest index) one whose range contains the pointer
+                j = bisect.bisect_left(addrs, addrs[i])
+                for k in range(j, i + 1):
+                    b = blocks[k]
+                    off = ptr - b.old
+                    if off < max(b.size, 1):
+                        return b, off
+                return None
+
+            def resolve(self, ptr, ctx=None):
+                """old pointer -> (block, offset) or None.  ctx = the Block (or
+                View) the pointer was read from: its ID scope is searched first."""
+                if not ptr:
+                    return None
+                if ctx is not None:
+                    blk = ctx.blk if isinstance(ctx, View) else ctx
+                    sc = self._scope_index.get(getattr(blk, "scope", -1))
+                    if sc is not None and sc[0]:
+                        r = self._lookup(sc[0], sc[1], ptr)
+                        if r is not None:
+                            return r
+                return self._lookup(self._addrs, self._live, ptr)
+
+            def view(self, ptr_or_block, sname=None, off=0, ctx=None):
+                """Struct view of a pointer, or of (block, offset)."""
+                if isinstance(ptr_or_block, Block):
+                    blk = ptr_or_block
+                else:
+                    r = self.resolve(ptr_or_block, ctx)
+                    if r is None:
+                        return None
+                    blk, off = r
+                sname = sname or blk.struct
+                if sname not in self.sdna.structs:
+                    return None
+                return View(self, blk, off, sname)
+
+            def array(self, ptr, dtype, count=None, ctx=None):
+                """Raw typed array at a pointer (whole block if count is None)."""
+                r = self.resolve(ptr, ctx)
+                if r is None:
+                    return None
+                blk, off = r
+                dt = np.dtype(dtype).newbyteorder(self.endian)
+                avail = (blk.size - off) // dt.itemsize
+                if count is None:
+                    count = avail
+                if count > avail or count < 0:
+                    return None
+                return np.frombuffer(blk.data, dtype=dt, count=count, offset=off)
+
+            def struct_array(self, ptr, sname, count=None, ctx=None):
+                """List of Views for an array of structs at a pointer."""
+                r = self.resolve(ptr, ctx)
+                if r is None:
+                    return []
+                blk, off = r
+                ss = self.sdna.struct_size.get(sname)
+                if not ss:
+                    return []
+                avail = (blk.size - off) // ss
+                if count is None:
+                    count = avail
+                count = max(0, min(count, avail))
+                return [View(self, blk, off + i * ss, sname) for i in range(count)]
+
+            def struct_records(self, ptr, sname, count, fields, ctx=None):
+                """Fast numpy structured read of selected fields of a struct array.
+                fields: {name: numpy dtype str}  ->  dict name -> ndarray."""
+                r = self.resolve(ptr, ctx)
+                if r is None:
+                    return None
+                blk, off = r
+                ss = self.sdna.struct_size.get(sname)
+                sf = self.sdna.structs.get(sname)
+                if not ss or sf is None:
+                    return None
+                avail = (blk.size - off) // ss
+                if count is None:
+                    count = avail
+                if count > avail:
+                    count = avail
+                names, formats, offsets = [], [], []
+                for fname, dt in fields.items():
+                    f = sf.get(fname)
+                    if f is None:
+                        continue
+                    base = np.dtype(dt).newbyteorder(self.endian)
+                    if f.dims:
+                        shape = tuple(f.dims)
+                        if base.itemsize * int(np.prod(shape)) > f.size:
+                            continue
+                        formats.append((base, shape))
+                    else:
+                        if base.itemsize > f.size:
+                            continue
+                        formats.append(base)
+                    names.append(fname)
+                    offsets.append(f.offset)
+                if not names:
+                    return {}
+                dt = np.dtype({"names": names, "formats": formats,
+                               "offsets": offsets, "itemsize": ss})
+                rec = np.frombuffer(blk.data, dtype=dt, count=count, offset=off)
+                return {n: rec[n] for n in names}
+
+            def listbase(self, lb_view, sname=None, cap=200000):
+                """Walk a ListBase {first,last} -> Views (next pointer chain)."""
+                out = []
+                if lb_view is None:
+                    return out
+                ptr = lb_view.ptr("first")
+                ctx = lb_view
+                seen = set()
+                while ptr and ptr not in seen and len(out) < cap:
+                    seen.add(ptr)
+                    v = self.view(ptr, sname, ctx=ctx)
+                    if v is None:
+                        break
+                    out.append(v)
+                    ctx = v
+                    # every ListBase element starts with {next, prev}: read the
+                    # link at offset 0 (works for nested headers like ModifierData)
+                    ptr = v.ptr("next") if "next" in v.fields else self._ptr_at(v.blk, v.off)
+                return out
+
+
+        class View:
+            __slots__ = ("bf", "blk", "off", "sname", "fields")
+
+            def __init__(self, bf, blk, off, sname):
+                self.bf, self.blk, self.off, self.sname = bf, blk, off, sname
+                self.fields = bf.sdna.structs[sname]
+
+            def has(self, name):
+                return name in self.fields
+
+            def _pos(self, f):
+                p = self.off + f.offset
+                if p < 0 or p + f.size > len(self.blk.data):
+                    return None
+                return p
+
+            def int(self, name, default=0):
+                f = self.fields.get(name)
+                if f is None or f.is_ptr:
+                    return default
+                p = self._pos(f)
+                if p is None:
+                    return default
+                t = f.type
+                uns = t.startswith("u") or t in ("bool", "char")
+                code = {1: "B" if uns else "b", 2: "H" if uns else "h",
+                        4: "I" if uns else "i", 8: "Q" if uns else "q"}.get(f.elem_size)
+                if code is None:
+                    return default
+                return struct.unpack_from(self.bf.endian + code, self.blk.data, p)[0]
+
+            def float(self, name, default=0.0):
+                f = self.fields.get(name)
+                if f is None or f.is_ptr or f.type not in ("float", "double"):
+                    return default
+                p = self._pos(f)
+                if p is None:
+                    return default
+                return struct.unpack_from(self.bf.endian + ("f" if f.elem_size == 4 else "d"),
+                                          self.blk.data, p)[0]
+
+            def floats(self, name, default=None):
+                f = self.fields.get(name)
+                if f is None or f.is_ptr or f.type not in ("float", "double"):
+                    return default
+                p = self._pos(f)
+                if p is None:
+                    return default
+                dt = np.dtype("f4" if f.elem_size == 4 else "f8").newbyteorder(self.bf.endian)
+                a = np.frombuffer(self.blk.data, dtype=dt, count=f.size // f.elem_size, offset=p)
+                return a.astype(np.float64).reshape(f.dims) if f.dims else a.astype(np.float64)
+
+            def ints(self, name, default=None):
+                f = self.fields.get(name)
+                if f is None or f.is_ptr:
+                    return default
+                p = self._pos(f)
+                if p is None:
+                    return default
+                uns = f.type.startswith("u") or f.type in ("char",)
+                code = {1: "u1" if uns else "i1", 2: "u2" if uns else "i2",
+                        4: "u4" if uns else "i4", 8: "u8" if uns else "i8"}.get(f.elem_size)
+                dt = np.dtype(code).newbyteorder(self.bf.endian)
+                a = np.frombuffer(self.blk.data, dtype=dt, count=f.size // f.elem_size, offset=p)
+                return a.reshape(f.dims) if f.dims else a
+
+            def ptr(self, name):
+                f = self.fields.get(name)
+                if f is None or not f.is_ptr:
+                    return 0
+                p = self._pos(f)
+                if p is None:
+                    return 0
+                return struct.unpack_from(self.bf.endian + ("I" if self.bf.ptrsize == 4 else "Q"),
+                                          self.blk.data, p)[0]
+
+            def deref(self, name, sname=None):
+                return self.bf.view(self.ptr(name), sname, ctx=self)
+
+            def resolve(self, name):
+                return self.bf.resolve(self.ptr(name), self)
+
+            def array(self, name, dtype, count=None):
+                return self.bf.array(self.ptr(name), dtype, count, ctx=self)
+
+            def struct_array(self, name, sname, count=None):
+                return self.bf.struct_array(self.ptr(name), sname, count, ctx=self)
+
+            def cstring(self, name):
+                """char* field -> python str (or '')."""
+                r = self.bf.resolve(self.ptr(name), self)
+                if r is None:
+                    return ""
+                blk, off = r
+                z = blk.data.find(b"\0", off)
+                return blk.data[off:z if z >= 0 else len(blk.data)].decode(
+                    "utf-8", "replace")
+
+            def str(self, name, default=""):
+                f = self.fields.get(name)
+                if f is None or f.is_ptr:
+                    return default
+                p = self._pos(f)
+                if p is None:
+                    return default
+                raw = self.blk.data[p:p + f.size]
+                z = raw.find(b"\0")
+                if z >= 0:
+                    raw = raw[:z]
+                return raw.decode("utf-8", "replace")
+
+            def sub(self, name):
+                """Embedded struct field."""
+                f = self.fields.get(name)
+                if f is None or f.is_ptr or f.type not in self.bf.sdna.structs:
+                    return None
+                return View(self.bf, self.blk, self.off + f.offset, f.type)
+
+            def id_name(self):
+                idv = self.sub("id")
+                nm = idv.str("name") if idv is not None else ""
+                return nm[2:] if len(nm) > 2 else nm
+
+            def addr(self):
+                return self.blk.old + self.off
+        # ------------------------------------------------ h3d_meshopt
+        # ---------------------------------------------------------------------------
+        #  meshoptimizer decoders (EXT_meshopt_compression / KHR_meshopt_compression)
+        #  Pure-Python port of zeux/meshoptimizer's scalar reference decoders
+        #  (vertexcodec.cpp v0+v1, indexcodec.cpp, vertexfilter.cpp).
+        # ---------------------------------------------------------------------------
+        import numpy as np
+
+
+        class MeshoptError(ValueError):
+            pass
+
+
+        _BITS_V0 = (0, 2, 4, 8)
+        _BITS_V1 = (0, 1, 2, 4, 8)
+        _REV8 = bytes(int("{:08b}".format(i)[::-1], 2) for i in range(256))
+
+
+        def _block_size(vertex_size):
+            r = (8192 // vertex_size) & ~15
+            return min(r, 256)
+
+
+        def _decode_bytes_group(data, pos, out, opos, bits):
+            if bits == 0:
+                for k in range(16):
+                    out[opos + k] = 0
+                return pos
+            if bits == 8:
+                out[opos:opos + 16] = data[pos:pos + 16]
+                return pos + 16
+            if bits == 1:
+                var = pos + 2
+                k = opos
+                for b in (_REV8[data[pos]], _REV8[data[pos + 1]]):
+                    for s in range(7, -1, -1):
+                        enc = (b >> s) & 1
+                        if enc == 1:
+                            out[k] = data[var]; var += 1
+                        else:
+                            out[k] = enc
+                        k += 1
+                return var
+            if bits == 2:
+                var = pos + 4
+                k = opos
+                for i in range(4):
+                    b = data[pos + i]
+                    for s in (6, 4, 2, 0):
+                        enc = (b >> s) & 3
+                        if enc == 3:
+                            out[k] = data[var]; var += 1
+                        else:
+                            out[k] = enc
+                        k += 1
+                return var
+            if bits == 4:
+                var = pos + 8
+                k = opos
+                for i in range(8):
+                    b = data[pos + i]
+                    for s in (4, 0):
+                        enc = (b >> s) & 15
+                        if enc == 15:
+                            out[k] = data[var]; var += 1
+                        else:
+                            out[k] = enc
+                        k += 1
+                return var
+            raise MeshoptError("bad bit length")
+
+
+        def _decode_bytes(data, pos, out, opos, size, bits_table):
+            header_size = (size // 16 + 3) // 4
+            header = pos
+            pos += header_size
+            for i in range(0, size, 16):
+                ho = i // 16
+                bk = (data[header + ho // 4] >> ((ho % 4) * 2)) & 3
+                pos = _decode_bytes_group(data, pos, out, opos + i, bits_table[bk])
+                if pos > len(data):
+                    raise MeshoptError("meshopt vertex data truncated")
+            return pos
+
+
+        def _unzigzag(v, bits):
+            return (v >> 1) ^ (-(v & 1) & ((1 << bits) - 1))
+
+
+        def decode_vertex_buffer(data, count, vertex_size):
+            data = bytes(data)
+            if not data or (data[0] & 0xF0) != 0xA0:
+                raise MeshoptError("not a meshopt vertex stream")
+            version = data[0] & 0x0F
+            if version > 1:
+                raise MeshoptError(f"meshopt vertex codec v{version} is newer than supported")
+            tail_size = vertex_size + (0 if version == 0 else vertex_size // 4)
+            tail_min = 32 if version == 0 else 24
+            tail_pad = max(tail_size, tail_min)
+            if len(data) - 1 < tail_pad:
+                raise MeshoptError("meshopt vertex stream too short")
+            tail = len(data) - tail_size
+            last = bytearray(data[tail:tail + vertex_size])
+            channels = data[tail + vertex_size:tail + tail_size] if version else None
+            out = np.zeros(count * vertex_size, np.uint8)
+            pos = 1
+            bsize = _block_size(vertex_size)
+            voff = 0
+            bits_v1 = _BITS_V1
+            while voff < count:
+                n = min(bsize, count - voff)
+                aligned = (n + 15) & ~15
+                ctrl_size = 0 if version == 0 else vertex_size // 4
+                control = data[pos:pos + ctrl_size]
+                pos += ctrl_size
+                block = np.zeros((n, vertex_size), np.uint8)
+                for k in range(0, vertex_size, 4):
+                    cb = 0 if version == 0 else control[k // 4]
+                    planes = []
+                    for j in range(4):
+                        if k + j >= vertex_size:
+                            planes.append(np.zeros(n, np.uint8))
+                            continue
+                        ctrl = (cb >> (j * 2)) & 3
+                        if ctrl == 3:
+                            planes.append(np.frombuffer(data, np.uint8, n, pos).copy()); pos += n
+                        elif ctrl == 2:
+                            planes.append(np.zeros(n, np.uint8))
+                        else:
+                            buf = bytearray(aligned)
+                            table = _BITS_V0 if version == 0 else bits_v1[ctrl:ctrl + 4]
+                            pos = _decode_bytes(data, pos, buf, 0, aligned, table)
+                            planes.append(np.frombuffer(bytes(buf[:n]), np.uint8))
+                    ch = 0 if version == 0 else channels[k // 4]
+                    width = min(4, vertex_size - k)
+                    lastk = last[k:k + 4]
+                    mode = ch & 3
+                    if mode == 0:                        # byte deltas
+                        for j in range(width):
+                            v = planes[j].astype(np.int64)
+                            d = (v >> 1) ^ (-(v & 1) & 0xFF)
+                            block[:, k + j] = ((np.cumsum(d) + lastk[j]) & 0xFF).astype(np.uint8)
+                    elif mode == 1:                      # 16-bit deltas
+                        for h in range(0, 4, 2):
+                            if k + h >= vertex_size:
+                                break
+                            v = planes[h].astype(np.int64) | (planes[h + 1].astype(np.int64) << 8)
+                            d = (v >> 1) ^ (-(v & 1) & 0xFFFF)
+                            p0 = lastk[h] | (lastk[h + 1] << 8)
+                            vals = (np.cumsum(d) + p0) & 0xFFFF
+                            block[:, k + h] = (vals & 0xFF).astype(np.uint8)
+                            block[:, k + h + 1] = (vals >> 8).astype(np.uint8)
+                    elif mode == 2:                      # 32-bit xor + rotate
+                        rot = (32 - (ch >> 4)) & 31
+                        v = (planes[0].astype(np.uint64) | (planes[1].astype(np.uint64) << 8) |
+                             (planes[2].astype(np.uint64) << 16) | (planes[3].astype(np.uint64) << 24))
+                        if rot:
+                            v = ((v << np.uint64(rot)) | (v >> np.uint64((32 - rot) & 31))) & np.uint64(0xFFFFFFFF)
+                        p = int(lastk[0]) | (int(lastk[1]) << 8) | (int(lastk[2]) << 16) | (int(lastk[3]) << 24)
+                        acc = np.bitwise_xor.accumulate(np.concatenate([[np.uint64(p)], v]))[1:]
+                        for j in range(4):
+                            block[:, k + j] = ((acc >> np.uint64(8 * j)) & np.uint64(0xFF)).astype(np.uint8)
+                    else:
+                        raise MeshoptError("invalid meshopt channel mode")
+                out[voff * vertex_size:(voff + n) * vertex_size] = block.ravel()
+                last = bytearray(block[n - 1].tobytes())
+                voff += n
+            if len(data) - pos != tail_pad:
+                raise MeshoptError("meshopt vertex stream has trailing garbage")
+            return out.tobytes()
+
+
+        def _vbyte(data, pos):
+            lead = data[pos]; pos += 1
+            if lead < 128:
+                return lead, pos
+            result = lead & 127
+            shift = 7
+            for _ in range(4):
+                g = data[pos]; pos += 1
+                result |= (g & 127) << shift
+                shift += 7
+                if g < 128:
+                    break
+            return result & 0xFFFFFFFF, pos
+
+
+        def _decode_index(data, pos, last):
+            v, pos = _vbyte(data, pos)
+            d = (v >> 1) ^ (-(v & 1) & 0xFFFFFFFF)
+            return (last + d) & 0xFFFFFFFF, pos
+
+
+        def decode_index_buffer(data, count):
+            data = bytes(data)
+            if (data[0] & 0xF0) != 0xE0:
+                raise MeshoptError("not a meshopt triangle stream")
+            version = data[0] & 0x0F
+            if version > 1:
+                raise MeshoptError(f"meshopt index codec v{version} unsupported")
+            ef = [[0xFFFFFFFF, 0xFFFFFFFF] for _ in range(16)]
+            vf = [0xFFFFFFFF] * 16
+            efo = vfo = 0
+            nxt = last = 0
+            fecmax = 13 if version >= 1 else 15
+            code = 1
+            code_end = code + count // 3
+            pos = code_end
+            aux = data[len(data) - 16:]
+            out = []
+            while code < code_end:
+                ct = data[code]; code += 1
+                if ct < 0xF0:
+                    fe = ct >> 4
+                    a, b = ef[(efo - 1 - fe) & 15]
+                    fec = ct & 15
+                    if fec < fecmax:
+                        cf = vf[(vfo - 1 - fec) & 15]
+                        c = nxt if fec == 0 else cf
+                        f0 = 1 if fec == 0 else 0
+                        nxt += f0
+                        vf[vfo] = c; vfo = (vfo + f0) & 15
+                    else:
+                        if fec != 15:
+                            c = (last + (fec * 2 - 27)) & 0xFFFFFFFF
+                        else:
+                            c, pos = _decode_index(data, pos, last)
+                        last = c
+                        vf[vfo] = c; vfo = (vfo + 1) & 15
+                    ef[efo] = [c, b]; efo = (efo + 1) & 15
+                    ef[efo] = [a, c]; efo = (efo + 1) & 15
+                    out += (a, b, c)
+                elif ct < 0xFE:
+                    ca = aux[ct & 15]
+                    feb, fec = ca >> 4, ca & 15
+                    a = nxt; nxt += 1
+                    bf = vf[(vfo - feb) & 15]
+                    b = nxt if feb == 0 else bf
+                    fb0 = 1 if feb == 0 else 0
+                    nxt += fb0
+                    cf = vf[(vfo - fec) & 15]
+                    c = nxt if fec == 0 else cf
+                    fc0 = 1 if fec == 0 else 0
+                    nxt += fc0
+                    out += (a, b, c)
+                    vf[vfo] = a; vfo = (vfo + 1) & 15
+                    vf[vfo] = b; vfo = (vfo + fb0) & 15
+                    vf[vfo] = c; vfo = (vfo + fc0) & 15
+                    ef[efo] = [b, a]; efo = (efo + 1) & 15
+                    ef[efo] = [c, b]; efo = (efo + 1) & 15
+                    ef[efo] = [a, c]; efo = (efo + 1) & 15
+                else:
+                    ca = data[pos]; pos += 1
+                    fea = 0 if ct == 0xFE else 15
+                    feb, fec = ca >> 4, ca & 15
+                    if ca == 0:
+                        nxt = 0
+                    if fea == 0:
+                        a = nxt; nxt += 1
+                    else:
+                        a = 0
+                    if feb == 0:
+                        b = nxt; nxt += 1
+                    else:
+                        b = vf[(vfo - feb) & 15]
+                    if fec == 0:
+                        c = nxt; nxt += 1
+                    else:
+                        c = vf[(vfo - fec) & 15]
+                    if fea == 15:
+                        a, pos = _decode_index(data, pos, last); last = a
+                    if feb == 15:
+                        b, pos = _decode_index(data, pos, last); last = b
+                    if fec == 15:
+                        c, pos = _decode_index(data, pos, last); last = c
+                    out += (a, b, c)
+                    vf[vfo] = a; vfo = (vfo + 1) & 15
+                    vf[vfo] = b; vfo = (vfo + (1 if feb in (0, 15) else 0)) & 15
+                    vf[vfo] = c; vfo = (vfo + (1 if fec in (0, 15) else 0)) & 15
+                    ef[efo] = [b, a]; efo = (efo + 1) & 15
+                    ef[efo] = [c, b]; efo = (efo + 1) & 15
+                    ef[efo] = [a, c]; efo = (efo + 1) & 15
+            return np.array(out, np.uint32)
+
+
+        def decode_index_sequence(data, count):
+            data = bytes(data)
+            if (data[0] & 0xF0) != 0xD0:
+                raise MeshoptError("not a meshopt index-sequence stream")
+            pos = 1
+            last = [0, 0]
+            out = np.empty(count, np.uint32)
+            for i in range(count):
+                v, pos = _vbyte(data, pos)
+                cur = v & 1
+                v >>= 1
+                d = (v >> 1) ^ (-(v & 1) & 0xFFFFFFFF)
+                idx = (last[cur] + d) & 0xFFFFFFFF
+                last[cur] = idx
+                out[i] = idx
+            return out
+
+
+        # ---------------------------------------------------------------- filters
+        def _round_signed(x):
+            return np.where(x >= 0, np.floor(x + 0.5), np.ceil(x - 0.5))
+
+
+        def filter_oct(buf, count, stride):
+            t = np.int8 if stride == 4 else np.int16
+            d = np.frombuffer(buf, t).reshape(count, 4).astype(np.float32)
+            mx = np.float32(127.0 if stride == 4 else 32767.0)
+            x, y = d[:, 0].copy(), d[:, 1].copy()
+            z = d[:, 2] - np.abs(x) - np.abs(y)
+            tt = np.where(z >= 0, 0.0, z)
+            x = x + np.where(x >= 0, tt, -tt)
+            y = y + np.where(y >= 0, tt, -tt)
+            ln = np.sqrt(x * x + y * y + z * z)
+            s = mx / np.maximum(ln, 1e-30)
+            out = np.frombuffer(buf, t).reshape(count, 4).copy()
+            out[:, 0] = _round_signed(x * s).astype(t)
+            out[:, 1] = _round_signed(y * s).astype(t)
+            out[:, 2] = _round_signed(z * s).astype(t)
+            return out.tobytes()
+
+
+        def filter_quat(buf, count):
+            d = np.frombuffer(buf, np.int16).reshape(count, 4)
+            sf = (d[:, 3].astype(np.int32) | 3).astype(np.float32)
+            x, y, z = (d[:, i].astype(np.float32) for i in range(3))
+            ww = sf * sf * 2.0 - x * x - y * y - z * z
+            w = np.sqrt(np.maximum(ww, 0.0))
+            ss = np.float32(32767.0 / np.sqrt(2.0)) / sf
+            xf = _round_signed(x * ss); yf = _round_signed(y * ss); zf = _round_signed(z * ss)
+            wf = np.floor(w * ss + 0.5)
+            qc = d[:, 3].astype(np.int32) & 3
+            out = np.zeros((count, 4), np.int16)
+            r = np.arange(count)
+            out[r, (qc + 1) & 3] = xf; out[r, (qc + 2) & 3] = yf
+            out[r, (qc + 3) & 3] = zf; out[r, qc & 3] = wf
+            return out.tobytes()
+
+
+        def filter_exp(buf, count, stride):
+            v = np.frombuffer(buf, np.uint32).astype(np.int64)
+            m = ((v << 8) & 0xFFFFFFFF)
+            m = np.where(m >= 2 ** 31, m - 2 ** 32, m) >> 8
+            e = np.where(v >= 2 ** 31, v - 2 ** 32, v) >> 24
+            f = (m.astype(np.float64) * np.power(2.0, e.astype(np.float64))).astype(np.float32)
+            return f.tobytes()
+
+
+        def filter_color(buf, count, stride):
+            if stride == 4:
+                u = np.frombuffer(buf, np.uint8).reshape(count, 4).astype(np.int32)
+                st = np.frombuffer(buf, np.int8).reshape(count, 4).astype(np.int32)
+                mx, t = 255.0, np.uint8
+            else:
+                u = np.frombuffer(buf, np.uint16).reshape(count, 4).astype(np.int32)
+                st = np.frombuffer(buf, np.int16).reshape(count, 4).astype(np.int32)
+                mx, t = 65535.0, np.uint16
+            a_s = u[:, 3].copy()
+            a_s |= a_s >> 1; a_s |= a_s >> 2; a_s |= a_s >> 4; a_s |= a_s >> 8
+            y, co, cg = u[:, 0], st[:, 1], st[:, 2]
+            r = y + co - cg; g = y + cg; b = y - co - cg
+            a = u[:, 3]
+            a = ((a << 1) & a_s) | (a & 1)
+            ss = np.float32(mx) / np.maximum(a_s, 1).astype(np.float32)
+            out = np.stack([np.floor(r * ss + 0.5), np.floor(g * ss + 0.5), np.floor(b * ss + 0.5),
+                            np.floor(a * ss + 0.5)], 1)
+            return out.astype(np.int64).astype(t).tobytes()
+
+
+        def decode_meshopt(data, count, stride, mode="ATTRIBUTES", flt="NONE"):
+            if mode == "ATTRIBUTES":
+                raw = decode_vertex_buffer(data, count, stride)
+                if flt == "OCTAHEDRAL":
+                    raw = filter_oct(raw, count, stride)
+                elif flt == "QUATERNION":
+                    raw = filter_quat(raw, count)
+                elif flt == "EXPONENTIAL":
+                    raw = filter_exp(raw, count, stride)
+                elif flt == "COLOR":
+                    raw = filter_color(raw, count, stride)
+                return raw
+            if mode == "TRIANGLES":
+                idx = decode_index_buffer(data, count)
+            elif mode == "INDICES":
+                idx = decode_index_sequence(data, count)
+            else:
+                raise MeshoptError(f"unknown meshopt mode {mode}")
+            return idx.astype(np.uint16 if stride == 2 else np.uint32).tobytes()
+        # ------------------------------------------------ h3d_gltf
+        # ---------------------------------------------------------------------------
+        #  Heaven3D glTF 2.0 / GLB importer (pure Python + numpy, spec-complete for
+        #  everything a static renderer can show).
+        #  Output: list of material "parts" with the node hierarchy, skins (default
+        #  pose), morph weights and GPU instancing baked into world space, plus
+        #  KHR_lights_punctual descriptors.
+        # ---------------------------------------------------------------------------
+        import os, io, json, math, struct, base64
+        from urllib.parse import unquote
+        import numpy as np
+
+        _COMP = {5120: "i1", 5121: "u1", 5122: "i2", 5123: "u2", 5125: "u4", 5126: "f4"}
+        _NCOMP = {"SCALAR": 1, "VEC2": 2, "VEC3": 3, "VEC4": 4, "MAT2": 4, "MAT3": 9, "MAT4": 16}
+        _NORM_DIV = {"i1": 127.0, "u1": 255.0, "i2": 32767.0, "u2": 65535.0}
+
+
+        class GltfError(ValueError):
+            pass
+
+
+        def _log(logger, level, msg):
+            if logger is not None:
+                try:
+                    getattr(logger, level)(msg)
+                except Exception:
+                    pass
+
+
+        def _trs_matrix(t, r, s):
+            M = np.eye(4)
+            x, y, z, w = r
+            n = math.sqrt(x * x + y * y + z * z + w * w) or 1.0
+            x, y, z, w = x / n, y / n, z / n, w / n
+            R = np.array([[1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)],
+                          [2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)],
+                          [2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)]])
+            M[:3, :3] = R * np.asarray(s, float)[None, :]
+            M[:3, 3] = t
+            return M
+
+
+        def _quat_mats(q):
+            q = np.asarray(q, np.float64)
+            q = q / np.maximum(np.linalg.norm(q, axis=1, keepdims=True), 1e-20)
+            x, y, z, w = q.T
+            R = np.empty((len(q), 3, 3))
+            R[:, 0, 0] = 1 - 2 * (y * y + z * z); R[:, 0, 1] = 2 * (x * y - z * w); R[:, 0, 2] = 2 * (x * z + y * w)
+            R[:, 1, 0] = 2 * (x * y + z * w); R[:, 1, 1] = 1 - 2 * (x * x + z * z); R[:, 1, 2] = 2 * (y * z - x * w)
+            R[:, 2, 0] = 2 * (x * z - y * w); R[:, 2, 1] = 2 * (y * z + x * w); R[:, 2, 2] = 1 - 2 * (x * x + y * y)
+            return R
+
+
+        class GltfDocument:
+            def __init__(self, path, logger=None):
+                self.path = os.fspath(path)
+                self.dir = os.path.dirname(os.path.abspath(self.path))
+                self.log = logger
+                self.bin_chunk = None
+                self._buffers = {}
+                self._views = {}
+                self._acc = {}
+                self._images = {}
+                self.warned = set()
+                with open(self.path, "rb") as fh:
+                    data = fh.read()
+                if data[:4] == b"glTF":
+                    ver, length = struct.unpack_from("<II", data, 4)
+                    if ver != 2:
+                        raise GltfError(f"GLB version {ver} is not supported (glTF 2.0 only) — "
+                                        f"re-export the model as glTF 2.0")
+                    pos = 12
+                    js = None
+                    while pos + 8 <= min(len(data), length):
+                        clen, ctype = struct.unpack_from("<II", data, pos)
+                        chunk = data[pos + 8:pos + 8 + clen]
+                        if ctype == 0x4E4F534A:          # JSON
+                            js = chunk
+                        elif ctype == 0x004E4942 and self.bin_chunk is None:   # BIN
+                            self.bin_chunk = chunk
+                        pos += 8 + clen + ((4 - clen % 4) % 4 if clen % 4 else 0)
+                    if js is None:
+                        raise GltfError("GLB has no JSON chunk")
+                    self.J = json.loads(js.decode("utf-8"))
+                else:
+                    txt = data.decode("utf-8-sig")
+                    self.J = json.loads(txt)
+                asset = self.J.get("asset", {})
+                if str(asset.get("version", "2.0"))[:1] == "1":
+                    raise GltfError("glTF 1.0 files are not supported — re-export as glTF 2.0")
+                req = set(self.J.get("extensionsRequired", []))
+                self.supported_ext = {
+                    "KHR_materials_unlit", "KHR_texture_transform", "KHR_materials_emissive_strength",
+                    "KHR_materials_pbrSpecularGlossiness", "KHR_mesh_quantization", "EXT_mesh_gpu_instancing",
+                    "KHR_lights_punctual", "KHR_node_visibility", "EXT_texture_webp", "EXT_meshopt_compression",
+                    "KHR_meshopt_compression", "KHR_draco_mesh_compression", "KHR_materials_transmission",
+                    "KHR_materials_volume", "KHR_materials_ior", "KHR_materials_specular",
+                    "KHR_materials_clearcoat", "KHR_materials_sheen", "KHR_materials_variants",
+                    "KHR_texture_basisu", "EXT_texture_avif", "KHR_materials_dispersion",
+                    "KHR_materials_iridescence", "KHR_materials_anisotropy", "KHR_materials_diffuse_transmission",
+                    "KHR_xmp_json_ld", "KHR_animation_pointer"}
+                for e in req - self.supported_ext:
+                    self.warn(e, f"glTF requires extension '{e}' which Heaven3D can't decode — "
+                                 f"the model may look different")
+
+            def warn(self, key, msg):
+                if key not in self.warned:
+                    self.warned.add(key)
+                    _log(self.log, "warn", msg)
+
+            # ------------------------------------------------------------ buffers
+            def _uri_bytes(self, uri):
+                if uri.startswith("data:"):
+                    head, _, payload = uri.partition(",")
+                    if ";base64" in head:
+                        return base64.b64decode(payload)
+                    return unquote(payload).encode("latin-1")
+                for cand in (unquote(uri), uri):
+                    p = cand if os.path.isabs(cand) else os.path.join(self.dir, cand)
+                    if os.path.isfile(p):
+                        with open(p, "rb") as fh:
+                            return fh.read()
+                raise GltfError(f"glTF resource '{unquote(uri)}' not found next to "
+                                f"{os.path.basename(self.path)}")
+
+            def buffer(self, i):
+                if i in self._buffers:
+                    return self._buffers[i]
+                b = self.J["buffers"][i]
+                if "uri" in b:
+                    data = self._uri_bytes(b["uri"])
+                elif self.bin_chunk is not None and i == 0:
+                    data = self.bin_chunk
+                else:
+                    ext = b.get("extensions", {})
+                    if "EXT_meshopt_compression" in ext or "KHR_meshopt_compression" in ext or \
+                            any(k for k in ext):
+                        data = b""            # fallback buffer: only reached through compressed views
+                    else:
+                        data = self.bin_chunk or b""
+                self._buffers[i] = data
+                return data
+
+            def view(self, i):
+                """bufferView -> bytes (meshopt-decoded when needed)."""
+                if i in self._views:
+                    return self._views[i]
+                bv = self.J["bufferViews"][i]
+                ext = bv.get("extensions", {})
+                mo = ext.get("EXT_meshopt_compression") or ext.get("KHR_meshopt_compression")
+                if mo is not None:
+                    src = self.buffer(mo["buffer"])
+                    off = mo.get("byteOffset", 0)
+                    comp = src[off:off + mo["byteLength"]]
+                    data = decode_meshopt(comp, mo["count"], mo["byteStride"], mo.get("mode", "ATTRIBUTES"),
+                                          mo.get("filter", "NONE"))
+                else:
+                    buf = self.buffer(bv["buffer"])
+                    off = bv.get("byteOffset", 0)
+                    data = buf[off:off + bv["byteLength"]]
+                    if len(data) < bv["byteLength"]:
+                        raise GltfError("glTF buffer is shorter than its bufferView (truncated file?)")
+                self._views[i] = data
+                return data
+
+            def _read_array(self, view_idx, byte_offset, ctype, nc, count, stride_override=None):
+                dt = np.dtype(ctype).newbyteorder("<")
+                elem = dt.itemsize * nc
+                data = self.view(view_idx)
+                bv = self.J["bufferViews"][view_idx]
+                stride = stride_override or bv.get("byteStride") or elem
+                mo = (bv.get("extensions", {}).get("EXT_meshopt_compression")
+                      or bv.get("extensions", {}).get("KHR_meshopt_compression"))
+                if mo is not None:
+                    stride = mo["byteStride"]
+                need = byte_offset + (count - 1) * stride + elem if count else 0
+                if need > len(data):
+                    raise GltfError("glTF accessor reads past the end of its bufferView")
+                if stride == elem:
+                    return np.frombuffer(data, dt, count * nc, byte_offset).reshape(count, nc)
+                raw = np.frombuffer(data, np.uint8, len(data) - byte_offset, byte_offset)
+                if len(raw) < count * stride:
+                    raw = np.concatenate([raw, np.zeros(count * stride - len(raw), np.uint8)])
+                rows = raw[:count * stride].reshape(count, stride)[:, :elem]
+                return np.ascontiguousarray(rows).view(dt).reshape(count, nc)
+
+            def accessor(self, i, as_float=True):
+                key = (i, as_float)
+                if key in self._acc:
+                    return self._acc[key]
+                a = self.J["accessors"][i]
+                ctype = _COMP[a["componentType"]]
+                nc = _NCOMP[a["type"]]
+                count = a["count"]
+                if a["type"] in ("MAT2", "MAT3") and np.dtype(ctype).itemsize < 4:
+                    # matrix columns are 4-byte aligned
+                    rows = 2 if a["type"] == "MAT2" else 3
+                    colb = (rows * np.dtype(ctype).itemsize + 3) & ~3
+                    cols = self._read_array(a["bufferView"], a.get("byteOffset", 0), "u1", colb * rows, count)
+                    arr = np.concatenate([cols[:, c * colb:c * colb + rows * np.dtype(ctype).itemsize]
+                                          .copy().view(np.dtype(ctype).newbyteorder("<")) for c in range(rows)], 1)
+                elif "bufferView" in a:
+                    arr = self._read_array(a["bufferView"], a.get("byteOffset", 0), ctype, nc, count)
+                else:
+                    arr = np.zeros((count, nc), np.dtype(ctype))
+                sp = a.get("sparse")
+                if sp:
+                    arr = np.array(arr, copy=True)
+                    ic = _COMP[sp["indices"]["componentType"]]
+                    idx = self._read_array(sp["indices"]["bufferView"], sp["indices"].get("byteOffset", 0),
+                                           ic, 1, sp["count"])[:, 0].astype(np.int64)
+                    val = self._read_array(sp["values"]["bufferView"], sp["values"].get("byteOffset", 0),
+                                           ctype, nc, sp["count"])
+                    arr[idx] = val
+                if as_float:
+                    if a.get("normalized") and ctype in _NORM_DIV:
+                        out = np.maximum(arr.astype(np.float64) / _NORM_DIV[ctype], -1.0)
+                    else:
+                        out = arr.astype(np.float64)
+                else:
+                    out = arr.astype(np.int64)
+                self._acc[key] = out
+                return out
+
+            # ------------------------------------------------------------ images
+            def image_descriptor(self, tex_index):
+                """texture index -> ('bytes'|'path', payload) or None."""
+                if tex_index is None:
+                    return None
+                texs = self.J.get("textures", [])
+                if not (0 <= tex_index < len(texs)):
+                    return None
+                t = texs[tex_index]
+                src = t.get("source")
+                ext = t.get("extensions", {})
+                for name in ("EXT_texture_webp", "EXT_texture_avif", "KHR_texture_basisu"):
+                    if name in ext and "source" in ext[name]:
+                        cand = ext[name]["source"]
+                        if name == "KHR_texture_basisu":
+                            if src is None:
+                                self.warn("ktx2", "glTF uses KTX2/Basis textures with no PNG/JPEG "
+                                                  "fallback — those textures can't be shown")
+                            continue
+                        src = cand if (name != "EXT_texture_avif" or src is None) else src
+                        break
+                if src is None:
+                    return None
+                if src in self._images:
+                    return self._images[src]
+                im = self.J["images"][src]
+                desc = None
+                try:
+                    if "bufferView" in im:
+                        desc = ("bytes", bytes(self.view(im["bufferView"])))
+                    elif "uri" in im:
+                        uri = im["uri"]
+                        if uri.startswith("data:"):
+                            desc = ("bytes", self._uri_bytes(uri))
+                        else:
+                            p = os.path.join(self.dir, unquote(uri))
+                            if not os.path.isfile(p):
+                                p = os.path.join(self.dir, uri)
+                            if os.path.isfile(p):
+                                desc = ("path", os.path.abspath(p))
+                            else:
+                                self.warn("img" + uri, f"glTF texture '{unquote(uri)}' not found")
+                except Exception as ex:
+                    self.warn("img%d" % src, f"glTF image {src} unreadable: {ex}")
+                self._images[src] = desc
+                return desc
+
+            def sampler_wrap(self, tex_index):
+                texs = self.J.get("textures", [])
+                if tex_index is None or not (0 <= tex_index < len(texs)):
+                    return (0, 0)
+                si = texs[tex_index].get("sampler")
+                if si is None:
+                    return (0, 0)
+                s = self.J.get("samplers", [])[si]
+                m = {10497: 0, 33071: 1, 33648: 2}
+                return (m.get(s.get("wrapS", 10497), 0), m.get(s.get("wrapT", 10497), 0))
+
+
+        # ======================================================================
+        #  materials
+        # ======================================================================
+        def _engine_color(lin):
+            """glTF factors are LINEAR; the engine shader gamma-decodes (pow 2.2)."""
+            return [float(max(c, 0.0)) ** (1.0 / 2.2) for c in lin]
+
+
+        def _uv_xform(tinfo):
+            """KHR_texture_transform -> 3x3 matrix in the ENGINE's uv space
+            (v flipped: v_engine = 1 - v_gltf)."""
+            ext = (tinfo or {}).get("extensions", {}).get("KHR_texture_transform")
+            if not ext:
+                return None, None
+            off = ext.get("offset", [0.0, 0.0]); rot = ext.get("rotation", 0.0)
+            sc = ext.get("scale", [1.0, 1.0])
+            c, s = math.cos(rot), math.sin(rot)
+            T = np.array([[1, 0, off[0]], [0, 1, off[1]], [0, 0, 1.0]])
+            R = np.array([[c, s, 0], [-s, c, 0], [0, 0, 1.0]])
+            S = np.array([[sc[0], 0, 0], [0, sc[1], 0], [0, 0, 1.0]])
+            M = T @ R @ S
+            F = np.array([[1, 0, 0], [0, -1, 1], [0, 0, 1.0]])      # v -> 1-v (self-inverse)
+            return F @ M @ F, ext.get("texCoord")
+
+
+        def _slot(doc, tinfo, extra=None):
+            if not tinfo or "index" not in tinfo:
+                return None
+            desc = doc.image_descriptor(tinfo["index"])
+            if desc is None:
+                return None
+            xf, tc_override = _uv_xform(tinfo)
+            uvset = tinfo.get("texCoord", 0) if tc_override is None else tc_override
+            ws, wt = doc.sampler_wrap(tinfo["index"])
+            d = {"desc": desc, "uvset": int(uvset), "xf": xf, "wrap": ws, "wrap_t": wt}
+            if extra:
+                d.update(extra)
+            return d
+
+
+        def _load_rgba(desc):
+            from PIL import Image
+            kind, payload = desc
+            img = Image.open(io.BytesIO(payload) if kind == "bytes" else payload)
+            return img.convert("RGBA")
+
+
+        def _sg_solve(diffuse, specular, gloss):
+            """KHR_materials_pbrSpecularGlossiness -> metallic/roughness (the
+            standard conversion used by the Khronos tools).  Linear inputs, (...,3)."""
+            eps, dspec = 1e-6, 0.04
+            one_minus = 1.0 - specular.max(-1)
+
+            def bright(c):
+                return np.sqrt(0.299 * c[..., 0] ** 2 + 0.587 * c[..., 1] ** 2 + 0.114 * c[..., 2] ** 2)
+            pd, ps = bright(diffuse), bright(specular)
+            a = dspec
+            b = pd * one_minus / (1 - a) + ps - 2 * a
+            c = a - ps
+            D = np.maximum(b * b - 4 * a * c, 0.0)
+            metallic = np.clip((-b + np.sqrt(D)) / (2 * a), 0.0, 1.0)
+            metallic = np.where(ps < a, 0.0, metallic)
+            m = metallic[..., None]
+            from_d = diffuse * (one_minus[..., None] / (1 - dspec) / np.maximum(1 - m, eps))
+            from_s = (specular - dspec * (1 - m)) / np.maximum(m, eps)
+            base = np.clip(from_d + (from_s - from_d) * (m * m), 0.0, 1.0)
+            return base, metallic, 1.0 - gloss
+
+
+        def _specgloss_convert(doc, sg, info, slots):
+            """Fill base colour + metal/rough (factors or baked textures)."""
+            dfac = np.asarray(sg.get("diffuseFactor", [1, 1, 1, 1]), float)
+            sfac = np.asarray(sg.get("specularFactor", [1, 1, 1]), float)
+            gfac = float(sg.get("glossinessFactor", 1.0))
+            dslot = _slot(doc, sg.get("diffuseTexture"))
+            sslot = _slot(doc, sg.get("specularGlossinessTexture"))
+            if dslot is None and sslot is None:
+                base, met, rough = _sg_solve(dfac[None, :3], sfac[None, :3], np.array([gfac]))
+                return list(base[0]) + [float(dfac[3])], float(met[0]), float(rough[0])
+            try:
+                from PIL import Image
+                imgs = [(_load_rgba(x["desc"]) if x else None) for x in (dslot, sslot)]
+                size = max((im.size for im in imgs if im is not None), key=lambda z: z[0] * z[1])
+                def arr(im, default):
+                    if im is None:
+                        return np.tile(np.asarray(default, np.float64), (size[1], size[0], 1))
+                    return np.asarray(im.resize(size), np.float64) / 255.0
+                d = arr(imgs[0], [1, 1, 1, 1]); sgl = arr(imgs[1], [1, 1, 1, 1])
+                diffuse = srgb_to_linear(d[..., :3]) * dfac[:3]
+                specular = srgb_to_linear(sgl[..., :3]) * sfac
+                gloss = sgl[..., 3] * gfac
+                base, met, rough = _sg_solve(diffuse, specular, gloss)
+                bc = np.concatenate([linear_to_srgb(base), (d[..., 3:4] * dfac[3])], -1)
+                out_b = io.BytesIO(); Image.fromarray(np.clip(bc * 255 + 0.5, 0, 255).astype(np.uint8), "RGBA").save(out_b, "PNG")
+                mr = np.zeros(base.shape[:2] + (3,), np.uint8); mr[..., 0] = 255
+                mr[..., 1] = np.clip(rough * 255 + 0.5, 0, 255); mr[..., 2] = np.clip(met * 255 + 0.5, 0, 255)
+                out_m = io.BytesIO(); Image.fromarray(mr, "RGB").save(out_m, "PNG")
+                ref = dslot or sslot
+                slots["base_color"] = dict(ref, desc=("bytes", out_b.getvalue()))
+                slots["metallic_roughness"] = dict(ref, desc=("bytes", out_m.getvalue()))
+                return [1.0, 1.0, 1.0, 1.0], 1.0, 1.0
+            except Exception as ex:
+                doc.warn("sg", f"spec-gloss conversion failed ({ex}) — using diffuse only")
+                if dslot:
+                    slots["base_color"] = dslot
+                return list(dfac), 0.0, 1.0 - gfac
+
+
+        def material_info(doc, mi):
+            mats = doc.J.get("materials", [])
+            info = {"name": "default", "base_color": _engine_color([1, 1, 1]) + [1.0], "metallic": 1.0,
+                    "roughness": 1.0, "emissive": [0.0, 0.0, 0.0], "emissive_intensity": 1.0,
+                    "base_color_tex": None, "metallic_roughness_tex": None, "normal_tex": None,
+                    "emissive_tex": None, "occlusion_tex": None, "double_sided": False,
+                    "alpha_mode": "OPAQUE", "alpha_cutoff": 0.5,
+                    "_h3d": {"vertex_colors": True, "slots": {}}}
+            if mi is None or not (0 <= mi < len(mats)):
+                info["metallic"] = 0.0           # spec default material is metal=1 rough=1;
+                info["roughness"] = 1.0          # metal with no env looks black - use dielectric
+                return info
+            m = mats[mi]
+            slots = info["_h3d"]["slots"]
+            info["name"] = m.get("name") or f"material_{mi}"
+            ext = m.get("extensions", {})
+            pbr = m.get("pbrMetallicRoughness", {})
+            base = list(pbr.get("baseColorFactor", [1, 1, 1, 1]))
+            metallic = float(pbr.get("metallicFactor", 1.0))
+            rough = float(pbr.get("roughnessFactor", 1.0))
+            s = _slot(doc, pbr.get("baseColorTexture"))
+            if s: slots["base_color"] = s
+            s = _slot(doc, pbr.get("metallicRoughnessTexture"))
+            if s: slots["metallic_roughness"] = s
+            sg = ext.get("KHR_materials_pbrSpecularGlossiness")
+            if sg is not None and "pbrMetallicRoughness" not in m:
+                slots.pop("base_color", None); slots.pop("metallic_roughness", None)
+                base, metallic, rough = _specgloss_convert(doc, sg, info, slots)
+            nt = m.get("normalTexture")
+            s = _slot(doc, nt, {"scale": float((nt or {}).get("scale", 1.0))})
+            if s: slots["normal"] = s
+            ot = m.get("occlusionTexture")
+            s = _slot(doc, ot, {"strength": float((ot or {}).get("strength", 1.0))})
+            if s: slots["occlusion"] = s
+            s = _slot(doc, m.get("emissiveTexture"))
+            if s: slots["emissive"] = s
+            emis = list(m.get("emissiveFactor", [0, 0, 0]))
+            estr = float(ext.get("KHR_materials_emissive_strength", {}).get("emissiveStrength", 1.0))
+            info["alpha_mode"] = m.get("alphaMode", "OPAQUE").upper()
+            info["alpha_cutoff"] = float(m.get("alphaCutoff", 0.5))
+            info["double_sided"] = bool(m.get("doubleSided", False))
+            tr = ext.get("KHR_materials_transmission")
+            if tr and float(tr.get("transmissionFactor", 0.0)) > 0.01 and info["alpha_mode"] == "OPAQUE":
+                # no refraction pass: approximate glass with alpha blending; rough
+                # (frosted) transmission stays more opaque, volume tints the body
+                t = float(tr.get("transmissionFactor", 0.0))
+                info["alpha_mode"] = "BLEND"
+                base[3] = base[3] * float(np.clip(1.0 - t * (0.72 - 0.45 * rough), 0.25, 1.0))
+                vol = ext.get("KHR_materials_volume")
+                if vol and "attenuationColor" in vol:
+                    ac = vol["attenuationColor"]
+                    base[:3] = [base[i] * (0.5 + 0.5 * float(ac[i])) for i in range(3)]
+            if "KHR_materials_unlit" in ext:
+                # unlit: no lighting response, colour comes through the emissive path
+                emis = list(base[:3])
+                estr = 1.0
+                if "base_color" in slots:
+                    slots["emissive"] = dict(slots["base_color"])
+                base = [0.0, 0.0, 0.0, base[3]]
+                metallic, rough = 0.0, 1.0
+                info["_h3d"]["unlit"] = True
+            info["base_color"] = _engine_color(base[:3]) + [float(base[3])]
+            info["metallic"] = float(np.clip(metallic, 0, 1))
+            info["roughness"] = float(np.clip(rough, 0, 1))
+            info["emissive"] = [float(c) for c in emis]
+            info["emissive_intensity"] = estr
+            return info
+
+
+        # ======================================================================
+        #  geometry
+        # ======================================================================
+        def _expand_mode(mode, idx, n):
+            """-> (triangles (T,3) or None, lines (L,2) or None, points (P,) or None)."""
+            if idx is None:
+                idx = np.arange(n, dtype=np.int64)
+            if mode == 4:
+                k = len(idx) // 3 * 3
+                return idx[:k].reshape(-1, 3), None, None
+            if mode == 5:            # strip
+                if len(idx) < 3:
+                    return np.zeros((0, 3), np.int64), None, None
+                i = np.arange(len(idx) - 2)
+                a, b, c = idx[i], idx[i + 1], idx[i + 2]
+                odd = (i % 2) == 1
+                t = np.stack([a, np.where(odd, c, b), np.where(odd, b, c)], 1)
+                return t, None, None
+            if mode == 6:            # fan
+                if len(idx) < 3:
+                    return np.zeros((0, 3), np.int64), None, None
+                i = np.arange(1, len(idx) - 1)
+                return np.stack([np.full(len(i), idx[0]), idx[i], idx[i + 1]], 1), None, None
+            if mode == 1:
+                k = len(idx) // 2 * 2
+                return None, idx[:k].reshape(-1, 2), None
+            if mode == 3:
+                return None, np.stack([idx[:-1], idx[1:]], 1), None
+            if mode == 2:
+                return None, np.stack([idx, np.roll(idx, -1)], 1), None
+            if mode == 0:
+                return None, None, idx
+            return None, None, None
+
+
+        def _flat_normals(P, tris):
+            a, b, c = P[tris[:, 0]], P[tris[:, 1]], P[tris[:, 2]]
+            fn = np.cross(b - a, c - a)
+            ln = np.linalg.norm(fn, axis=1, keepdims=True)
+            return fn / np.maximum(ln, 1e-20)
+
+
+        def _line_geometry(P, lines, width):
+            """Line segments -> thin square tubes (8 triangles each)."""
+            a, b = P[lines[:, 0]], P[lines[:, 1]]
+            d = b - a
+            ln = np.linalg.norm(d, axis=1, keepdims=True)
+            keep = ln[:, 0] > 1e-12
+            a, b, d, ln, src = a[keep], b[keep], d[keep], ln[keep], lines[keep]
+            d = d / ln
+            up = np.where(np.abs(d[:, 1:2]) < 0.9, np.array([[0, 1.0, 0]]), np.array([[1.0, 0, 0]]))
+            u = np.cross(d, up); u /= np.linalg.norm(u, axis=1, keepdims=True)
+            v = np.cross(d, u)
+            h = width * 0.5
+            offs = [u * h + v * h, -u * h + v * h, -u * h - v * h, u * h - v * h]
+            verts, tris, srcv = [], [], []
+            n = len(a)
+            for k in range(4):
+                verts.append(a + offs[k]); verts.append(b + offs[k])
+            V = np.stack(verts, 1).reshape(-1, 3)             # per segment 8 verts
+            base = np.arange(n)[:, None] * 8
+            quad = []
+            for k in range(4):
+                k2 = (k + 1) % 4
+                i0, i1, j0, j1 = 2 * k, 2 * k + 1, 2 * k2, 2 * k2 + 1
+                quad += [[i0, j0, j1], [i0, j1, i1]]
+            T = (base[:, :, None] + np.array(quad)[None]).reshape(-1, 3)
+            which = np.tile(np.array([0, 1] * 4), n).reshape(n, 8)
+            srcv = np.where(which == 0, src[:, :1], src[:, 1:2]).ravel()
+            return V, T, srcv
+
+
+        def _point_geometry(P, pts, size):
+            """Points -> small octahedra."""
+            h = size * 0.5
+            o = np.array([[h, 0, 0], [-h, 0, 0], [0, h, 0], [0, -h, 0], [0, 0, h], [0, 0, -h]])
+            faces = np.array([[0, 2, 4], [2, 1, 4], [1, 3, 4], [3, 0, 4], [2, 0, 5], [1, 2, 5], [3, 1, 5], [0, 3, 5]])
+            c = P[pts]
+            V = (c[:, None, :] + o[None]).reshape(-1, 3)
+            T = (np.arange(len(pts))[:, None, None] * 6 + faces[None]).reshape(-1, 3)
+            srcv = np.repeat(pts, 6)
+            return V, T, srcv
+
+
+        class _Prim:
+            __slots__ = ("pos", "nrm", "tan", "uv0", "uv1", "col", "tris", "mat", "flat_shaded", "skin_j")
+
+
+        def _decode_primitive(doc, prim, mesh_weights, node_weights, model_scale):
+            attrs = prim.get("attributes", {})
+            if "POSITION" not in attrs:
+                return None
+            ext = prim.get("extensions", {})
+            if "KHR_draco_mesh_compression" in ext:
+                return _decode_draco(doc, prim, ext["KHR_draco_mesh_compression"])
+            P = doc.accessor(attrs["POSITION"]).copy()
+            n = len(P)
+            N = doc.accessor(attrs["NORMAL"]).copy() if "NORMAL" in attrs else None
+            T = doc.accessor(attrs["TANGENT"]).copy() if "TANGENT" in attrs else None
+            UV0 = doc.accessor(attrs["TEXCOORD_0"]) if "TEXCOORD_0" in attrs else None
+            UV1 = doc.accessor(attrs["TEXCOORD_1"]) if "TEXCOORD_1" in attrs else None
+            COL = doc.accessor(attrs["COLOR_0"]) if "COLOR_0" in attrs else None
+            # ---- morph targets (default weights) ----
+            targets = prim.get("targets", [])
+            weights = node_weights if node_weights is not None else mesh_weights
+            if targets and weights:
+                for w, tg in zip(weights, targets):
+                    if not w:
+                        continue
+                    if "POSITION" in tg:
+                        P += w * doc.accessor(tg["POSITION"])
+                    if "NORMAL" in tg and N is not None:
+                        N += w * doc.accessor(tg["NORMAL"])
+                    if "TANGENT" in tg and T is not None:
+                        T[:, :3] += w * doc.accessor(tg["TANGENT"])
+            idx = doc.accessor(prim["indices"], as_float=False)[:, 0] if "indices" in prim else None
+            mode = prim.get("mode", 4)
+            tris, lines, pts = _expand_mode(mode, idx, n)
+            pr = _Prim()
+            pr.mat = prim.get("material")
+            pr.flat_shaded = False
+            if tris is None:
+                # lines / points -> visible thin geometry
+                if lines is not None and len(lines):
+                    V, Tr, src = _line_geometry(P, lines, max(model_scale * 0.004, 1e-4))
+                elif pts is not None and len(pts):
+                    V, Tr, src = _point_geometry(P, pts, max(model_scale * 0.012, 1e-4))
+                else:
+                    return None
+                pr.pos = V
+                pr.tris = Tr
+                pr.nrm = None
+                pr.flat_shaded = True
+                pr.tan = None
+                pr.uv0 = UV0[src] if UV0 is not None else None
+                pr.uv1 = UV1[src] if UV1 is not None else None
+                pr.col = COL[src] if COL is not None else None
+                return pr
+            if not len(tris):
+                return None
+            pr.pos, pr.tris = P, tris.astype(np.int64)
+            pr.tan = T
+            pr.uv0, pr.uv1, pr.col = UV0, UV1, COL
+            if N is None:
+                # spec: missing normals MUST be flat -> un-index the primitive
+                flat = pr.tris.ravel()
+                fn = np.repeat(_flat_normals(P, pr.tris), 3, axis=0)
+                pr.pos = P[flat]; pr.nrm = fn
+                pr.tan = None if T is None else T[flat]
+                pr.uv0 = None if UV0 is None else UV0[flat]
+                pr.uv1 = None if UV1 is None else UV1[flat]
+                pr.col = None if COL is None else COL[flat]
+                pr.tris = np.arange(len(flat)).reshape(-1, 3)
+                pr.flat_shaded = True
+            else:
+                pr.nrm = N
+            pr.skin_j = attrs.get("JOINTS_0")
+            return pr
+
+
+        def _decode_draco(doc, prim, dext):
+            try:
+                import DracoPy
+            except ImportError:
+                doc.warn("draco", "glTF is Draco-compressed — install the decoder with:  pip install DracoPy")
+                return None
+            data = doc.view(dext["bufferView"])
+            dm = DracoPy.decode(bytes(data))
+            pr = _Prim()
+            pr.mat = prim.get("material")
+            pr.flat_shaded = False
+            pts = np.asarray(dm.points, np.float64).reshape(-1, 3)
+            faces = np.asarray(dm.faces, np.int64).reshape(-1, 3)
+            by_id = {}
+            for a in getattr(dm, "attributes", []) or []:
+                uid = a.get("unique_id") if isinstance(a, dict) else getattr(a, "unique_id", None)
+                dat = a.get("data") if isinstance(a, dict) else getattr(a, "data", None)
+                if uid is not None and dat is not None:
+                    by_id[uid] = np.asarray(dat, np.float64)
+            amap = dext.get("attributes", {})
+
+            def get(name, comps):
+                uid = amap.get(name)
+                if uid is None or uid not in by_id:
+                    return None
+                a = by_id[uid].reshape(len(pts), -1)
+                acc = doc.J["accessors"][prim["attributes"][name]]
+                if acc.get("normalized") and _COMP[acc["componentType"]] in _NORM_DIV:
+                    a = a / _NORM_DIV[_COMP[acc["componentType"]]]
+                return a[:, :comps]
+            pr.pos = pts
+            pr.tris = faces
+            pr.nrm = get("NORMAL", 3)
+            if pr.nrm is None and getattr(dm, "normals", None) is not None and len(dm.normals):
+                pr.nrm = np.asarray(dm.normals, np.float64).reshape(-1, 3)
+            pr.tan = get("TANGENT", 4)
+            pr.uv0 = get("TEXCOORD_0", 2)
+            if pr.uv0 is None and getattr(dm, "tex_coord", None) is not None and len(dm.tex_coord):
+                pr.uv0 = np.asarray(dm.tex_coord, np.float64).reshape(-1, 2)
+            pr.uv1 = get("TEXCOORD_1", 2)
+            pr.col = get("COLOR_0", 4)
+            pr.skin_j = None
+            if pr.nrm is None:
+                flat = faces.ravel()
+                pr.nrm = np.repeat(_flat_normals(pts, faces), 3, axis=0)
+                pr.pos = pts[flat]
+                for a in ("tan", "uv0", "uv1", "col"):
+                    v = getattr(pr, a)
+                    if v is not None:
+                        setattr(pr, a, v[flat])
+                pr.tris = np.arange(len(flat)).reshape(-1, 3)
+            return pr
+
+
+        # ======================================================================
+        #  scene traversal
+        # ======================================================================
+        def _node_local(n):
+            if "matrix" in n:
+                return np.asarray(n["matrix"], float).reshape(4, 4).T.copy()
+            return _trs_matrix(n.get("translation", [0, 0, 0]), n.get("rotation", [0, 0, 0, 1]),
+                               n.get("scale", [1, 1, 1]))
+
+
+        def load_gltf(path, logger=None):
+            """-> (parts, lights)."""
+            doc = GltfDocument(path, logger)
+            J = doc.J
+            nodes = J.get("nodes", [])
+            meshes = J.get("meshes", [])
+            # ---- choose scene ----
+            scenes = J.get("scenes", [])
+            if scenes:
+                si = J.get("scene", 0)
+                if not (0 <= si < len(scenes)):
+                    si = 0
+                roots = list(scenes[si].get("nodes", []))
+                if len(scenes) > 1:
+                    _log(logger, "info", f"glTF has {len(scenes)} scenes — importing scene "
+                                         f"'{scenes[si].get('name', si)}'")
+            else:
+                child = {c for n in nodes for c in n.get("children", [])}
+                roots = [i for i in range(len(nodes)) if i not in child]
+            # ---- world matrices (default pose) ----
+            world = {}
+            visible = {}
+            parent = {}
+            stack = [(r, np.eye(4), True) for r in roots]
+            order = []
+            guard = 0
+            while stack and guard < 1_000_000:
+                guard += 1
+                i, PW, vis = stack.pop()
+                if i in world or not (0 <= i < len(nodes)):
+                    continue
+                n = nodes[i]
+                v = vis and n.get("extensions", {}).get("KHR_node_visibility", {}).get("visible", True)
+                W = PW @ _node_local(n)
+                world[i] = W
+                visible[i] = v
+                order.append(i)
+                for c in n.get("children", []):
+                    parent[c] = i
+                    stack.append((c, W, v))
+            # joints that are not in the scene graph still need matrices
+            for sk in J.get("skins", []):
+                for j in sk.get("joints", []):
+                    if j not in world and 0 <= j < len(nodes):
+                        chain = [j]
+                        while chain[-1] in parent and parent[chain[-1]] not in world:
+                            chain.append(parent[chain[-1]])
+                        W = np.eye(4)
+                        for k in reversed(chain):
+                            W = W @ _node_local(nodes[k])
+                        world[j] = W
+            # model size estimate (for line/point widths)
+            allp = []
+            for i in order:
+                mi = nodes[i].get("mesh")
+                if mi is None:
+                    continue
+                for p in meshes[mi].get("primitives", []):
+                    a = J["accessors"][p["attributes"]["POSITION"]] if "POSITION" in p.get("attributes", {}) else None
+                    if a and "min" in a and "max" in a:
+                        lo = np.r_[a["min"][:3], 1.0] @ world[i].T
+                        hi = np.r_[a["max"][:3], 1.0] @ world[i].T
+                        allp += [lo[:3], hi[:3]]
+            model_scale = float(np.linalg.norm(np.ptp(np.array(allp), 0))) if allp else 1.0
+            if not np.isfinite(model_scale) or model_scale <= 0:
+                model_scale = 1.0
+            # ---- primitives ----
+            groups = {}
+            lights = []
+            mat_cache = {}
+            prim_cache = {}
+            lp = J.get("extensions", {}).get("KHR_lights_punctual", {}).get("lights", [])
+            for i in order:
+                n = nodes[i]
+                if not visible.get(i, True):
+                    continue
+                W = world[i]
+                le = n.get("extensions", {}).get("KHR_lights_punctual")
+                if le is not None and 0 <= le.get("light", -1) < len(lp):
+                    lights.append(_light_desc(lp[le["light"]], W, n.get("name", f"light{i}")))
+                mi = n.get("mesh")
+                if mi is None or not (0 <= mi < len(meshes)):
+                    continue
+                mesh = meshes[mi]
+                inst = _instances(doc, n)
+                skin = None
+                if "skin" in n and 0 <= n["skin"] < len(J.get("skins", [])):
+                    skin = J["skins"][n["skin"]]
+                for pi, prim in enumerate(mesh.get("primitives", [])):
+                    key = (mi, pi, tuple(n.get("weights", []) or []))
+                    if key not in prim_cache:
+                        try:
+                            prim_cache[key] = _decode_primitive(doc, prim, mesh.get("weights"),
+                                                                n.get("weights"), model_scale)
+                        except Exception as ex:
+                            doc.warn(f"prim{mi}_{pi}", f"glTF mesh {mesh.get('name', mi)} primitive {pi} "
+                                                       f"unreadable ({ex}) — skipped")
+                            prim_cache[key] = None
+                    pr = prim_cache[key]
+                    if pr is None:
+                        continue
+                    pos, nrm, tan = pr.pos, pr.nrm, pr.tan
+                    if skin is not None and getattr(pr, "skin_j", None) is not None and not pr.flat_shaded:
+                        pos, nrm, tan = _apply_skin(doc, prim, skin, world, pos, nrm, tan)
+                        mats = [np.eye(4)]            # skinned: node transform ignored (spec)
+                    else:
+                        mats = [W @ M for M in inst] if inst is not None else [W]
+                    mk = pr.mat
+                    if mk not in mat_cache:
+                        mat_cache[mk] = material_info(doc, mk)
+                    minfo = mat_cache[mk]
+                    g = groups.setdefault(mk, {"info": minfo, "chunks": []})
+                    for M in mats:
+                        g["chunks"].append(_bake_chunk(pr, pos, nrm, tan, M))
+            parts = []
+            for mk, g in groups.items():
+                parts.append(_merge_chunks(g["info"], g["chunks"]))
+            _log(logger, "info", f"glTF imported: {os.path.basename(path)} ({len(order)} nodes, "
+                                 f"{len(parts)} material part(s), {len(lights)} light(s))")
+            return parts, lights
+
+
+        def _instances(doc, n):
+            ext = n.get("extensions", {}).get("EXT_mesh_gpu_instancing")
+            if not ext:
+                return None
+            a = ext.get("attributes", {})
+            cnt = None
+            T = doc.accessor(a["TRANSLATION"]) if "TRANSLATION" in a else None
+            R = doc.accessor(a["ROTATION"]) if "ROTATION" in a else None
+            S = doc.accessor(a["SCALE"]) if "SCALE" in a else None
+            for x in (T, R, S):
+                if x is not None:
+                    cnt = len(x)
+            if not cnt:
+                return None
+            Rm = _quat_mats(R) if R is not None else np.repeat(np.eye(3)[None], cnt, 0)
+            out = []
+            for k in range(cnt):
+                M = np.eye(4)
+                M[:3, :3] = Rm[k] * (S[k][None, :] if S is not None else 1.0)
+                if T is not None:
+                    M[:3, 3] = T[k]
+                out.append(M)
+            return out
+
+
+        def _apply_skin(doc, prim, skin, world, pos, nrm, tan):
+            attrs = prim["attributes"]
+            joints = skin.get("joints", [])
+            if not joints:
+                return pos, nrm, tan
+            if "inverseBindMatrices" in skin:
+                ibm = doc.accessor(skin["inverseBindMatrices"]).reshape(-1, 4, 4).transpose(0, 2, 1)
+            else:
+                ibm = np.repeat(np.eye(4)[None], len(joints), 0)
+            J = np.stack([world.get(j, np.eye(4)) for j in joints]) @ ibm[:len(joints)]
+            n = len(pos)
+            Msum = np.zeros((n, 4, 4))
+            wsum = np.zeros(n)
+            k = 0
+            while f"JOINTS_{k}" in attrs and f"WEIGHTS_{k}" in attrs:
+                jj = doc.accessor(attrs[f"JOINTS_{k}"], as_float=False)
+                ww = doc.accessor(attrs[f"WEIGHTS_{k}"])
+                jj = np.clip(jj, 0, len(J) - 1)
+                for c in range(jj.shape[1]):
+                    w = ww[:, c]
+                    Msum += w[:, None, None] * J[jj[:, c]]
+                    wsum += w
+                k += 1
+            bad = wsum < 1e-8
+            Msum[bad] = np.eye(4)
+            Msum[~bad] /= wsum[~bad, None, None]
+            p = np.einsum("nij,nj->ni", Msum[:, :3, :3], pos) + Msum[:, :3, 3]
+            nn = None
+            if nrm is not None:
+                inv_t = np.linalg.inv(Msum[:, :3, :3]).transpose(0, 2, 1)
+                nn = np.einsum("nij,nj->ni", inv_t, nrm)
+                nn /= np.maximum(np.linalg.norm(nn, axis=1, keepdims=True), 1e-20)
+            tt = None
+            if tan is not None:
+                t3 = np.einsum("nij,nj->ni", Msum[:, :3, :3], tan[:, :3])
+                t3 /= np.maximum(np.linalg.norm(t3, axis=1, keepdims=True), 1e-20)
+                sign = np.sign(np.linalg.det(Msum[:, :3, :3])); sign[sign == 0] = 1
+                tt = np.concatenate([t3, (tan[:, 3] * sign)[:, None]], 1)
+            return p, nn, tt
+
+
+        def _bake_chunk(pr, pos, nrm, tan, M):
+            M3 = M[:3, :3]
+            P = pos @ M3.T + M[:3, 3]
+            det = float(np.linalg.det(M3))
+            Nn = None
+            if nrm is not None:
+                try:
+                    Ninv = np.linalg.inv(M3).T
+                except np.linalg.LinAlgError:
+                    Ninv = M3
+                Nn = nrm @ Ninv.T
+                Nn /= np.maximum(np.linalg.norm(Nn, axis=1, keepdims=True), 1e-20)
+            else:
+                Nn = np.repeat(_flat_normals(P, pr.tris), 3, axis=0)[:len(P)] if False else None
+            Tt = None
+            if tan is not None:
+                t3 = tan[:, :3] @ M3.T
+                t3 /= np.maximum(np.linalg.norm(t3, axis=1, keepdims=True), 1e-20)
+                Tt = np.concatenate([t3, (tan[:, 3] * (1 if det >= 0 else -1))[:, None]], 1)
+            tris = pr.tris if det >= 0 else pr.tris[:, [0, 2, 1]]
+            if Nn is None:
+                # line/point geometry: flat normals from the triangles
+                flat = tris.ravel()
+                Nn = np.repeat(_flat_normals(P, tris), 3, axis=0)
+                P = P[flat]
+                uv0 = None if pr.uv0 is None else pr.uv0[flat]
+                uv1 = None if pr.uv1 is None else pr.uv1[flat]
+                col = None if pr.col is None else pr.col[flat]
+                tris = np.arange(len(flat)).reshape(-1, 3)
+                return {"pos": P, "nrm": Nn, "tan": None, "uv0": uv0, "uv1": uv1, "col": col, "tris": tris}
+            return {"pos": P, "nrm": Nn, "tan": Tt, "uv0": pr.uv0, "uv1": pr.uv1, "col": pr.col, "tris": tris}
+
+
+        def _merge_chunks(info, chunks):
+            counts = [len(c["pos"]) for c in chunks]
+
+            def cat(key, width, fill):
+                if all(c[key] is None for c in chunks):
+                    return None
+                out = []
+                for c, n in zip(chunks, counts):
+                    v = c[key]
+                    if v is None:
+                        out.append(np.tile(np.asarray(fill, float), (n, 1)))
+                    else:
+                        v = np.asarray(v, float)
+                        if v.shape[1] < width:      # COLOR_0 vec3 -> rgba
+                            v = np.concatenate([v, np.ones((len(v), width - v.shape[1]))], 1)
+                        out.append(v[:, :width])
+                return np.concatenate(out)
+            pos = np.concatenate([c["pos"] for c in chunks])
+            nrm = np.concatenate([c["nrm"] for c in chunks])
+            uv0 = cat("uv0", 2, [0, 0])
+            uv1 = cat("uv1", 2, [0, 0])
+            col = cat("col", 4, [1, 1, 1, 1])
+            has_tan = all(c["tan"] is not None for c in chunks)
+            tan = np.concatenate([c["tan"] for c in chunks]) if has_tan else None
+            offs = np.concatenate([[0], np.cumsum(counts)[:-1]])
+            tris = np.concatenate([c["tris"] + o for c, o in zip(chunks, offs)])
+            # glTF uv origin is top-left; the engine samples bottom-left
+            if uv0 is not None:
+                uv0 = np.c_[uv0[:, 0], 1.0 - uv0[:, 1]]
+            if uv1 is not None:
+                uv1 = np.c_[uv1[:, 0], 1.0 - uv1[:, 1]]
+            if col is not None:
+                # engine multiplies before its gamma-2.2 decode: pre-encode linear rgb
+                col = np.c_[np.clip(col[:, :3], 0, None) ** (1 / 2.2), np.clip(col[:, 3], 0, 1)]
+            # drop unreferenced vertices, then weld duplicates
+            used = np.zeros(len(pos), bool); used[tris.ravel()] = True
+            if not used.all():
+                remap = np.cumsum(used) - 1
+                tris = remap[tris]
+                sel = used
+                pos, nrm = pos[sel], nrm[sel]
+                uv0 = None if uv0 is None else uv0[sel]; uv1 = None if uv1 is None else uv1[sel]
+                col = None if col is None else col[sel]; tan = None if tan is None else tan[sel]
+            first, inv = weld(pos, nrm, uv0, uv1, col, tan)
+            return {"name": info["name"], "positions": pos[first].astype(np.float32),
+                    "normals": nrm[first].astype(np.float32),
+                    "uv0": None if uv0 is None else uv0[first].astype(np.float32),
+                    "uv1": None if uv1 is None else uv1[first].astype(np.float32),
+                    "colors": None if col is None else col[first].astype(np.float32),
+                    "tangents": None if tan is None else tan[first].astype(np.float32),
+                    "indices": inv[tris].astype(np.uint32).ravel(),
+                    "material_info": info}
+
+
+        def _light_desc(L, W, name):
+            t = L.get("type", "point")
+            col = L.get("color", [1, 1, 1])
+            inten = float(L.get("intensity", 1.0))
+            d = W[:3, :3] @ np.array([0, 0, -1.0])
+            d /= max(np.linalg.norm(d), 1e-12)
+            if t == "directional":
+                kind, energy = "sun", inten / 683.0 * 4.0          # lux -> ~W/m2 heuristic
+            else:
+                kind = "spot" if t == "spot" else "point"
+                energy = inten * 4 * math.pi / 683.0 * 100.0         # candela -> ~W
+            spot = L.get("spot", {})
+            outer = float(spot.get("outerConeAngle", math.pi / 4))
+            inner = float(spot.get("innerConeAngle", 0.0))
+            return {"kind": kind, "name": L.get("name") or name, "color": tuple(float(c) for c in col),
+                    "energy": energy, "position": tuple(float(x) for x in W[:3, 3]),
+                    "direction": tuple(float(x) for x in d), "spotsize": outer * 2.0,
+                    "spotblend": float(1.0 - inner / outer) if outer > 0 else 0.15,
+                    "dist": float(L.get("range", 0.0) or 0.0)}
+        # ------------------------------------------------ h3d_blend
+        # ---------------------------------------------------------------------------
+        #  Heaven3D .blend importer (pure Python + numpy, no Blender needed).
+        #  Blender 2.4x -> 5.x, compressed or not, 32/64-bit, little/big endian.
+        #  Output: list of material "parts" (world transform + Z-up->Y-up baked in)
+        #  and a list of light descriptors.
+        # ---------------------------------------------------------------------------
+        import os, math, struct
+        import numpy as np
+
+        ZUP_TO_YUP = np.array([[1.0, 0, 0, 0], [0, 0, 1.0, 0], [0, -1.0, 0, 0],
+                               [0, 0, 0, 1.0]])
+
+        OB_EMPTY, OB_MESH, OB_CURVE, OB_SURF, OB_FONT, OB_MBALL = 0, 1, 2, 3, 4, 5
+        OB_LAMP, OB_CAMERA, OB_ARMATURE = 10, 11, 25
+        LEGACY_SUBSURF_LIMIT = True
+        OB_DUPLICOLLECTION = 1 << 8
+        OB_HIDE_RENDER = (1 << 2) | (1 << 0)    # disabled in renders OR viewports
+        ME_SMOOTH = 1
+        ME_SHARP = 1 << 9
+        ME_AUTOSMOOTH = 1 << 5
+
+        # Blender 5.x AttributeStorage data types / domains
+        _ATTR5_KIND = {0: "bool", 1: "int8", 2: "int16_2d", 3: "int", 4: "int2",
+                       5: "float", 6: "float2", 7: "float3", 8: "float4x4",
+                       9: "color_byte", 10: "color_float", 11: "quat"}
+        _DOMAINS = {0: "point", 1: "edge", 2: "face", 3: "corner"}
+        # CustomData layer types (stable ids)
+        _CD_KIND = {10: "float", 11: "int", 17: "color_byte", 45: "int8",
+                    47: "color_float", 48: "float3", 49: "float2", 50: "bool"}
+        _KIND_DTYPE = {"bool": ("u1", 1), "int8": ("i1", 1), "int": ("i4", 1),
+                       "int2": ("i4", 2), "int16_2d": ("i2", 2), "float": ("f4", 1),
+                       "float2": ("f4", 2), "float3": ("f4", 3),
+                       "color_byte": ("u1", 4), "color_float": ("f4", 4),
+                       "quat": ("f4", 4), "float4x4": ("f4", 16)}
+
+
+        def _log(logger, level, msg):
+            if logger is not None:
+                try:
+                    getattr(logger, level)(msg)
+                    return
+                except Exception:
+                    pass
+
+
+        # ======================================================================
+        #  matrices
+        # ======================================================================
+        def _euler_mat3(e, mode):
+            """Blender eulO_to_mat3: rotation order XYZ means X applied first."""
+            cx, cy, cz = (math.cos(a) for a in e)
+            sx, sy, sz = (math.sin(a) for a in e)
+            X = np.array([[1, 0, 0], [0, cx, -sx], [0, sx, cx]])
+            Y = np.array([[cy, 0, sy], [0, 1, 0], [-sy, 0, cy]])
+            Z = np.array([[cz, -sz, 0], [sz, cz, 0], [0, 0, 1]])
+            R = {"X": X, "Y": Y, "Z": Z}
+            order = {1: "XYZ", 2: "XZY", 3: "YXZ", 4: "YZX", 5: "ZXY", 6: "ZYX"}.get(mode, "XYZ")
+            M = np.eye(3)
+            for ax in order:                     # first axis applied first
+                M = R[ax] @ M
+            return M
+
+
+        def _quat_mat3(q):
+            w, x, y, z = q
+            n = math.sqrt(w * w + x * x + y * y + z * z) or 1.0
+            w, x, y, z = w / n, x / n, y / n, z / n
+            return np.array([
+                [1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)],
+                [2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)],
+                [2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)]])
+
+
+        def _axis_angle_mat3(axis, angle):
+            a = np.asarray(axis, float)
+            n = np.linalg.norm(a)
+            if n < 1e-12:
+                return np.eye(3)
+            a = a / n
+            c, s = math.cos(angle), math.sin(angle)
+            x, y, z = a
+            return np.array([[c + x * x * (1 - c), x * y * (1 - c) - z * s, x * z * (1 - c) + y * s],
+                             [y * x * (1 - c) + z * s, c + y * y * (1 - c), y * z * (1 - c) - x * s],
+                             [z * x * (1 - c) - y * s, z * y * (1 - c) + x * s, c + z * z * (1 - c)]])
+
+
+        def _blender_mat4(arr):
+            """float[4][4] (column-major, m[3] = translation) -> numpy row-major."""
+            a = np.asarray(arr, float).reshape(4, 4)
+            return a.T.copy()
+
+
+        class _Ctx:
+            def __init__(self, bf, path, logger):
+                self.bf = bf
+                self.path = path
+                self.dir = os.path.dirname(os.path.abspath(path))
+                self.log = logger
+                self.world_cache = {}
+                self.warned = set()
+                self.images = {}
+                self.materials = {}
+
+            def warn_once(self, key, msg):
+                if key not in self.warned:
+                    self.warned.add(key)
+                    _log(self.log, "warn", msg)
+
+
+        # ======================================================================
+        #  objects
+        # ======================================================================
+        def _local_matrix(ob):
+            loc = ob.floats("loc", np.zeros(3))
+            dloc = ob.floats("dloc", np.zeros(3))
+            size = ob.floats("size", np.ones(3))
+            dsc = ob.floats("dscale", None)
+            if dsc is None:
+                dsc = ob.floats("dsize", None)
+                dsc = np.ones(3) if dsc is None else (np.ones(3) + dsc if ob.bf.version < 260 else dsc)
+            if not np.any(dsc):
+                dsc = np.ones(3)
+            mode = ob.int("rotmode", 1)
+            if mode == 0:            # quaternion
+                R = _quat_mat3(ob.floats("dquat", np.array([1.0, 0, 0, 0]))) @ \
+                    _quat_mat3(ob.floats("quat", np.array([1.0, 0, 0, 0])))
+            elif mode == -1 or mode == 65535:   # axis-angle (short -1)
+                R = _axis_angle_mat3(ob.floats("drotAxis", np.array([0, 1.0, 0])), ob.float("drotAngle")) @ \
+                    _axis_angle_mat3(ob.floats("rotAxis", np.array([0, 1.0, 0])), ob.float("rotAngle"))
+            else:
+                R = _euler_mat3(ob.floats("drot", np.zeros(3)), mode) @ \
+                    _euler_mat3(ob.floats("rot", np.zeros(3)), mode)
+            M = np.eye(4)
+            M[:3, :3] = R @ np.diag(size * dsc)
+            M[:3, 3] = loc + dloc
+            return M
+
+
+        def _world_matrix(ctx, ob, depth=0):
+            key = ob.addr()
+            if key in ctx.world_cache:
+                return ctx.world_cache[key]
+            M = None
+            om = ob.floats("obmat")
+            if om is not None and np.abs(om).sum() > 1e-12 and abs(om[3][3] - 1.0) < 1e-4:
+                M = _blender_mat4(om)               # Blender <= 3.x stores it
+            if M is None:
+                M = _local_matrix(ob)
+                par = ob.deref("parent", "Object")
+                if par is not None and depth < 64:
+                    PW = _world_matrix(ctx, par, depth + 1)
+                    pinv = ob.floats("parentinv")
+                    PI = _blender_mat4(pinv) if pinv is not None else np.eye(4)
+                    M = PW @ PI @ M
+            ctx.world_cache[key] = M
+            return M
+
+
+        def _scene_objects(ctx):
+            """-> list of (Object view, world 4x4 Blender space)."""
+            bf = ctx.bf
+            scene = None
+            glob = bf.blocks_by_code(b"GLOB")
+            vl_ptr = 0
+            if glob:
+                g = bf.view(glob[0], "FileGlobal")
+                if g is not None:
+                    scene = g.deref("curscene", "Scene")
+                    vl_ptr = g.ptr("cur_view_layer")
+            if scene is None:
+                scs = bf.blocks_by_code(b"SC\0\0")
+                if scs:
+                    scene = bf.view(scs[0], "Scene")
+            obs = []
+            if scene is not None:
+                if scene.has("view_layers"):
+                    layers = bf.listbase(scene.sub("view_layers"), "ViewLayer")
+                    vl = next((l for l in layers if l.addr() == vl_ptr), None) or (layers[0] if layers else None)
+                    if vl is not None:
+                        for base in bf.listbase(vl.sub("object_bases"), "Base"):
+                            o = base.deref("object", "Object")
+                            if o is not None:
+                                obs.append(o)
+                elif scene.has("base"):
+                    lay = scene.int("lay", 0xFFFFFFFF) or 0xFFFFFFFF
+                    for base in bf.listbase(scene.sub("base"), "Base"):
+                        o = base.deref("object", "Object")
+                        if o is None:
+                            continue
+                        blay = base.int("lay", o.int("lay", 1))
+                        if blay and not (blay & lay):
+                            continue
+                        obs.append(o)
+            if not obs:
+                obs = [bf.view(b, "Object") for b in bf.blocks_by_code(b"OB\0\0")]
+                obs = [o for o in obs if o is not None]
+            out = []
+            seen = set()
+            for o in obs:
+                if o.addr() in seen:
+                    continue
+                seen.add(o.addr())
+                if o.int("restrictflag", 0) & OB_HIDE_RENDER:
+                    continue
+                out.append((o, _world_matrix(ctx, o)))
+            # collection instances (recursive)
+            final = []
+
+            def expand(o, W, depth):
+                final.append((o, W))
+                if depth > 8 or not (o.int("transflag", 0) & OB_DUPLICOLLECTION):
+                    return
+                grp = o.deref("dup_group")
+                if grp is None:
+                    return
+                for co, cw in _collection_objects(ctx, grp, depth):
+                    expand(co, W @ cw, depth + 1)
+
+            for o, W in out:
+                expand(o, W, 0)
+            return final
+
+
+        def _collection_objects(ctx, coll, depth):
+            """Objects of a Collection/Group with transforms relative to the
+            instancing empty (instance offset applied)."""
+            bf = ctx.bf
+            off = coll.floats("instance_offset", None)
+            if off is None:
+                off = coll.floats("dupli_ofs", np.zeros(3))
+            T = np.eye(4); T[:3, 3] = -np.asarray(off)
+            out = []
+            seen = set()
+
+            def walk(c, d):
+                if d > 16:
+                    return
+                for co in bf.listbase(c.sub("gobject")):
+                    o = co.deref("ob", "Object")
+                    if o is None or o.addr() in seen:
+                        continue
+                    seen.add(o.addr())
+                    if o.int("restrictflag", 0) & OB_HIDE_RENDER:
+                        continue
+                    out.append((o, T @ _world_matrix(ctx, o)))
+                if c.has("children"):
+                    for ch in bf.listbase(c.sub("children")):
+                        cc = ch.deref("collection")
+                        if cc is not None:
+                            walk(cc, d + 1)
+
+            walk(coll, 0)
+            return out
+
+
+        # ======================================================================
+        #  mesh decoding
+        # ======================================================================
+        def _read_raw(bf, ptr, ctx_view, kind, count):
+            dt, comps = _KIND_DTYPE[kind]
+            a = bf.array(ptr, dt, count * comps, ctx=ctx_view)
+            if a is None:
+                return None
+            return a.reshape(count, comps) if comps > 1 else a
+
+
+        def _gather_attributes(bf, me, counts):
+            attrs = []
+            # ---- Blender 5.x: AttributeStorage ------------------------------
+            st = me.sub("attribute_storage")
+            if st is not None and st.int("dna_attributes_num", 0) > 0:
+                n = st.int("dna_attributes_num")
+                for a in st.struct_array("dna_attributes", "Attribute", n):
+                    kind = _ATTR5_KIND.get(a.int("data_type", -1))
+                    dom = _DOMAINS.get(a.int("domain", -1))
+                    if kind is None or dom is None:
+                        continue
+                    name = a.cstring("name")
+                    cnt = counts.get(dom, 0)
+                    if a.int("storage_type", 0) == 0:
+                        av = a.deref("data", "AttributeArray")
+                        if av is None:
+                            continue
+                        data = _read_raw(bf, av.ptr("data"), av, kind, cnt)
+                    else:
+                        av = a.deref("data", "AttributeSingle")
+                        if av is None:
+                            continue
+                        one = _read_raw(bf, av.ptr("data"), av, kind, 1)
+                        data = None if one is None else np.repeat(one.reshape(1, -1), cnt, 0).reshape((cnt,) + one.shape[1:])
+                    if data is not None:
+                        attrs.append({"name": name, "domain": dom, "kind": kind,
+                                      "data": data, "render": False, "cd": None})
+            # ---- CustomData layers (all versions) ------------------------------
+            for dom, field in (("point", "vdata"), ("edge", "edata"), ("face", "pdata"),
+                               ("corner", "ldata"), ("tessface", "fdata")):
+                cd = me.sub(field)
+                if cd is None:
+                    continue
+                tot = cd.int("totlayer", 0)
+                if tot <= 0:
+                    continue
+                layers = cd.struct_array("layers", "CustomDataLayer", tot)
+                first_of_type = {}
+                for i, lv in enumerate(layers):
+                    first_of_type.setdefault(lv.int("type", -1), i)
+                cnt = counts.get(dom, 0)
+                for i, lv in enumerate(layers):
+                    t = lv.int("type", -1)
+                    ptr = lv.ptr("data")
+                    if not ptr:
+                        continue
+                    name = lv.str("name")
+                    render = (i - first_of_type[t]) == lv.int("active_rnd", 0)
+                    entry = {"name": name, "domain": dom, "render": render, "cd": t,
+                             "ptr": ptr, "lv": lv, "data": None, "kind": None}
+                    if t in _CD_KIND:
+                        kind = _CD_KIND[t]
+                        if t == 17:      # MLoopCol struct r,g,b,a
+                            rec = bf.struct_records(ptr, "MLoopCol", cnt,
+                                                    {"r": "u1", "g": "u1", "b": "u1", "a": "u1"}, ctx=lv)
+                            data = (np.stack([rec["r"], rec["g"], rec["b"], rec["a"]], 1)
+                                    if rec and len(rec) == 4 else _read_raw(bf, ptr, lv, kind, cnt))
+                        else:
+                            data = _read_raw(bf, ptr, lv, kind, cnt)
+                        entry.update(kind=kind, data=data)
+                    elif t == 46 and (name == ".edge_verts"):
+                        entry.update(kind="int2", data=_read_raw(bf, ptr, lv, "int2", cnt))
+                    elif t == 16:        # MLoopUV
+                        rec = bf.struct_records(ptr, "MLoopUV", cnt, {"uv": "f4"}, ctx=lv)
+                        if rec and "uv" in rec:
+                            entry.update(kind="float2", data=np.asarray(rec["uv"]).reshape(cnt, 2))
+                    if entry["data"] is not None or t in (0, 3, 4, 5, 6, 25, 26):
+                        attrs.append(entry)
+            return attrs
+
+
+        def _find(attrs, name=None, domain=None, kind=None, cd=None):
+            for a in attrs:
+                if name is not None and a["name"] != name:
+                    continue
+                if domain is not None and a["domain"] != domain:
+                    continue
+                if kind is not None and a["kind"] not in (kind if isinstance(kind, tuple) else (kind,)):
+                    continue
+                if cd is not None and a["cd"] != cd:
+                    continue
+                if a.get("data") is None and cd is None:
+                    continue
+                return a
+            return None
+
+
+        def _decode_mesh(ctx, me):
+            """Mesh view -> (PolyMesh, info).  info: uv names, colour layer name,
+            per-face image (legacy TexFace) ... ."""
+            bf = ctx.bf
+            nv = me.int("totvert", 0)
+            ne = me.int("totedge", 0)
+            nf = me.int("totpoly", 0) if me.has("totpoly") else 0
+            nl = me.int("totloop", 0) if me.has("totloop") else 0
+            ntf = me.int("totface", 0) if me.has("totface") else 0
+            counts = {"point": nv, "edge": ne, "face": nf, "corner": nl, "tessface": ntf}
+            attrs = _gather_attributes(bf, me, counts)
+            info = {"uv_names": [], "col_name": None, "face_image": None}
+
+            # ---------------- positions
+            V = None
+            a = _find(attrs, "position", "point", "float3")
+            if a is not None:
+                V = a["data"].astype(np.float64)
+            if V is None:
+                mv = _find(attrs, domain="point", cd=0)
+                ptr = mv["ptr"] if mv else me.ptr("mvert")
+                rec = bf.struct_records(ptr, "MVert", nv, {"co": "f4"}, ctx=mv["lv"] if mv else me)
+                if rec and "co" in rec:
+                    V = np.asarray(rec["co"], np.float64).reshape(nv, 3)
+            if V is None or nv == 0:
+                return None, info
+
+            # ---------------- faces
+            face_off = corner_vert = None
+            face_mat = face_smooth = None
+            legacy_faces = False
+            if nf > 0 and nl > 0:
+                cv = _find(attrs, ".corner_vert", "corner", "int")
+                if cv is not None:
+                    corner_vert = cv["data"].astype(np.int64)
+                    po = me.ptr("poly_offset_indices") if me.has("poly_offset_indices") else 0
+                    off = bf.array(po, "i4", nf + 1, ctx=me) if po else None
+                    if off is not None:
+                        face_off = off.astype(np.int64)
+                if face_off is None or corner_vert is None:
+                    mp = _find(attrs, domain="face", cd=25)
+                    ml = _find(attrs, domain="corner", cd=26)
+                    prec = bf.struct_records(mp["ptr"] if mp else me.ptr("mpoly"), "MPoly", nf,
+                                             {"loopstart": "i4", "totloop": "i4", "mat_nr": "i2", "flag": "u1"},
+                                             ctx=mp["lv"] if mp else me)
+                    lrec = bf.struct_records(ml["ptr"] if ml else me.ptr("mloop"), "MLoop", nl,
+                                             {"v": "u4"}, ctx=ml["lv"] if ml else me)
+                    if prec and lrec and "loopstart" in prec and "v" in lrec:
+                        ls = prec["loopstart"].astype(np.int64)
+                        tl = prec["totloop"].astype(np.int64)
+                        order = np.argsort(ls, kind="stable")
+                        cv_all = lrec["v"].astype(np.int64)
+                        parts = [np.arange(ls[i], ls[i] + tl[i]) for i in order]
+                        corner_idx = np.concatenate(parts) if parts else np.zeros(0, np.int64)
+                        corner_vert = cv_all[corner_idx]
+                        face_off = np.concatenate([[0], np.cumsum(tl[order])]).astype(np.int64)
+                        if "mat_nr" in prec:
+                            face_mat = prec["mat_nr"].astype(np.int64)[order]
+                        if "flag" in prec:
+                            face_smooth = (prec["flag"][order] & ME_SMOOTH) != 0
+                        # corner attributes must follow the same reordering
+                        info["corner_reorder"] = corner_idx
+            if face_off is None and ntf > 0:
+                mf = _find(attrs, domain="tessface", cd=4)
+                rec = bf.struct_records(mf["ptr"] if mf else me.ptr("mface"), "MFace", ntf,
+                                        {"v1": "u4", "v2": "u4", "v3": "u4", "v4": "u4",
+                                         "mat_nr": "i2", "flag": "u1"}, ctx=mf["lv"] if mf else me)
+                if rec and "v1" in rec:
+                    v = np.stack([rec["v1"], rec["v2"], rec["v3"], rec["v4"]], 1).astype(np.int64)
+                    quad = v[:, 3] != 0
+                    sizes = np.where(quad, 4, 3)
+                    mask = np.ones_like(v, bool); mask[:, 3] = quad
+                    corner_vert = v[mask]
+                    face_off = np.concatenate([[0], np.cumsum(sizes)]).astype(np.int64)
+                    face_mat = rec["mat_nr"].astype(np.int64) if "mat_nr" in rec else None
+                    face_smooth = (rec["flag"] & ME_SMOOTH) != 0 if "flag" in rec else None
+                    legacy_faces = True
+                    info["tess_mask"] = mask
+                    nf = len(sizes)
+            if face_off is None:
+                return None, info
+            nf = len(face_off) - 1
+            m = PolyMesh(V, face_off, corner_vert, face_mat, face_smooth, me.id_name())
+            reorder = info.get("corner_reorder")
+
+            def corner_data(arr):
+                arr = np.asarray(arr)
+                return arr[reorder] if reorder is not None else arr
+
+            # ---------------- material index / smooth (generic attributes)
+            if face_mat is None:
+                a = _find(attrs, "material_index", "face", "int")
+                m.face_mat = a["data"].astype(np.int64) if a is not None else np.zeros(nf, np.int64)
+            if face_smooth is None:
+                a = _find(attrs, "sharp_face", "face", "bool")
+                if a is not None:
+                    m.face_smooth = a["data"] == 0
+                else:
+                    # 4.0+: a mesh with no "sharp_face" attribute is fully smooth
+                    m.face_smooth = np.full(nf, bf.version >= 400 and not legacy_faces)
+            # ---------------- sharp edges
+            ev = _find(attrs, ".edge_verts", "edge", "int2")
+            se = _find(attrs, "sharp_edge", "edge", "bool")
+            if ev is not None and se is not None:
+                sel = se["data"] != 0
+                if sel.any():
+                    e = ev["data"][sel].astype(np.int64)
+                    m.sharp_edges = np.sort(e, 1)
+            elif ne > 0:
+                med = _find(attrs, domain="edge", cd=3)
+                rec = bf.struct_records(med["ptr"] if med else me.ptr("medge"), "MEdge", ne,
+                                        {"v1": "u4", "v2": "u4", "flag": "i2"}, ctx=med["lv"] if med else me)
+                if rec and "flag" in rec:
+                    sel = (rec["flag"].astype(np.int64) & ME_SHARP) != 0
+                    if sel.any():
+                        m.sharp_edges = np.sort(np.stack([rec["v1"][sel], rec["v2"][sel]], 1).astype(np.int64), 1)
+            # ---------------- legacy auto smooth (<= 4.0)
+            if bf.version < 410 and (me.int("flag", 0) & ME_AUTOSMOOTH):
+                f = me.fields.get("smoothresh")
+                if f is not None:
+                    if f.type == "float":
+                        m.auto_smooth = me.float("smoothresh", math.radians(30))
+                    else:
+                        m.auto_smooth = math.radians(me.int("smoothresh", 30))
+
+            # ---------------- UV layers
+            uvs = []
+            if legacy_faces:
+                mask = info["tess_mask"]
+                for a in attrs:
+                    if a["domain"] == "tessface" and a["cd"] == 5:
+                        rec = bf.struct_records(a["ptr"], "MTFace", ntf, {"uv": "f4", "tpage": "u8" if bf.ptrsize == 8 else "u4"}, ctx=a["lv"])
+                        if rec and "uv" in rec:
+                            uv = np.asarray(rec["uv"]).reshape(ntf, 4, 2)[mask]
+                            uvs.append((a["name"] or "UVMap", uv, a["render"]))
+                            if "tpage" in rec and info["face_image"] is None and np.any(rec["tpage"]):
+                                info["face_image"] = (rec["tpage"].astype(np.uint64), a["lv"])
+            else:
+                for a in attrs:
+                    if a["domain"] == "corner" and a["kind"] == "float2" and not a["name"].startswith("."):
+                        uvs.append((a["name"], corner_data(a["data"]).astype(np.float64), a["render"]))
+            if uvs:
+                default = me.cstring("default_uv_map_attribute") if me.has("default_uv_map_attribute") else ""
+                active = me.cstring("active_uv_map_attribute") if me.has("active_uv_map_attribute") else ""
+                pick = next((u for u in uvs if default and u[0] == default), None) or \
+                    next((u for u in uvs if u[2] and not default), None) or \
+                    next((u for u in uvs if active and u[0] == active), None) or uvs[0]
+                rest = [u for u in uvs if u is not pick]
+                m.uv0 = pick[1]
+                info["uv_names"] = [pick[0]] + [u[0] for u in rest]
+                if rest:
+                    m.uv1 = rest[0][1]
+
+            # ---------------- colour layers
+            cols = []
+            if legacy_faces:
+                mask = info["tess_mask"]
+                for a in attrs:
+                    if a["domain"] == "tessface" and a["cd"] == 6:
+                        rec = bf.struct_records(a["ptr"], "MCol", ntf * 4, {"a": "u1", "r": "u1", "g": "u1", "b": "u1"}, ctx=a["lv"])
+                        if rec and "r" in rec:
+                            # MCol stores BGR in its r/g/b fields
+                            c = np.stack([rec["b"], rec["g"], rec["r"], rec["a"]], 1).reshape(ntf, 4, 4)[mask]
+                            cols.append((a["name"] or "Col", c, a["render"]))
+            else:
+                for a in attrs:
+                    if a["kind"] in ("color_byte", "color_float") and a["domain"] in ("point", "corner") \
+                            and not a["name"].startswith("."):
+                        d = a["data"]
+                        d = d[m.corner_vert] if a["domain"] == "point" else corner_data(d)
+                        cols.append((a["name"], d, a["render"]))
+            if cols:
+                default = me.cstring("default_color_attribute") if me.has("default_color_attribute") else ""
+                active = me.cstring("active_color_attribute") if me.has("active_color_attribute") else ""
+                pick = next((c for c in cols if default and c[0] == default), None) or \
+                    next((c for c in cols if active and c[0] == active), None) or \
+                    next((c for c in cols if c[2]), None) or cols[0]
+                d = np.asarray(pick[1])
+                if d.dtype == np.uint8:
+                    rgb = srgb_to_linear(d[:, :3] / 255.0)
+                    m.col = np.concatenate([rgb, d[:, 3:4] / 255.0], 1)
+                else:
+                    m.col = d.astype(np.float64)
+                info["col_name"] = pick[0]
+                info["col_names"] = [c[0] for c in cols]
+            # ---------------- custom normals (5.x float3 'custom_normal')
+            cn = _find(attrs, "custom_normal", "corner", "float3")
+            if cn is not None:
+                m.cnormal = corner_data(cn["data"]).astype(np.float64)
+            elif any(a["cd"] == 41 for a in attrs):
+                info["has_encoded_custom_normals"] = True
+            m.drop_degenerate() if info.get("face_image") is None else None
+            return m, info
+
+
+        # ======================================================================
+        #  modifiers
+        # ======================================================================
+        def _mod_mirror(m, mv, ctx, obW):
+            flag = mv.int("flag", 0)
+            axes = [i for i, b in enumerate((1 << 3, 1 << 4, 1 << 5)) if flag & b]
+            if not axes:
+                ax = mv.int("axis", 0)
+                axes = [ax] if 0 <= ax <= 2 else [0]
+            tol = mv.float("tolerance", 0.001)
+            merge = not (flag & (1 << 8))
+            flip_u = bool(flag & (1 << 6)); flip_v = bool(flag & (1 << 7))
+            uv_off = mv.floats("uv_offset", np.zeros(2))
+            mob = mv.deref("mirror_ob", "Object")
+            T = np.eye(4)
+            if mob is not None:
+                T = np.linalg.inv(obW) @ _world_matrix(ctx, mob)
+            Ti = np.linalg.inv(T)
+            for ax in axes:
+                S = np.eye(4); S[ax, ax] = -1.0
+                Mx = T @ S @ Ti
+                V = m.V
+                Vm = V @ Mx[:3, :3].T + Mx[:3, 3]
+                nv = len(V)
+                remap = np.arange(nv) + nv
+                if merge:
+                    loc = (np.c_[V, np.ones(nv)] @ Ti.T)[:, ax]
+                    on_plane = np.abs(loc) <= tol
+                    remap[on_plane] = np.nonzero(on_plane)[0]
+                # mirrored faces: reversed winding
+                sizes = m.face_sizes()
+                starts = m.face_off[:-1]
+                rev = np.concatenate([np.arange(s, s + k)[::-1] for s, k in zip(starts, sizes)]) if len(sizes) else np.zeros(0, np.int64)
+                new_cv = remap[m.corner_vert[rev]]
+                m2 = PolyMesh(np.concatenate([V, Vm]), np.concatenate([m.face_off, m.face_off[1:] + m.face_off[-1]]),
+                              np.concatenate([m.corner_vert, new_cv]),
+                              np.concatenate([m.face_mat, m.face_mat]),
+                              np.concatenate([m.face_smooth, m.face_smooth]), m.name)
+                for a in m.corner_attrs():
+                    arr = getattr(m, a)
+                    mirrored = arr[rev].copy()
+                    if a in ("uv0", "uv1"):
+                        if flip_u:
+                            mirrored[:, 0] = 1.0 - mirrored[:, 0] + uv_off[0]
+                        if flip_v:
+                            mirrored[:, 1] = 1.0 - mirrored[:, 1] + uv_off[1]
+                    if a == "cnormal":
+                        mirrored = mirrored @ Mx[:3, :3].T
+                    setattr(m2, a, np.concatenate([arr, mirrored]))
+                if m.sharp_edges is not None:
+                    se2 = np.sort(remap[m.sharp_edges], 1)
+                    m2.sharp_edges = np.concatenate([m.sharp_edges, se2])
+                m2.auto_smooth = m.auto_smooth
+                m = m2.drop_degenerate()
+                if merge:
+                    m.remove_duplicate_faces()
+                    used = np.zeros(len(m.V), bool); used[m.corner_vert] = True
+                    if not used.all():
+                        newidx = np.cumsum(used) - 1
+                        m.V = m.V[used]; m.corner_vert = newidx[m.corner_vert]
+                        if m.sharp_edges is not None:
+                            keep = used[m.sharp_edges].all(1)
+                            m.sharp_edges = newidx[m.sharp_edges[keep]]
+            return m
+
+
+        def _mod_array(m, mv, ctx, obW):
+            count = max(1, mv.int("count", 2))
+            otype = mv.int("offset_type", 2)
+            off = np.zeros(3)
+            lo, hi = m.V.min(0), m.V.max(0)
+            if otype & 2:
+                off += np.asarray(mv.floats("scale", np.array([1.0, 0, 0]))) * (hi - lo)
+            if otype & 1:
+                off += np.asarray(mv.floats("offset", np.zeros(3)))
+            step = np.eye(4); step[:3, 3] = off
+            if otype & 4:
+                oob = mv.deref("offset_ob", "Object")
+                if oob is not None:
+                    step = step @ (np.linalg.inv(obW) @ _world_matrix(ctx, oob))
+            fit = mv.int("fit_type", 0)
+            if fit == 1:
+                length = mv.float("length", 0.0)
+                d = np.linalg.norm(step[:3, 3])
+                if d > 1e-9:
+                    count = max(1, int(length / d + 1e-6) + 1)
+            if count > 4096:
+                count = 4096
+            Vs, fo, cv, fm, fs = [], [m.face_off[:1]], [], [], []
+            se = []
+            attrs = {a: [] for a in m.corner_attrs()}
+            M = np.eye(4)
+            nv = len(m.V); ncor = m.nc
+            uv_off = mv.floats("uv_offset", np.zeros(2))
+            for k in range(count):
+                Vs.append(m.V @ M[:3, :3].T + M[:3, 3])
+                fo.append(m.face_off[1:] + k * ncor)
+                cv.append(m.corner_vert + k * nv)
+                fm.append(m.face_mat); fs.append(m.face_smooth)
+                if m.sharp_edges is not None:
+                    se.append(m.sharp_edges + k * nv)
+                for a in attrs:
+                    arr = getattr(m, a)
+                    if a in ("uv0", "uv1") and np.any(uv_off):
+                        arr = arr + uv_off * k
+                    elif a == "cnormal":
+                        arr = arr @ M[:3, :3].T
+                    attrs[a].append(arr)
+                M = step @ M
+            m2 = PolyMesh(np.concatenate(Vs), np.concatenate(fo), np.concatenate(cv),
+                          np.concatenate(fm), np.concatenate(fs), m.name)
+            for a, lst in attrs.items():
+                setattr(m2, a, np.concatenate(lst))
+            m2.sharp_edges = np.concatenate(se) if se else None
+            m2.auto_smooth = m.auto_smooth
+            return m2
+
+
+        def _vertex_normals(m):
+            fn = face_normals(m)
+            w = corner_angles(m)[:, None] * fn[m.corner_face()]
+            vn = np.zeros_like(m.V)
+            np.add.at(vn, m.corner_vert, w)
+            ln = np.linalg.norm(vn, axis=1, keepdims=True)
+            return vn / np.maximum(ln, 1e-20)
+
+
+        def _mod_solidify(m, mv, ctx, obW):
+            if mv.int("mode", 0) != 0:
+                ctx.warn_once("solid_nm", ".blend: Solidify 'Complex' mode evaluated as 'Simple'")
+            t = mv.float("offset", 0.01)
+            f = mv.float("offset_fac", -1.0)
+            flag = mv.int("flag", 1)
+            rim = bool(flag & 1)
+            if flag & (1 << 5):          # flip normals
+                t = -t
+            vn = _vertex_normals(m)
+            outer = (1.0 + f) * 0.5 * t
+            inner = -(1.0 - f) * 0.5 * t
+            nv = len(m.V)
+            Vo = m.V + vn * outer
+            Vi = m.V + vn * inner
+            sizes = m.face_sizes(); starts = m.face_off[:-1]
+            rev = np.concatenate([np.arange(s, s + k)[::-1] for s, k in zip(starts, sizes)])
+            face_off = np.concatenate([m.face_off, m.face_off[1:] + m.nc])
+            cvert = np.concatenate([m.corner_vert, m.corner_vert[rev] + nv])
+            fmat = np.concatenate([m.face_mat, m.face_mat])
+            fsm = np.concatenate([m.face_smooth, m.face_smooth])
+            attrs = {a: [getattr(m, a), getattr(m, a)[rev]] for a in m.corner_attrs()}
+            if "cnormal" in attrs:
+                attrs["cnormal"][1] = -attrs["cnormal"][1]
+            if rim:
+                edges, corner_edge, cnt = build_edges(m)
+                bnd = np.nonzero(cnt[corner_edge] == 1)[0]          # boundary corners
+                nxt = m.corner_next()
+                a_ = m.corner_vert[bnd]; b_ = m.corner_vert[nxt[bnd]]
+                k = len(bnd)
+                if k:
+                    rim_cv = np.stack([b_, a_, a_ + nv, b_ + nv], 1).ravel()
+                    face_off = np.concatenate([face_off, face_off[-1] + 4 * np.arange(1, k + 1)])
+                    cvert = np.concatenate([cvert, rim_cv])
+                    cf = m.corner_face()[bnd]
+                    fmat = np.concatenate([fmat, m.face_mat[cf]])
+                    fsm = np.concatenate([fsm, np.zeros(k, bool)])
+                    for a in attrs:
+                        src = getattr(m, a)
+                        quad = np.stack([src[nxt[bnd]], src[bnd], src[bnd], src[nxt[bnd]]], 1).reshape(-1, src.shape[1])
+                        attrs[a].append(quad)
+            m2 = PolyMesh(np.concatenate([Vo, Vi]), face_off, cvert, fmat, fsm, m.name)
+            for a, lst in attrs.items():
+                setattr(m2, a, np.concatenate(lst))
+            if m.sharp_edges is not None:
+                m2.sharp_edges = np.concatenate([m.sharp_edges, m.sharp_edges + nv])
+            m2.auto_smooth = m.auto_smooth
+            return m2
+
+
+        def _subdivide(m, smooth=True):
+            """One Catmull-Clark (or simple) step on a polygon mesh."""
+            nv, nf, nc = len(m.V), m.nf, m.nc
+            sizes = m.face_sizes()
+            cf = m.corner_face()
+            nxt = m.corner_next(); prv = m.corner_prev()
+            edges, corner_edge, ecount = build_edges(m)
+            ne = len(edges)
+            fp = np.zeros((nf, 3)); np.add.at(fp, cf, m.V[m.corner_vert]); fp /= sizes[:, None]
+            mid = 0.5 * (m.V[edges[:, 0]] + m.V[edges[:, 1]])
+            if smooth:
+                efs = np.zeros((ne, 3)); np.add.at(efs, corner_edge, fp[cf])
+                interior = ecount == 2            # non-manifold edges act as creases
+                ep = mid.copy()
+                ep[interior] = 0.5 * mid[interior] + 0.5 * (efs[interior] / ecount[interior, None])
+                # vertex points
+                val = np.bincount(edges.ravel(), minlength=nv).astype(np.float64)       # edge valence
+                bnd_e = ecount != 2
+                nonman_e = ecount > 2
+                F = np.zeros((nv, 3)); fcount = np.bincount(m.corner_vert, minlength=nv).astype(np.float64)
+                np.add.at(F, m.corner_vert, fp[cf])
+                R = np.zeros((nv, 3)); np.add.at(R, edges[:, 0], mid); np.add.at(R, edges[:, 1], mid)
+                n = np.maximum(val, 1.0)
+                Fav = F / np.maximum(fcount, 1.0)[:, None]
+                Rav = R / n[:, None]
+                newV = (Fav + 2.0 * Rav + (n - 3.0)[:, None] * m.V) / n[:, None]
+                # boundary vertices: (e1 + 6v + e2)/8 on boundary edges
+                bcount = np.bincount(edges[bnd_e].ravel(), minlength=nv)
+                bsum = np.zeros((nv, 3))
+                be = edges[bnd_e]
+                np.add.at(bsum, be[:, 0], m.V[be[:, 1]]); np.add.at(bsum, be[:, 1], m.V[be[:, 0]])
+                isb = bcount == 2
+                newV[isb] = (bsum[isb] + 6.0 * m.V[isb]) / 8.0
+                # boundary corners / isolated verts: keep in place (non-manifold
+                # vertices use the general interior rule, like OpenSubdiv)
+                keep = (bcount > 2) | (fcount == 0)
+                newV[keep] = m.V[keep]
+                # boundary-to-boundary rule for isolated verts
+                loose = (bcount == 1)
+                newV[loose] = m.V[loose]
+            else:
+                ep = mid
+                newV = m.V.copy()
+            # new vertex layout: [verts | edge points | face points]
+            V2 = np.concatenate([newV, ep, fp])
+            E0, F0 = nv, nv + ne
+            c = np.arange(nc)
+            q = np.stack([m.corner_vert, E0 + corner_edge, F0 + cf, E0 + corner_edge[prv]], 1)
+            cv2 = q.ravel()
+            face_off2 = np.arange(0, 4 * nc + 1, 4, dtype=np.int64)
+            m2 = PolyMesh(V2, face_off2, cv2, m.face_mat[cf], m.face_smooth[cf], m.name)
+            for a in m.corner_attrs():
+                arr = getattr(m, a)
+                fa = np.zeros((nf, arr.shape[1])); np.add.at(fa, cf, arr); fa /= sizes[:, None]
+                e_next = 0.5 * (arr + arr[nxt])
+                e_prev = 0.5 * (arr + arr[prv])
+                quad = np.stack([arr, e_next, fa[cf], e_prev], 1).reshape(-1, arr.shape[1])
+                if a == "cnormal":
+                    quad = quad / np.maximum(np.linalg.norm(quad, axis=1, keepdims=True), 1e-20)
+                setattr(m2, a, quad)
+            if m.sharp_edges is not None and len(m.sharp_edges):
+                ek = edge_keys(edges[:, 0], edges[:, 1], nv)
+                sk = edge_keys(m.sharp_edges[:, 0], m.sharp_edges[:, 1], nv)
+                idx = np.nonzero(np.isin(ek, sk))[0]
+                m2.sharp_edges = np.concatenate([np.sort(np.stack([edges[idx, 0], E0 + idx], 1), 1),
+                                                 np.sort(np.stack([edges[idx, 1], E0 + idx], 1), 1)])
+            m2.auto_smooth = m.auto_smooth
+            return m2
+
+
+        def _limit_positions(m):
+            """Push a quad mesh's vertices to the Catmull-Clark limit surface
+            (Blender 'use_limit_surface', on by default)."""
+            nv = len(m.V)
+            edges, corner_edge, ecount = build_edges(m)
+            val = np.bincount(edges.ravel(), minlength=nv).astype(np.float64)
+            E = np.zeros((nv, 3)); np.add.at(E, edges[:, 0], m.V[edges[:, 1]]); np.add.at(E, edges[:, 1], m.V[edges[:, 0]])
+            if not (m.face_sizes() == 4).all():
+                return m
+            nxt = m.corner_next()
+            opp = m.corner_vert[nxt[nxt]]
+            D = np.zeros((nv, 3)); np.add.at(D, m.corner_vert, m.V[opp])
+            n = val
+            interior = np.ones(nv, bool)
+            bnd_e = ecount != 2
+            bv = np.zeros(nv, bool); bv[edges[bnd_e].ravel()] = True
+            interior &= ~bv
+            out = m.V.copy()
+            ni = n[interior]
+            out[interior] = (ni[:, None] ** 2 * m.V[interior] + 4.0 * E[interior] + D[interior]) / (ni * (ni + 5.0))[:, None]
+            bcount = np.bincount(edges[ecount != 2].ravel(), minlength=nv)
+            bs = np.zeros((nv, 3)); be = edges[ecount != 2]
+            np.add.at(bs, be[:, 0], m.V[be[:, 1]]); np.add.at(bs, be[:, 1], m.V[be[:, 0]])
+            ib = bcount == 2
+            out[ib] = (bs[ib] + 4.0 * m.V[ib]) / 6.0
+            m.V = out
+            return m
+
+
+        def _mod_subsurf(m, mv, ctx, obW, levels_field="levels"):
+            lv = mv.int(levels_field, 1)
+            if mv.sname == "MultiresModifierData":
+                lv = mv.int("lvl", 1)
+                ctx.warn_once("multires", ".blend: Multires displacement can't be read; "
+                              "the base mesh is subdivided smoothly instead")
+            simple = mv.int("subdivType", 0) == 1
+            if lv <= 0:
+                return m
+            lv = min(lv, 6)
+            for _ in range(lv):
+                if m.nc * 4 > 12_000_000:
+                    ctx.warn_once("subsurf_cap", ".blend: subdivision capped to keep the mesh "
+                                  "under ~12 million corners")
+                    break
+                m = _subdivide(m, smooth=not simple)
+            flags = mv.int("flags", 0)
+            # use_limit_surface is stored INVERTED as UseRecursiveSubdivision (1<<6)
+            use_limit = not (flags & (1 << 6)) if ctx.bf.version >= 290 else LEGACY_SUBSURF_LIMIT
+            if not simple and use_limit:
+                m = _limit_positions(m)
+            return m
+
+
+        def _mod_weld(m, mv, ctx, obW):
+            dist = mv.float("merge_dist", 0.001)
+            if dist <= 0:
+                return m
+            q = np.round(m.V / max(dist, 1e-9)).astype(np.int64)
+            _, first, inv = np.unique(q, axis=0, return_index=True, return_inverse=True)
+            inv = inv.ravel()
+            m.V = m.V[first]
+            m.corner_vert = inv[m.corner_vert]
+            if m.sharp_edges is not None:
+                m.sharp_edges = np.sort(inv[m.sharp_edges], 1)
+            return m.drop_degenerate()
+
+
+        def _mod_edgesplit(m, mv, ctx, obW):
+            flags = mv.int("flags", 0b110)
+            if flags & (1 << 1):
+                ang = mv.float("split_angle", math.radians(30))
+                m.auto_smooth = ang if m.auto_smooth is None else min(ang, m.auto_smooth)
+                m.face_smooth = np.ones(m.nf, bool) if not m.face_smooth.any() else m.face_smooth
+            return m
+
+
+        def _mod_nodes(m, mv, ctx, obW):
+            grp = mv.deref("node_group")
+            name = grp.id_name() if grp is not None else ""
+            if name.lower().startswith("smooth by angle") or name.lower().startswith("auto smooth"):
+                m.auto_smooth = math.radians(30.0)
+                ang = _idprop_float(ctx, mv.deref("settings") if False else None)
+                settings = mv.sub("settings")
+                if settings is not None:
+                    val = _idprops_find_float(ctx, settings.deref("properties", "IDProperty"),
+                                              ("Socket_1", "Input_1"))
+                    if val is not None:
+                        m.auto_smooth = float(val)
+                if not m.face_smooth.any():
+                    m.face_smooth[:] = True
+                return m
+            ctx.warn_once("gn_" + name, f".blend: Geometry Nodes modifier '{name}' can't be "
+                          f"evaluated without Blender — apply it in Blender (Ctrl+A)")
+            return m
+
+
+        def _idprop_float(ctx, v):
+            return None
+
+
+        def _idprops_find_float(ctx, group, names):
+            if group is None:
+                return None
+            data = group.sub("data")
+            if data is None:
+                return None
+            for p in ctx.bf.listbase(data.sub("group"), "IDProperty"):
+                if p.str("name") in names:
+                    t = p.int("type", -1)
+                    d = p.sub("data")
+                    if t == 2:        # IDP_FLOAT stored in data.val as int bits
+                        raw = struct.pack(ctx.bf.endian + "i", d.int("val"))
+                        return struct.unpack(ctx.bf.endian + "f", raw)[0]
+                    if t == 8:        # IDP_DOUBLE
+                        v1, v2 = d.int("val") & 0xFFFFFFFF, d.int("val2") & 0xFFFFFFFF
+                        raw = struct.pack(ctx.bf.endian + "II", *((v1, v2) if ctx.bf.endian == "<" else (v2, v1)))
+                        return struct.unpack(ctx.bf.endian + "d", raw)[0]
+            return None
+
+
+        _MODIFIERS = {
+            "MirrorModifierData": _mod_mirror,
+            "ArrayModifierData": _mod_array,
+            "SubsurfModifierData": _mod_subsurf,
+            "MultiresModifierData": _mod_subsurf,
+            "SolidifyModifierData": _mod_solidify,
+            "WeldModifierData": _mod_weld,
+            "EdgeSplitModifierData": _mod_edgesplit,
+            "NodesModifierData": _mod_nodes,
+            "TriangulateModifierData": None,          # geometry identical once triangulated
+            "ArmatureModifierData": None,             # rest pose (game engines skin later)
+            "WeightedNormalModifierData": None,
+        }
+
+
+        def _apply_modifiers(ctx, ob, m, obW, oname):
+            for md in ctx.bf.listbase(ob.sub("modifiers")):
+                sname = md.blk.struct
+                mv = ctx.bf.view(md.blk, sname, md.off) if sname else None
+                if mv is None:
+                    continue
+                base = mv.sub("modifier")
+                mode = base.int("mode", 1) if base is not None else 1
+                if not (mode & 1):          # disabled in viewport
+                    continue
+                if sname not in _MODIFIERS:
+                    ctx.warn_once("mod_" + sname, f".blend: '{oname}' uses a "
+                                  f"{sname.replace('ModifierData', '')} modifier — not "
+                                  f"evaluated (apply it in Blender with Ctrl+A for an exact match)")
+                    continue
+                fn = _MODIFIERS[sname]
+                if fn is None:
+                    continue
+                try:
+                    m = fn(m, mv, ctx, obW)
+                except Exception as ex:
+                    ctx.warn_once("modfail_" + sname + oname,
+                                  f".blend: {sname} on '{oname}' failed ({ex}) — skipped")
+            return m
+
+
+        # ======================================================================
+        #  images & materials
+        # ======================================================================
+        def _image_descriptor(ctx, img):
+            if img is None:
+                return None
+            key = img.addr()
+            if key in ctx.images:
+                return ctx.images[key]
+            bf = ctx.bf
+            desc = None
+            pf = img.deref("packedfile", "PackedFile")
+            if pf is None and img.has("packedfiles"):
+                for ipf in bf.listbase(img.sub("packedfiles")):
+                    pf = ipf.deref("packedfile", "PackedFile")
+                    if pf is not None:
+                        break
+            if pf is not None:
+                size = pf.int("size", 0)
+                r = pf.resolve("data")
+                if r is not None and size > 0:
+                    blk, off = r
+                    desc = ("bytes", bytes(blk.data[off:off + size]))
+            if desc is None:
+                fp = img.str("filepath") or img.str("name")
+                cands = []
+                if fp:
+                    rel = fp[2:] if fp.startswith("//") else fp
+                    rel = rel.replace("\\", "/")
+                    if fp.startswith("//") or not os.path.isabs(rel):
+                        cands.append(os.path.normpath(os.path.join(ctx.dir, rel)))
+                    else:
+                        cands.append(rel)
+                    base = os.path.basename(rel)
+                    for sub in ("", "textures", "Textures", "tex", "images", "../textures"):
+                        cands.append(os.path.normpath(os.path.join(ctx.dir, sub, base)))
+                for c in cands:
+                    if os.path.isfile(c):
+                        desc = ("path", c)
+                        break
+                if desc is None and fp:
+                    ctx.warn_once("img_" + fp, f".blend: texture '{fp}' not found next to "
+                                  f"the .blend — pack it (File > External Data > Pack Resources) "
+                                  f"or copy it beside the file")
+            ctx.images[key] = desc
+            return desc
+
+
+        class _NodeGraph:
+            def __init__(self, ctx, ntree):
+                self.ctx = ctx
+                bf = ctx.bf
+                self.nodes = bf.listbase(ntree.sub("nodes"), "bNode")
+                self.by_addr = {n.addr(): n for n in self.nodes}
+                self.links = {}
+                for lk in bf.listbase(ntree.sub("links"), "bNodeLink"):
+                    if lk.int("flag", 0) & (1 << 3):     # NODE_LINK_MUTED? keep anyway
+                        pass
+                    tn, ts = lk.ptr("tonode"), lk.ptr("tosock")
+                    self.links[(tn, ts)] = (lk.ptr("fromnode"), lk.ptr("fromsock"))
+                self.sockets = {}
+
+            def idname(self, n):
+                s = n.str("idname")
+                if not s:
+                    s = {143: "ShaderNodeOutputMaterial", 193: "ShaderNodeBsdfPrincipled",
+                         143: "ShaderNodeOutputMaterial"}.get(n.int("type"), "")
+                return s
+
+            def inputs(self, n):
+                return self.ctx.bf.listbase(n.sub("inputs"), "bNodeSocket")
+
+            def outputs(self, n):
+                return self.ctx.bf.listbase(n.sub("outputs"), "bNodeSocket")
+
+            def input(self, n, *names):
+                ins = self.inputs(n)
+                for name in names:
+                    for s in ins:
+                        if s.str("name") == name or s.str("identifier") == name:
+                            return s
+                return None
+
+            def link_from(self, n, sock):
+                r = self.links.get((n.addr(), sock.addr()))
+                if r is None:
+                    return None, None
+                fn = self.by_addr.get(r[0])
+                if fn is None:
+                    return None, None
+                fs = next((o for o in self.outputs(fn) if o.addr() == r[1]), None)
+                return fn, fs
+
+            def default(self, sock):
+                dv = sock.deref("default_value")
+                if dv is None:
+                    return None
+                if dv.has("value"):
+                    f = dv.fields["value"]
+                    if f.type == "float":
+                        return dv.floats("value") if f.dims else dv.float("value")
+                    return dv.int("value")
+                return None
+
+
+        def _trace(g, node, sock, depth=0):
+            """Follow the link into `sock` and describe its source:
+               ('const', value) | ('tex', node, channel) | ('vcol', name) | None."""
+            fn, fs = g.link_from(node, sock)
+            if fn is None:
+                v = g.default(sock)
+                return ("const", v) if v is not None else None
+            if depth > 24:
+                return None
+            t = g.idname(fn)
+            oname = fs.str("name") if fs is not None else ""
+            if t == "ShaderNodeTexImage":
+                return ("tex", fn, "alpha" if oname == "Alpha" else "color")
+            if t in ("ShaderNodeVertexColor", "ShaderNodeAttribute"):
+                name = ""
+                st = fn.deref("storage")
+                if st is not None:
+                    name = st.str("layer_name") or st.str("name")
+                return ("vcol", name)
+            if t in ("ShaderNodeMix", "ShaderNodeMixRGB"):
+                cand = []
+                for nm in ("A", "Color1", "B", "Color2"):
+                    for s in g.inputs(fn):
+                        if s.str("name") == nm or s.str("identifier") in ("A_Color", "B_Color"):
+                            r = _trace(g, fn, s, depth + 1)
+                            if r and r[0] in ("tex", "vcol"):
+                                cand.append(r)
+                if cand:
+                    if len(cand) >= 2 and {c[0] for c in cand} == {"tex", "vcol"}:
+                        tex = next(c for c in cand if c[0] == "tex")
+                        vc = next(c for c in cand if c[0] == "vcol")
+                        return ("tex", tex[1], tex[2], vc[1])
+                    return cand[0]
+                for s in g.inputs(fn):
+                    if s.str("name") in ("A", "Color1"):
+                        return _trace(g, fn, s, depth + 1)
+                return None
+            if t in ("ShaderNodeSeparateColor", "ShaderNodeSeparateRGB", "ShaderNodeSeparateXYZ"):
+                s = g.input(fn, "Color", "Image", "Vector")
+                r = _trace(g, fn, s, depth + 1) if s is not None else None
+                if r and r[0] == "tex":
+                    ch = {"Red": "r", "R": "r", "X": "r", "Green": "g", "G": "g", "Y": "g",
+                          "Blue": "b", "B": "b", "Z": "b"}.get(oname, "r")
+                    return ("tex", r[1], ch)
+                return r
+            if t in ("ShaderNodeNormalMap", "ShaderNodeBump"):
+                s = g.input(fn, "Color", "Height")
+                r = _trace(g, fn, s, depth + 1) if s is not None else None
+                if r and r[0] == "tex" and t == "ShaderNodeNormalMap":
+                    strength = g.input(fn, "Strength")
+                    sv = g.default(strength) if strength is not None else 1.0
+                    return ("tex", r[1], "normal", sv)
+                return None
+            if t in ("ShaderNodeGamma", "ShaderNodeHueSaturation", "ShaderNodeBrightContrast",
+                     "ShaderNodeInvert", "ShaderNodeRGBCurve", "ShaderNodeValToRGB",
+                     "NodeReroute", "ShaderNodeMath", "ShaderNodeClamp", "ShaderNodeMapRange"):
+                for s in g.inputs(fn):
+                    r = _trace(g, fn, s, depth + 1)
+                    if r and r[0] in ("tex", "vcol"):
+                        return r
+                return None
+            if t == "ShaderNodeRGB":
+                out = g.outputs(fn)
+                if out:
+                    v = g.default(out[0])
+                    return ("const", v) if v is not None else None
+            if t == "ShaderNodeValue":
+                out = g.outputs(fn)
+                if out:
+                    v = g.default(out[0])
+                    return ("const", v) if v is not None else None
+            return None
+
+
+        def _tex_info(ctx, g, tnode, uv_names):
+            """Image descriptor + UV set/transform/wrap of an image texture node."""
+            img = tnode.deref("id", "Image")
+            desc = _image_descriptor(ctx, img)
+            st = tnode.deref("storage")
+            ext = st.int("extension", 0) if (st is not None and st.has("extension")) else 0
+            wrap = {0: 0, 1: 1, 2: 1, 3: 2}.get(ext, 0)        # repeat/clamp/mirror
+            uvset, xf = 0, None
+            vin = g.input(tnode, "Vector")
+            node, depth = tnode, 0
+            while vin is not None and depth < 8:
+                depth += 1
+                fn, fs = g.link_from(node, vin)
+                if fn is None:
+                    break
+                t = g.idname(fn)
+                if t == "ShaderNodeMapping":
+                    loc = g.default(g.input(fn, "Location")) if g.input(fn, "Location") else None
+                    rot = g.default(g.input(fn, "Rotation")) if g.input(fn, "Rotation") else None
+                    sca = g.default(g.input(fn, "Scale")) if g.input(fn, "Scale") else None
+                    if loc is None:     # pre-2.81: TexMapping in storage
+                        tm = fn.deref("storage")
+                        if tm is not None:
+                            loc, rot, sca = tm.floats("loc"), tm.floats("rot"), tm.floats("size")
+                    loc = np.zeros(3) if loc is None else np.asarray(loc)
+                    rot = np.zeros(3) if rot is None else np.asarray(rot)
+                    sca = np.ones(3) if sca is None else np.asarray(sca)
+                    c, s = math.cos(rot[2]), math.sin(rot[2])
+                    M = np.array([[c * sca[0], -s * sca[1], loc[0]],
+                                  [s * sca[0], c * sca[1], loc[1]], [0, 0, 1.0]])
+                    vtype = fn.int("custom1", 0)
+                    if vtype == 1:          # TEXTURE = inverse
+                        try:
+                            M = np.linalg.inv(M)
+                        except np.linalg.LinAlgError:
+                            pass
+                    xf = M if xf is None else xf @ M
+                    vin, node = g.input(fn, "Vector"), fn
+                    continue
+                if t == "ShaderNodeUVMap":
+                    s2 = fn.deref("storage")
+                    name = s2.str("uv_map") if s2 is not None else ""
+                    if name and name in uv_names[1:2]:
+                        uvset = 1
+                break
+            return {"desc": desc, "uvset": uvset, "xf": xf, "wrap": wrap}
+
+
+        def _lin_to_engine(rgb):
+            """Engine shaders treat colour factors as gamma-2.2 encoded."""
+            return [float(max(c, 0.0)) ** (1.0 / 2.2) for c in rgb]
+
+
+        def _material_info(ctx, ma, uv_names, col_names):
+            """Material view -> material_info dict (+ '_h3d' extras)."""
+            key = (ma.addr() if ma is not None else 0, tuple(uv_names[:2]))
+            if key in ctx.materials:
+                return ctx.materials[key]
+            info = {"name": "default", "base_color": [0.8, 0.8, 0.8, 1.0], "metallic": 0.0,
+                    "roughness": 0.5, "emissive": [0.0, 0.0, 0.0], "emissive_intensity": 1.0,
+                    "base_color_tex": None, "metallic_roughness_tex": None, "normal_tex": None,
+                    "emissive_tex": None, "occlusion_tex": None, "double_sided": True,
+                    "alpha_mode": "OPAQUE", "alpha_cutoff": 0.5,
+                    "_h3d": {"vertex_colors": False, "slots": {}}}
+            if ma is None:
+                info["base_color"] = _lin_to_engine([0.8, 0.8, 0.8]) + [1.0]
+                ctx.materials[key] = info
+                return info
+            info["name"] = ma.id_name() or "material"
+            bf = ctx.bf
+            base = [ma.float("r", 0.8), ma.float("g", 0.8), ma.float("b", 0.8)]
+            alpha = ma.float("a", ma.float("alpha", 1.0))
+            metallic = ma.float("metallic", 0.0)
+            rough = ma.float("roughness", 0.5)
+            emis = [0.0, 0.0, 0.0]; estr = 1.0
+            vcol = False
+            alpha_tex = False
+            slots = info["_h3d"]["slots"]
+            nt = ma.deref("nodetree", "bNodeTree")
+            use_nodes = (ma.int("use_nodes", 1) != 0) or bf.version >= 500
+            handled = False
+            if nt is not None and use_nodes:
+                g = _NodeGraph(ctx, nt)
+                outs = [n for n in g.nodes if g.idname(n) == "ShaderNodeOutputMaterial"]
+                out = next((n for n in outs if n.int("flag", 0) & (1 << 6)), None) or (outs[0] if outs else None)
+                bsdf = None
+                if out is not None:
+                    s = g.input(out, "Surface")
+                    if s is not None:
+                        bsdf, _ = g.link_from(out, s)
+                # unwrap mix/add shaders: prefer a Principled/Diffuse child
+                mix_alpha = None
+                seen = 0
+                while bsdf is not None and g.idname(bsdf) in ("ShaderNodeMixShader", "ShaderNodeAddShader") and seen < 8:
+                    seen += 1
+                    ins = [s for s in g.inputs(bsdf) if s.str("name") == "Shader"]
+                    kids = [g.link_from(bsdf, s)[0] for s in ins]
+                    kids = [k for k in kids if k is not None]
+                    pref = [k for k in kids if g.idname(k) not in ("ShaderNodeBsdfTransparent", "ShaderNodeEmission")]
+                    if g.idname(bsdf) == "ShaderNodeMixShader" and any(g.idname(k) == "ShaderNodeBsdfTransparent" for k in kids):
+                        fac = g.input(bsdf, "Fac")
+                        mix_alpha = _trace(g, bsdf, fac) if fac is not None else None
+                    for k in kids:
+                        if g.idname(k) == "ShaderNodeEmission":
+                            c = g.input(k, "Color"); st_ = g.input(k, "Strength")
+                            cv = _trace(g, k, c) if c is not None else None
+                            if cv and cv[0] == "const":
+                                emis = list(np.asarray(cv[1])[:3]); estr = g.default(st_) or 1.0
+                    bsdf = pref[0] if pref else (kids[0] if kids else None)
+                if bsdf is not None:
+                    handled = True
+                    t = g.idname(bsdf)
+
+                    def slot(name, *socks):
+                        s = g.input(bsdf, *socks)
+                        return (_trace(g, bsdf, s), s) if s is not None else (None, None)
+
+                    if t == "ShaderNodeEmission":
+                        c, _ = slot("e", "Color")
+                        st_ = g.input(bsdf, "Strength")
+                        if c and c[0] == "const":
+                            emis = list(np.asarray(c[1])[:3])
+                        elif c and c[0] == "tex":
+                            slots["emissive"] = _tex_info(ctx, g, c[1], uv_names); emis = [1.0, 1.0, 1.0]
+                        estr = g.default(st_) if st_ is not None else 1.0
+                        base = [0.0, 0.0, 0.0]; rough = 1.0
+                    else:
+                        bc, _ = slot("base", "Base Color", "Color")
+                        if bc:
+                            if bc[0] == "const" and bc[1] is not None:
+                                base = list(np.asarray(bc[1])[:3])
+                            elif bc[0] == "tex":
+                                slots["base_color"] = _tex_info(ctx, g, bc[1], uv_names)
+                                base = [1.0, 1.0, 1.0]
+                                if len(bc) > 3:
+                                    vcol = True
+                            elif bc[0] == "vcol":
+                                vcol = True; base = [1.0, 1.0, 1.0]
+                        mt, _ = slot("met", "Metallic")
+                        if mt and mt[0] == "const" and mt[1] is not None:
+                            metallic = float(np.asarray(mt[1]).ravel()[0])
+                        ro, _ = slot("rough", "Roughness")
+                        if ro and ro[0] == "const" and ro[1] is not None:
+                            rough = float(np.asarray(ro[1]).ravel()[0])
+                        if (mt and mt[0] == "tex") or (ro and ro[0] == "tex"):
+                            slots["metallic_roughness"] = {
+                                "pack": {"metal": (_tex_info(ctx, g, mt[1], uv_names), mt[2]) if mt and mt[0] == "tex" else None,
+                                         "rough": (_tex_info(ctx, g, ro[1], uv_names), ro[2]) if ro and ro[0] == "tex" else None}}
+                            if mt and mt[0] == "tex":
+                                metallic = 1.0
+                            if ro and ro[0] == "tex":
+                                rough = 1.0
+                        nm, _ = slot("nrm", "Normal")
+                        if nm and nm[0] == "tex" and nm[2] == "normal":
+                            ti = _tex_info(ctx, g, nm[1], uv_names)
+                            ti["scale"] = float(nm[3]) if len(nm) > 3 and nm[3] is not None else 1.0
+                            slots["normal"] = ti
+                        ec, _ = slot("emc", "Emission Color", "Emission")
+                        es = g.input(bsdf, "Emission Strength")
+                        if ec:
+                            if ec[0] == "const" and ec[1] is not None:
+                                emis = list(np.asarray(ec[1])[:3])
+                            elif ec[0] == "tex":
+                                slots["emissive"] = _tex_info(ctx, g, ec[1], uv_names); emis = [1.0, 1.0, 1.0]
+                        if es is not None:
+                            v = g.default(es)
+                            estr = float(v) if v is not None else 1.0
+                        al, _ = slot("alpha", "Alpha")
+                        if al:
+                            if al[0] == "const" and al[1] is not None:
+                                alpha = float(np.asarray(al[1]).ravel()[0])
+                            elif al[0] == "tex":
+                                alpha_tex = True
+                                if "base_color" not in slots or slots["base_color"]["desc"] != _image_descriptor(ctx, al[1].deref("id", "Image")):
+                                    slots.setdefault("base_color", _tex_info(ctx, g, al[1], uv_names))
+                        if mix_alpha:
+                            if mix_alpha[0] == "const" and mix_alpha[1] is not None:
+                                alpha = float(np.asarray(mix_alpha[1]).ravel()[0])
+                            elif mix_alpha[0] == "tex":
+                                alpha_tex = True
+                        if t == "ShaderNodeBsdfDiffuse":
+                            metallic = 0.0
+                            rough = 1.0 if not (ro and ro[0] == "const") else rough
+                        elif t == "ShaderNodeBsdfGlossy" or t == "ShaderNodeBsdfAnisotropic":
+                            metallic = 1.0
+                        elif t in ("ShaderNodeBsdfGlass", "ShaderNodeBsdfRefraction"):
+                            alpha = min(alpha, 0.3)
+                        if t == "ShaderNodeBsdfPrincipled":
+                            tr = g.input(bsdf, "Transmission Weight", "Transmission")
+                            trv = g.default(tr) if tr is not None else 0.0
+                            if trv and float(np.asarray(trv).ravel()[0]) > 0.01:
+                                alpha = min(alpha, max(0.15, 1.0 - 0.85 * float(np.asarray(trv).ravel()[0])))
+            if not handled:
+                # Blender Internal (<= 2.79) material + texture slots
+                emit = ma.float("emit", 0.0)
+                if emit > 0:
+                    emis = [base[0] * emit, base[1] * emit, base[2] * emit]
+                spec = ma.float("spec", 0.5)
+                har = ma.int("har", 50)
+                rough = float(np.clip(1.0 - math.sqrt(max(har, 1) / 511.0), 0.05, 1.0)) if ma.has("har") and not ma.has("roughness") else rough
+                if ma.has("mode") and (ma.int("mode", 0) & (1 << 7)):     # MA_VERTEXCOLP
+                    vcol = True
+                if ma.has("mtex"):
+                    ptrs = ma.ints("mtex")
+                    f = ma.fields["mtex"]
+                    for i in range(f.size // f.elem_size):
+                        p = struct.unpack_from(bf.endian + ("I" if bf.ptrsize == 4 else "Q"), ma.blk.data, ma.off + f.offset + i * f.elem_size)[0]
+                        if not p:
+                            continue
+                        mt = bf.view(p, "MTex", ctx=ma)
+                        if mt is None:
+                            continue
+                        tex = mt.deref("tex", "Tex")
+                        if tex is None or tex.int("type", 0) != 8:       # TEX_IMAGE
+                            continue
+                        img = tex.deref("ima", "Image")
+                        desc = _image_descriptor(ctx, img)
+                        if desc is None:
+                            continue
+                        mapto = mt.int("mapto", 1)
+                        ti = {"desc": desc, "uvset": 0, "xf": None, "wrap": 0}
+                        ofs = mt.floats("ofs", np.zeros(3)); size = mt.floats("size", np.ones(3))
+                        if np.any(ofs) or np.any(size != 1):
+                            ti["xf"] = np.array([[size[0], 0, ofs[0] * 0 + 0.5 - 0.5 * size[0] + ofs[0]],
+                                                 [0, size[1], 0.5 - 0.5 * size[1] + ofs[1]], [0, 0, 1.0]])
+                        uvn = mt.str("uvname")
+                        if uvn and uvn in uv_names[1:2]:
+                            ti["uvset"] = 1
+                        if mapto & 1 and "base_color" not in slots:         # MAP_COL
+                            slots["base_color"] = ti; base = [1.0, 1.0, 1.0]
+                        if mapto & 2 and "normal" not in slots:             # MAP_NORM
+                            if tex.int("imaflag", 0) & (1 << 11):           # TEX_NORMALMAP
+                                slots["normal"] = ti
+                        if mapto & 128:                                     # MAP_ALPHA
+                            alpha_tex = True
+            # ---- blending ----
+            if ma.has("surface_render_method"):
+                method = ma.int("surface_render_method", 0)      # 0 dithered, 1 blended
+                if method == 1 and (alpha < 0.999 or alpha_tex):
+                    info["alpha_mode"] = "BLEND"
+                elif alpha_tex:
+                    info["alpha_mode"] = "MASK"
+                elif alpha < 0.999:
+                    info["alpha_mode"] = "BLEND"
+            elif ma.has("blend_method"):
+                bm = ma.int("blend_method", 0)
+                if bm == 3:
+                    info["alpha_mode"] = "MASK"; info["alpha_cutoff"] = ma.float("alpha_threshold", 0.5)
+                elif bm in (4, 5):
+                    info["alpha_mode"] = "BLEND" if (bm == 5 or alpha < 0.999) else ("MASK" if alpha_tex else "OPAQUE")
+                    if bm == 4 and alpha_tex:
+                        info["alpha_mode"] = "MASK"
+            elif alpha < 0.999 or alpha_tex:
+                info["alpha_mode"] = "BLEND" if not alpha_tex else "MASK"
+            if ma.has("blend_flag"):
+                info["double_sided"] = not (ma.int("blend_flag", 0) & 1)
+            info["base_color"] = _lin_to_engine(base) + [float(np.clip(alpha, 0.0, 1.0))]
+            info["metallic"] = float(np.clip(metallic, 0, 1))
+            info["roughness"] = float(np.clip(rough, 0, 1))
+            m_e = max(emis) if emis else 0.0
+            if m_e > 0 and estr > 0:
+                info["emissive"] = [float(c) for c in emis]
+                info["emissive_intensity"] = float(estr)
+            info["_h3d"]["vertex_colors"] = bool(vcol)
+            ctx.materials[key] = info
+            return info
+
+
+        # ======================================================================
+        #  lights
+        # ======================================================================
+        def _light(ctx, ob, W_eng, name):
+            la = ob.deref("data")
+            if la is None:
+                return None
+            t = la.int("type", 0)
+            kind = {0: "point", 1: "sun", 2: "spot", 3: "sun", 4: "point"}.get(t)
+            if kind is None:
+                return None
+            col = (la.float("r", 1.0), la.float("g", 1.0), la.float("b", 1.0))
+            energy = la.float("energy", 10.0)
+            if ctx.bf.version < 280:       # BI energy is unitless; ~x100 W
+                energy *= 100.0 if kind != "sun" else 1.0
+            d = W_eng[:3, :3] @ np.array([0.0, 0.0, -1.0])
+            d = d / max(np.linalg.norm(d), 1e-12)
+            return {"kind": kind, "name": name, "color": tuple(float(c) for c in col),
+                    "energy": float(energy), "position": tuple(float(x) for x in W_eng[:3, 3]),
+                    "direction": tuple(float(x) for x in d),
+                    "spotsize": la.float("spotsize", math.radians(45)),
+                    "spotblend": la.float("spotblend", 0.15),
+                    "dist": la.float("cutoff_distance", 0.0) if la.has("cutoff_distance") else 0.0}
+
+
+        # ======================================================================
+        #  main entry
+        # ======================================================================
+        def load_blend(path, logger=None):
+            """-> (parts, lights).  parts: list of dict(name, positions, normals,
+            uv0, uv1, colors, indices, material_info)."""
+            bf = BlendFile(path)
+            ctx = _Ctx(bf, path, logger)
+            if bf.version >= 600:
+                ctx.warn_once("future", f".blend saved by Blender {bf.version // 100}.{bf.version % 100} "
+                              f"— newer than tested; importing best-effort")
+            objects = _scene_objects(ctx)
+            groups = {}            # material key -> lists
+            lights = []
+            mesh_cache = {}
+            n_obj = 0
+            for ob, W in objects:
+                name = ob.id_name()
+                otype = ob.int("type", -1)
+                W_eng = ZUP_TO_YUP @ W
+                if otype == OB_LAMP:
+                    li = _light(ctx, ob, W_eng, name)
+                    if li:
+                        lights.append(li)
+                    continue
+                if otype in (OB_CURVE, OB_SURF, OB_FONT, OB_MBALL):
+                    ctx.warn_once("curve_" + name, f".blend: '{name}' is a "
+                                  f"{ {2: 'curve', 3: 'surface', 4: 'text', 5: 'metaball'}[otype]} object — "
+                                  f"convert it to a mesh in Blender (Object > Convert > Mesh) to import it")
+                    continue
+                if otype != OB_MESH:
+                    continue
+                me = ob.deref("data", "Mesh")
+                if me is None:
+                    continue
+                mkey = me.addr()
+                if mkey not in mesh_cache:
+                    try:
+                        mesh_cache[mkey] = _decode_mesh(ctx, me)
+                    except Exception as ex:
+                        ctx.warn_once("mesh_" + name, f".blend: mesh of '{name}' unreadable ({ex}) — skipped")
+                        mesh_cache[mkey] = (None, {})
+                base_m, info = mesh_cache[mkey]
+                if base_m is None or base_m.nf == 0:
+                    continue
+                m = base_m.copy()
+                m = _apply_modifiers(ctx, ob, m, W, name)
+                if m.nf == 0:
+                    continue
+                if info.get("has_encoded_custom_normals"):
+                    ctx.warn_once("cn", ".blend: custom split normals are recomputed from "
+                                  "smooth/sharp flags (Blender's packed normal format)")
+                # material slots
+                totcol = max(me.int("totcol", 0), ob.int("totcol", 0))
+                me_mats = _ptr_array(ctx, me, "mat", me.int("totcol", 0))
+                ob_mats = _ptr_array(ctx, ob, "mat", ob.int("totcol", 0))
+                bits = None
+                if ob.fields.get("matbits") is not None and ob.fields["matbits"].is_ptr:
+                    bits = ob.array("matbits", "u1", ob.int("totcol", 0))
+                else:
+                    bits = ob.ints("matbits")
+                slots = []
+                for i in range(max(totcol, 1)):
+                    use_ob = False
+                    if bits is not None and i < len(bits):
+                        use_ob = bits[i] != 0
+                    mp = ob_mats[i] if (use_ob and i < len(ob_mats)) else (me_mats[i] if i < len(me_mats) else 0)
+                    slots.append(ctx.bf.view(mp, "Material") if mp else None)
+                fn = face_normals(m)
+                cn = corner_normals(m, fn)
+                tri_c, tri_f = triangulate(m, fn)
+                if not len(tri_c):
+                    continue
+                n_obj += 1
+                fmat = np.clip(m.face_mat[tri_f], 0, len(slots) - 1)
+                face_img = info.get("face_image")
+                img_key = None
+                if face_img is not None and len(face_img[0]) == base_m.nf and m.nf == base_m.nf:
+                    img_key = face_img[0][tri_f]
+                uv_names = info.get("uv_names", [])
+                for si in np.unique(fmat):
+                    sel = fmat == si
+                    sub_keys = [None] if img_key is None else list(np.unique(img_key[sel]))
+                    for ik in sub_keys:
+                        sel2 = sel if ik is None else (sel & (img_key == ik))
+                        tc = tri_c[sel2]
+                        ma = slots[si]
+                        minfo = _material_info(ctx, ma, uv_names, info.get("col_names", []))
+                        if ik:   # legacy per-face image (TexFace)
+                            iv = ctx.bf.view(int(ik), "Image", ctx=face_img[1])
+                            desc = _image_descriptor(ctx, iv)
+                            if desc is not None and "base_color" not in minfo["_h3d"]["slots"]:
+                                minfo = dict(minfo); minfo["_h3d"] = dict(minfo["_h3d"])
+                                minfo["_h3d"]["slots"] = dict(minfo["_h3d"]["slots"])
+                                minfo["_h3d"]["slots"]["base_color"] = {"desc": desc, "uvset": 0, "xf": None, "wrap": 0}
+                                minfo["base_color"] = [1.0, 1.0, 1.0, minfo["base_color"][3]]
+                                minfo["name"] = minfo["name"] + "_" + os.path.basename(str(desc[1]) if desc[0] == "path" else "packed")
+                        gkey = (id(minfo), ik if ik is not None else 0)
+                        flat = tc.ravel()
+                        pos = m.V[m.corner_vert[flat]]
+                        nrm = cn[flat]
+                        pos, nrm, _, flip = bake(pos, nrm, None, W_eng)
+                        tri = np.arange(len(flat)).reshape(-1, 3)
+                        if flip:
+                            tri = tri[:, [0, 2, 1]]
+                        g = groups.setdefault(gkey, {"info": minfo, "pos": [], "nrm": [], "uv0": [], "uv1": [],
+                                                     "col": [], "idx": [], "count": 0, "has": set()})
+                        g["pos"].append(pos); g["nrm"].append(nrm)
+                        for a, src in (("uv0", m.uv0), ("uv1", m.uv1), ("col", m.col)):
+                            if src is not None:
+                                g["has"].add(a)
+                                g[a].append(np.asarray(src)[flat])
+                            else:
+                                g[a].append(None)
+                        g["idx"].append(tri + g["count"])
+                        g["count"] += len(flat)
+            parts = []
+            for gkey, g in groups.items():
+                info = g["info"]
+                n_each = [len(p) for p in g["pos"]]
+                pos = np.concatenate(g["pos"]); nrm = np.concatenate(g["nrm"])
+
+                def cat(a, dim, fill):
+                    if a not in g["has"]:
+                        return None
+                    return np.concatenate([x if x is not None else np.tile(fill, (n, 1))
+                                           for x, n in zip(g[a], n_each)])
+                uv0 = cat("uv0", 2, [0.0, 0.0])
+                uv1 = cat("uv1", 2, [0.0, 0.0])
+                col = cat("col", 4, [1.0, 1.0, 1.0, 1.0]) if info["_h3d"]["vertex_colors"] else None
+                if col is not None:
+                    # linear -> engine encoding (its shader gamma-decodes with pow 2.2)
+                    col = np.c_[np.clip(col[:, :3], 0, None) ** (1 / 2.2), np.clip(col[:, 3], 0, 1)]
+                idx = np.concatenate(g["idx"])
+                first, inv = weld(pos, nrm, uv0, uv1, col)
+                parts.append({"name": info["name"], "positions": pos[first].astype(np.float32),
+                              "normals": nrm[first].astype(np.float32),
+                              "uv0": None if uv0 is None else uv0[first].astype(np.float32),
+                              "uv1": None if uv1 is None else uv1[first].astype(np.float32),
+                              "colors": None if col is None else col[first].astype(np.float32),
+                              "tangents": None,
+                              "indices": inv[idx].astype(np.uint32).ravel(),
+                              "material_info": info})
+            _log(logger, "info", f".blend imported: {os.path.basename(path)} (Blender "
+                 f"{bf.version // 100}.{bf.version % 100}, {n_obj} mesh object(s), "
+                 f"{len(parts)} material part(s), {len(lights)} light(s))")
+            return parts, lights
+
+
+        def _ptr_array(ctx, view, field, n):
+            f = view.fields.get(field)
+            if f is None or not f.is_ptr or n <= 0:
+                return []
+            r = view.resolve(field)
+            if r is None:
+                return []
+            blk, off = r
+            fmt = ctx.bf.endian + ("I" if ctx.bf.ptrsize == 4 else "Q")
+            out = []
+            for i in range(n):
+                p = off + i * ctx.bf.ptrsize
+                if p + ctx.bf.ptrsize > len(blk.data):
+                    break
+                out.append(struct.unpack_from(fmt, blk.data, p)[0])
+            # Material pointers resolve globally (ID blocks)
+            return out
+        # ------------------------------------------------ h3d_portable
+        """
+        Portable projects, game save data and game export (stdlib only).
+
+        The FILE BURNER rules, built into the engine:
+
+          * Every asset reference in a .heaven3d file is stored RELATIVE to the
+            project folder with "/" separators ("assets/imported/car.glb"), so the
+            same project opens on Windows and Linux, on any user account, from any
+            folder or USB stick.
+          * Assets that live OUTSIDE the project (Downloads, Desktop, another
+            drive...) are copied into  <project>/assets/imported/  when the project
+            is saved — together with their side files (.gltf buffers/textures,
+            .obj .mtl + textures, .blend external images).  Files are only copied
+            once; identical files are reused, different files with the same name
+            get a _1, _2 ... suffix.  File names are made safe for every OS.
+          * On load every reference is resolved robustly: either separator style,
+            letter case differences (a Windows project on Linux), old home-relative
+            and absolute paths from earlier versions, FILE BURNER "media/" output,
+            and finally a search by file name inside the project.
+          * Project files are written atomically (temp file + rename) and the
+            previous version is kept as main.heaven3d.bak.
+
+        Game save data (SaveData) lives next to an exported game in  saves/  when
+        that folder is writable (the game and its saves travel together), otherwise
+        in the per-user data folder:
+            Windows  %APPDATA%\\Heaven3D\\<Game>
+            Linux    ~/.local/share/heaven3d/<Game>
+            macOS    ~/Library/Application Support/Heaven3D/<Game>
+        """
+        import json
+        import os
+        import re
+        import shutil
+        import stat
+        import sys
+        import time
+        import zipfile
+
+        MEDIA_EXTS = {
+            ".glb", ".gltf", ".blend", ".obj", ".egg", ".ply", ".stl", ".fbx", ".dae",
+            ".png", ".jpg", ".jpeg", ".tga", ".bmp", ".webp", ".dds", ".hdr",
+            ".tif", ".tiff", ".gif", ".ktx2",
+            ".wav", ".ogg", ".mp3", ".flac", ".m4a",
+        }
+        EMBEDDED = "__embedded__"
+        IMPORT_DIR = "assets/imported"
+        SKIP_DIRS = {".git", "__pycache__", ".heaven3d_logs", "saves", ".venv", "venv", "exports",
+                     ".idea", ".vscode", "node_modules"}
+        _SCHEME = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.\-]*:(?![\\/])")      # data:, http: ... (not C:\)
+        _WIN_ABS = re.compile(r"^[a-zA-Z]:[\\/]")
+        _BAD_CHARS = re.compile(r'[<>:"|?*\x00-\x1f]')
+        _WIN_RESERVED = {"con", "prn", "aux", "nul"} | {f"com{i}" for i in range(1, 10)} | {f"lpt{i}" for i in range(1, 10)}
+        _IMG_RE = re.compile(rb"((?://|[A-Za-z]:[\\/]|/)?[^\x00\r\n\"*?<>|]{1,900}?\.(?:png|jpe?g|tga|bmp|webp|exr|hdr|tiff?|dds))\x00",
+                             re.IGNORECASE)
+
+
+        # --------------------------------------------------------------------------- basics
+        def is_media_ref(s):
+            if not isinstance(s, str):
+                return False
+            t = s.strip()
+            if not t or t == EMBEDDED or len(t) > 4096 or "\n" in t:
+                return False
+            if _SCHEME.match(t) and not _WIN_ABS.match(t):
+                return False
+            return os.path.splitext(t)[1].lower() in MEDIA_EXTS
+
+
+        def to_posix(p):
+            return p.replace("\\", "/")
+
+
+        def safe_name(name):
+            """A file name that is valid on Windows, Linux and macOS."""
+            name = _BAD_CHARS.sub("_", name).replace("/", "_").replace("\\", "_").strip()
+            stem, ext = os.path.splitext(name)
+            stem = stem.rstrip(". ") or "asset"
+            if stem.lower() in _WIN_RESERVED:
+                stem += "_"
+            return stem + ext.lower()
+
+
+        def inside(path, folder):
+            try:
+                a = os.path.normcase(os.path.realpath(path))
+                b = os.path.normcase(os.path.realpath(folder))
+                return os.path.commonpath([a, b]) == b
+            except (ValueError, OSError):
+                return False
+
+
+        def rel_posix(path, folder):
+            return to_posix(os.path.relpath(os.path.abspath(path), os.path.abspath(folder)))
+
+
+        def ci_join(base, parts):
+            """Case-insensitive path walk: base + parts -> existing file or None."""
+            cur = base
+            for i, part in enumerate(parts):
+                nxt = os.path.join(cur, part)
+                if os.path.exists(nxt):
+                    cur = nxt
+                    continue
+                try:
+                    low = part.lower()
+                    match = next((e for e in os.listdir(cur) if e.lower() == low), None)
+                except OSError:
+                    return None
+                if match is None:
+                    return None
+                cur = os.path.join(cur, match)
+            return cur if os.path.isfile(cur) else None
+
+
+        def atomic_write_text(path, text, backup=True):
+            """Write text so a crash or power cut never leaves a half-written file."""
+            path = os.path.abspath(path)
+            d = os.path.dirname(path)
+            os.makedirs(d, exist_ok=True)
+            tmp = os.path.join(d, f".{os.path.basename(path)}.{os.getpid()}.tmp")
+            with open(tmp, "w", encoding="utf-8", newline="\n") as f:
+                f.write(text)
+                f.flush()
+                try:
+                    os.fsync(f.fileno())
+                except OSError:
+                    pass
+            if backup and os.path.isfile(path):
+                try:
+                    shutil.copy2(path, path + ".bak")
+                except OSError:
+                    pass
+            for attempt in range(5):           # Windows: a virus scanner may hold the file briefly
+                try:
+                    os.replace(tmp, path)
+                    return
+                except PermissionError:
+                    time.sleep(0.15 * (attempt + 1))
+            os.replace(tmp, path)
+
+
+        def atomic_write_json(path, data, backup=True):
+            atomic_write_text(path, json.dumps(data, indent=2, ensure_ascii=False), backup)
+
+
+        # --------------------------------------------------------------------------- resolve
+        class Resolver:
+            """Turns any stored asset reference into an existing file."""
+
+            def __init__(self, project_dir, extra_dirs=()):
+                self.project_dir = os.path.abspath(project_dir or os.getcwd())
+                self.extra = [os.path.abspath(d) for d in extra_dirs if d]
+                self._index = None
+                self.home = os.path.expanduser("~")
+
+            def _by_name(self):
+                if self._index is None:
+                    idx = {}
+                    n = 0
+                    for base in [self.project_dir] + self.extra:
+                        for dp, dns, fns in os.walk(base):
+                            dns[:] = [d for d in dns if d not in SKIP_DIRS and not d.startswith(".")]
+                            for f in fns:
+                                idx.setdefault(f.lower(), []).append(os.path.join(dp, f))
+                                n += 1
+                            if n > 50000:
+                                break
+                    self._index = idx
+                return self._index
+
+            def resolve(self, ref):
+                if not isinstance(ref, str) or not ref.strip() or ref == EMBEDDED:
+                    return None
+                raw = ref.strip()
+                if raw.lower().startswith("file://"):
+                    try:
+                        import urllib.parse
+                        raw = urllib.parse.unquote(raw[7:])
+                        if _WIN_ABS.match(raw.lstrip("/")):
+                            raw = raw.lstrip("/")
+                    except Exception:
+                        pass
+                n = to_posix(raw)
+                parts = [p for p in n.split("/") if p not in ("", ".")]
+                # 1. absolute and present
+                for cand in (raw, n):
+                    if os.path.isabs(cand) and os.path.isfile(cand):
+                        return os.path.normpath(cand)
+                absolute = os.path.isabs(n) or bool(_WIN_ABS.match(n))
+                if not absolute:
+                    # 2. project-relative (any separator, any letter case)
+                    for base in [self.project_dir] + self.extra:
+                        cand = os.path.join(base, *parts) if parts else None
+                        if cand and os.path.isfile(cand):
+                            return os.path.normpath(cand)
+                        hit = ci_join(base, parts) if parts else None
+                        if hit:
+                            return os.path.normpath(hit)
+                    # 3. Heaven3D <= 2.6 stored paths relative to the user's home
+                    cand = os.path.join(self.home, *parts) if parts else None
+                    if cand and os.path.isfile(cand):
+                        return os.path.normpath(cand)
+                # 4. FILE BURNER output: media/<name> next to the project / engine
+                base_name = parts[-1] if parts else ""
+                if not base_name:
+                    return None
+                for d in [self.project_dir, os.path.dirname(self.project_dir)] + self.extra:
+                    cand = os.path.join(d, "media", base_name)
+                    if os.path.isfile(cand):
+                        return os.path.normpath(cand)
+                # 5. last resort: a file with that name anywhere in the project
+                hits = self._by_name().get(base_name.lower())
+                if hits:
+                    want = [p.lower() for p in parts]
+
+                    def score(h):
+                        hp = [p.lower() for p in to_posix(h).split("/")]
+                        k = 0
+                        while k < min(len(hp), len(want)) and hp[-1 - k] == want[-1 - k]:
+                            k += 1
+                        return k
+                    return os.path.normpath(max(hits, key=score))
+                return None
+
+
+        # --------------------------------------------------------------------------- sidecars
+        def _read_text(path):
+            with open(path, "r", encoding="utf-8", errors="replace") as f:
+                return f.read()
+
+
+        def _gltf_uris(path):
+            try:
+                g = json.loads(_read_text(path))
+            except (OSError, ValueError):
+                return []
+            out = []
+            for sec in ("images", "buffers"):
+                for e in g.get(sec, []) or []:
+                    u = e.get("uri") if isinstance(e, dict) else None
+                    if isinstance(u, str) and u and not u.startswith("data:") and not _SCHEME.match(u):
+                        out.append(u)
+            return out
+
+
+        def _obj_refs(path):
+            """mtllib targets of an .obj, and texture names of an .mtl."""
+            out = []
+            try:
+                for line in _read_text(path).splitlines():
+                    t = line.strip().split()
+                    if not t:
+                        continue
+                    k = t[0].lower()
+                    if k == "mtllib" and len(t) > 1:
+                        out.append(line.strip()[6:].strip())
+                    elif k.startswith("map_") or k in ("bump", "norm", "disp", "refl"):
+                        out.append(t[-1])
+            except OSError:
+                pass
+            return out
+
+
+        def _blend_images(path):
+            """External image paths referenced by a .blend (relative '//' ones)."""
+            try:
+                with open(path, "rb") as f:
+                    data = f.read()
+                if data[:2] == b"\x1f\x8b" or data[:4] == b"\x28\xb5\x2f\xfd":
+                    data = _decompress(data, path)                      # noqa: F821 (from h3d_blendfile)
+            except Exception:
+                return []
+            out = []
+            for m in _IMG_RE.finditer(data):
+                s = m.group(1).decode("utf-8", "replace")
+                if s.startswith("//"):
+                    out.append(s)
+            return list(dict.fromkeys(out))
+
+
+        def sidecars(path):
+            """[(stored reference, resolved file)] the asset needs next to it."""
+            ext = os.path.splitext(path)[1].lower()
+            d = os.path.dirname(os.path.abspath(path))
+            refs = []
+            if ext == ".gltf":
+                import urllib.parse
+                refs = [(u, urllib.parse.unquote(u)) for u in _gltf_uris(path)]
+            elif ext == ".obj":
+                for m in _obj_refs(path):
+                    refs.append((m, m))
+                    mp = os.path.join(d, *to_posix(m).split("/"))
+                    if os.path.isfile(mp):
+                        mdir = os.path.dirname(mp)
+                        for t in _obj_refs(mp):
+                            full = os.path.normpath(os.path.join(mdir, *to_posix(t).split("/")))
+                            r = to_posix(os.path.relpath(full, d)) if inside(full, d) else os.path.basename(full)
+                            refs.append((r, r))
+            elif ext == ".blend":
+                refs = [(r, r[2:]) for r in _blend_images(path)]
+            out = []
+            for stored, rel in refs:
+                p = to_posix(rel)
+                cand = os.path.join(d, *[x for x in p.split("/") if x])
+                if not os.path.isfile(cand):
+                    cand = ci_join(d, [x for x in p.split("/") if x]) or os.path.join(d, os.path.basename(p))
+                if os.path.isfile(cand):
+                    out.append((stored, os.path.normpath(cand)))
+            return out
+
+
+        # --------------------------------------------------------------------------- collect
+        class Collector:
+            """Copies assets that live outside the project into assets/imported/."""
+
+            def __init__(self, project_dir, log=None, dest_root=None):
+                self.project_dir = os.path.abspath(project_dir)
+                self.dest_root = os.path.abspath(dest_root or project_dir)
+                self.dest = os.path.join(self.dest_root, *IMPORT_DIR.split("/"))
+                self.log = log or (lambda m: None)
+                self.done = {}            # normcase(src) -> stored relative path
+                self.copied = []
+
+            def _same(self, a, b):
+                try:
+                    if os.path.getsize(a) != os.path.getsize(b):
+                        return False
+                    import filecmp
+                    return filecmp.cmp(a, b, shallow=False)
+                except OSError:
+                    return False
+
+            def _place(self, src, folder, name):
+                """Copy src to folder/name (deduplicated); returns the final path."""
+                os.makedirs(folder, exist_ok=True)
+                stem, ext = os.path.splitext(safe_name(name))
+                k = 0
+                while True:
+                    cand = os.path.join(folder, f"{stem}{'_' + str(k) if k else ''}{ext}")
+                    taken = [e for e in os.listdir(folder) if e.lower() == os.path.basename(cand).lower()]
+                    if not taken:
+                        shutil.copy2(src, cand)
+                        self.copied.append((src, cand))
+                        return cand
+                    existing = os.path.join(folder, taken[0])
+                    if self._same(src, existing):
+                        return existing
+                    k += 1
+
+            def add(self, src):
+                key = os.path.normcase(os.path.abspath(src))
+                try:
+                    st = os.stat(src)
+                    sig = (key, st.st_size, int(st.st_mtime))
+                except OSError:
+                    sig = (key, 0, 0)
+                hit = self.done.get(sig)
+                if hit and os.path.isfile(os.path.join(self.dest_root, *hit.split("/"))):
+                    return hit
+                ext = os.path.splitext(src)[1].lower()
+                scs = sidecars(src) if ext in (".gltf", ".obj", ".blend") else []
+                if scs:
+                    # Assets with side files get their own folder so their internal
+                    # relative references keep working.
+                    stem = safe_name(os.path.splitext(os.path.basename(src))[0])
+                    fname = safe_name(os.path.basename(src))
+                    folder, k = os.path.join(self.dest, stem), 1
+                    while os.path.isfile(os.path.join(folder, fname)) and not self._same(src, os.path.join(folder, fname)):
+                        folder, k = os.path.join(self.dest, f"{stem}_{k}"), k + 1
+                    main = self._place(src, folder, os.path.basename(src))
+                    rewrite = {}
+                    src_dir = os.path.dirname(os.path.abspath(src))
+                    for stored, f in scs:
+                        if inside(f, src_dir) and ".." not in to_posix(os.path.relpath(f, src_dir)).split("/"):
+                            rel = to_posix(os.path.relpath(f, src_dir))
+                            sub = os.path.join(folder, *[safe_name(x) for x in rel.split("/")[:-1]])
+                            placed = self._place(f, sub, os.path.basename(f))
+                        else:
+                            placed = self._place(f, folder, os.path.basename(f))
+                        new_ref = rel_posix(placed, folder)
+                        if new_ref != to_posix(stored):
+                            rewrite[stored] = new_ref
+                    if rewrite:
+                        self._rewrite(main, ext, rewrite)
+                else:
+                    main = self._place(src, self.dest, os.path.basename(src))
+                rel = rel_posix(main, self.dest_root)
+                self.done[sig] = rel
+                self.log(f"[Portable] copied into the project: {os.path.basename(src)} -> {rel}")
+                return rel
+
+            def _rewrite(self, path, ext, mapping):
+                try:
+                    if ext == ".gltf":
+                        g = json.loads(_read_text(path))
+                        import urllib.parse
+                        for sec in ("images", "buffers"):
+                            for e in g.get(sec, []) or []:
+                                u = e.get("uri") if isinstance(e, dict) else None
+                                if u in mapping:
+                                    e["uri"] = urllib.parse.quote(mapping[u])
+                        with open(path, "w", encoding="utf-8") as f:
+                            json.dump(g, f, indent=1, ensure_ascii=False)
+                    elif ext == ".obj":
+                        lines = _read_text(path).splitlines(True)
+                        for i, ln in enumerate(lines):
+                            t = ln.strip()
+                            if t.lower().startswith("mtllib") and t[6:].strip() in mapping:
+                                lines[i] = "mtllib " + mapping[t[6:].strip()] + "\n"
+                        with open(path, "w", encoding="utf-8", newline="") as f:
+                            f.write("".join(lines))
+                    # .blend references are resolved by the importer's search
+                    # (relative path, then the blend folder) - never edited.
+                except Exception as ex:
+                    self.log(f"[Portable] could not rewrite references in {os.path.basename(path)}: {ex}")
+
+
+        # --------------------------------------------------------------------------- project data
+        def _walk_strings(node, fn):
+            if isinstance(node, dict):
+                for k, v in list(node.items()):
+                    if isinstance(v, str):
+                        node[k] = fn(v)
+                    else:
+                        _walk_strings(v, fn)
+            elif isinstance(node, list):
+                for i, v in enumerate(node):
+                    if isinstance(v, str):
+                        node[i] = fn(v)
+                    else:
+                        _walk_strings(v, fn)
+            return node
+
+
+        def make_portable(data, project_dir, log=None, collect=True, resolver=None, collector=None):
+            """Rewrite every asset reference in a project dict to a project-relative
+            '/' path, copying outside assets into the project.  Returns a report."""
+            log = log or (lambda m: None)
+            resolver = resolver or Resolver(project_dir)
+            collector = collector or (Collector(project_dir, log) if collect else None)
+            report = {"relative": 0, "copied": 0, "missing": []}
+
+            def fix(s):
+                if not is_media_ref(s):
+                    return s
+                hit = resolver.resolve(s)
+                if hit is None:
+                    report["missing"].append(s)
+                    return to_posix(s) if not (os.path.isabs(s) or _WIN_ABS.match(s)) else s
+                if inside(hit, resolver.project_dir):
+                    report["relative"] += 1
+                    return rel_posix(hit, resolver.project_dir)
+                if collector is None:
+                    return hit
+                before = len(collector.copied)
+                rel = collector.add(hit)
+                report["copied"] += len(collector.copied) - before
+                return rel
+
+            _walk_strings(data, fix)
+            for m in report["missing"][:20]:
+                log(f"[Portable] asset not found (kept as is): {m}")
+            return report
+
+
+        def resolve_project_data(data, project_dir, log=None, extra_dirs=()):
+            """Replace every asset reference with the absolute path of the file it
+            points to on THIS machine (unresolvable ones are left unchanged)."""
+            log = log or (lambda m: None)
+            r = Resolver(project_dir, extra_dirs)
+            missing = []
+
+            def fix(s):
+                if not is_media_ref(s):
+                    return s
+                hit = r.resolve(s)
+                if hit is None:
+                    missing.append(s)
+                    return s
+                return hit
+            _walk_strings(data, fix)
+            for m in missing[:20]:
+                log(f"[Portable] missing asset: {m}")
+            return data
+
+
+        # --------------------------------------------------------------------------- save data
+        def user_data_root(app="Heaven3D"):
+            if sys.platform.startswith("win"):
+                base = os.environ.get("APPDATA") or os.path.join(os.path.expanduser("~"), "AppData", "Roaming")
+                return os.path.join(base, app)
+            if sys.platform == "darwin":
+                return os.path.join(os.path.expanduser("~"), "Library", "Application Support", app)
+            base = os.environ.get("XDG_DATA_HOME") or os.path.join(os.path.expanduser("~"), ".local", "share")
+            return os.path.join(base, app.lower())
+
+
+        def _writable(folder):
+            try:
+                os.makedirs(folder, exist_ok=True)
+                probe = os.path.join(folder, f".write_test_{os.getpid()}")
+                with open(probe, "w") as f:
+                    f.write("ok")
+                os.remove(probe)
+                return True
+            except OSError:
+                return False
+
+
+        class SaveData:
+            """Game saves:  eng.saves.save("slot1", {...});  eng.saves.load("slot1").
+
+            Data is JSON, written atomically (never corrupted by a crash), with the
+            previous version kept as <slot>.json.bak and used automatically if the
+            main file is damaged."""
+
+            def __init__(self, game_name, portable_root=None):
+                self.game = safe_name(game_name or "Game") or "Game"
+                self.folder = None
+                if portable_root and _writable(os.path.join(portable_root, "saves")):
+                    self.folder = os.path.join(portable_root, "saves")
+                else:
+                    self.folder = os.path.join(user_data_root(), self.game)
+                    os.makedirs(self.folder, exist_ok=True)
+
+            def path(self, slot="save"):
+                return os.path.join(self.folder, safe_name(str(slot)) + ".json")
+
+            def save(self, slot="save", data=None):
+                atomic_write_json(self.path(slot), {"heaven3d_save": 1, "game": self.game,
+                                                    "saved_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+                                                    "data": data})
+                return self.path(slot)
+
+            def load(self, slot="save", default=None):
+                for p in (self.path(slot), self.path(slot) + ".bak"):
+                    try:
+                        with open(p, "r", encoding="utf-8") as f:
+                            d = json.load(f)
+                        return d.get("data", default) if isinstance(d, dict) and "heaven3d_save" in d else d
+                    except (OSError, ValueError):
+                        continue
+                return default
+
+            def exists(self, slot="save"):
+                return os.path.isfile(self.path(slot))
+
+            def delete(self, slot="save"):
+                for p in (self.path(slot), self.path(slot) + ".bak"):
+                    try:
+                        os.remove(p)
+                    except OSError:
+                        pass
+
+            def slots(self):
+                try:
+                    return sorted(f[:-5] for f in os.listdir(self.folder) if f.endswith(".json"))
+                except OSError:
+                    return []
+
+
+        # --------------------------------------------------------------------------- export
+        PLATFORMS = ("windows", "linux")
+        _PRUNE_DIRS = {"__pycache__", "test", "tests", "idlelib", "turtledemo", "ensurepip", "lib2to3",
+                       "pydoc_data", "tkinter", "tcl", "tcl8", "tcl8.6", "tk8.6", "tcl9.0", "tk9.0", "include",
+                       "Tools", "Doc", "man", "conda-meta", "pkgconfig", "pip", "setuptools", "wheel",
+                       "_distutils_hack", "venv", "Scripts"}
+        _PRUNE_FILES = re.compile(r"(^tcl.*\.dll$|^tk.*\.dll$|^_tkinter.*|^libtcl.*|^libtk.*|.*\.a$|.*\.lib$|.*\.pdb$"
+                                  r"|^distutils-precedence\.pth$)", re.I)
+
+
+        def current_platform():
+            return "windows" if sys.platform.startswith("win") else ("macos" if sys.platform == "darwin" else "linux")
+
+
+        def find_player(engine_dir, platform):
+            """Folder holding a bundled Python for `platform` (see tools/standalone)."""
+            rt = os.path.join(engine_dir, "runtime")
+            for cand in (os.path.join(rt, "players", platform), os.path.join(rt, "python")):
+                marker = os.path.join(cand, "HEAVEN3D_PLATFORM")
+                try:
+                    with open(marker) as f:
+                        if f.read().strip() == platform:
+                            return cand
+                except OSError:
+                    continue
+            return None
+
+
+        def _copy_python(src, dst, log):
+            """Copy a bundled Python, leaving out what a game never uses (tests,
+            Tcl/Tk, pip, headers ...)."""
+            def ignore(d, names):
+                out = set()
+                for n in names:
+                    full = os.path.join(d, n)
+                    if os.path.isdir(full):
+                        if n in _PRUNE_DIRS:
+                            out.add(n)
+                    elif _PRUNE_FILES.match(n) or n == "HEAVEN3D_PLATFORM":
+                        out.add(n)
+                return out
+            shutil.copytree(src, dst, ignore=ignore, symlinks=False)
+
+
+        def _game_dir_name(name):
+            return re.sub(r"\s+", " ", safe_name(name)).strip() or "Game"
+
+
+        def _linux_launcher(game):
+            return f"""#!/bin/sh
+        # {game} - made with Heaven3D
+        HERE="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
+        exec "$HERE/engine/python/bin/python3" -E -s "$HERE/engine/Heaven3D.py" --game "$HERE" "$@"
+        """
+
+
+        def _install_shortcut_sh(game):
+            return f"""#!/bin/sh
+        # Adds "{game}" to your applications menu (with its icon).
+        HERE="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
+        APPS="${{XDG_DATA_HOME:-$HOME/.local/share}}/applications"
+        mkdir -p "$APPS"
+        cat > "$APPS/heaven3d-{re.sub(r'[^a-z0-9]+', '-', game.lower()).strip('-')}.desktop" <<EOF
+        [Desktop Entry]
+        Type=Application
+        Name={game}
+        Comment=Made with Heaven3D
+        Exec="$HERE/{game}"
+        Path=$HERE
+        Icon=$HERE/icon.png
+        Terminal=false
+        Categories=Game;
+        EOF
+        echo "Added {game} to the applications menu."
+        """
+
+
+        def export_game(project_file, out_dir, targets, engine_dir, game_name=None, width=1600, height=900,
+                        make_zip=True, log=print):
+            """Build stand-alone copies of a project for each target platform.
+
+            <out>/<Game>-Windows/<Game>.exe   double-click to play (Heaven3D logo)
+            <out>/<Game>-Linux/<Game>         ./<Game>  (+ install-shortcut.sh)
+            Both contain  game/ (the project, every asset inside),  engine/
+            (Heaven3D + its own Python),  saves/  (game saves travel with the game).
+            Returns [(platform, folder, zip or None)]."""
+            project_file = os.path.abspath(project_file)
+            project_dir = os.path.dirname(project_file)
+            engine_dir = os.path.abspath(engine_dir)
+            out_dir = os.path.abspath(out_dir)
+            meta = {}
+            try:
+                with open(os.path.join(project_dir, "project.json"), encoding="utf-8") as f:
+                    meta = json.load(f)
+            except (OSError, ValueError):
+                pass
+            game = _game_dir_name(game_name or meta.get("name") or os.path.basename(project_dir))
+            os.makedirs(out_dir, exist_ok=True)
+            results = []
+            for target in targets:
+                target = target.lower()
+                if target not in PLATFORMS:
+                    raise ValueError(f"unknown platform {target!r}")
+                player = find_player(engine_dir, target)
+                if player is None:
+                    raise FileNotFoundError(
+                        f"No {target.title()} player found in {os.path.join(engine_dir, 'runtime')}.\n"
+                        f"Exporting needs the Heaven3D standalone edition (it ships the Windows and Linux players).")
+                stage = os.path.join(out_dir, f"{game}-{target.title()}")
+                log(f"[Export] {target.title()}: {stage}")
+                if os.path.isdir(stage):
+                    shutil.rmtree(stage)
+                os.makedirs(stage)
+                # 1. the game (project folder, then every outside asset pulled in)
+                gdir = os.path.join(stage, "game")
+
+                def ignore(d, names):
+                    skip = {n for n in names if n in SKIP_DIRS or n.endswith((".bak", ".tmp", ".pyc"))
+                            or n in (".heaven3d_thumb.png", "Thumbs.db", ".DS_Store")}
+                    for n in names:
+                        if inside(os.path.join(d, n), out_dir):
+                            skip.add(n)
+                    return skip
+                shutil.copytree(project_dir, gdir, ignore=ignore)
+                with open(project_file, encoding="utf-8") as f:
+                    data = json.load(f)
+                rep = make_portable(data, project_dir, log, collect=True, resolver=Resolver(project_dir),
+                                    collector=Collector(project_dir, log, dest_root=gdir))
+                atomic_write_json(os.path.join(gdir, "main.heaven3d"), data, backup=False)
+                if os.path.basename(project_file) != "main.heaven3d":
+                    try:
+                        os.remove(os.path.join(gdir, os.path.basename(project_file)))
+                    except OSError:
+                        pass
+                log(f"[Export]   game files ready ({rep['copied']} outside assets pulled in, "
+                    f"{len(rep['missing'])} missing)")
+                # 2. the engine + its Python
+                edir = os.path.join(stage, "engine")
+                os.makedirs(edir)
+                shutil.copy2(os.path.join(engine_dir, "Heaven3D.py"), edir)
+                for extra in ("LICENSE",):
+                    if os.path.isfile(os.path.join(engine_dir, extra)):
+                        shutil.copy2(os.path.join(engine_dir, extra), edir)
+                atomic_write_json(os.path.join(edir, "game.json"),
+                                  {"name": game, "width": int(width), "height": int(height),
+                                   "project": "game/main.heaven3d", "portable_saves": True,
+                                   "engine": globals().get("HEAVEN_VERSION", "")}, backup=False)
+                log("[Export]   copying the Python runtime...")
+                _copy_python(player, os.path.join(edir, "python"), log)
+                # 3. launcher stamped with the Heaven3D logo
+                brand = os.path.join(engine_dir, "branding")
+                if target == "windows":
+                    exe = os.path.join(engine_dir, "runtime", "launchers", "heaven3d-game.exe")
+                    if not os.path.isfile(exe):
+                        raise FileNotFoundError(f"missing launcher {exe}")
+                    shutil.copy2(exe, os.path.join(stage, f"{game}.exe"))
+                else:
+                    lp = os.path.join(stage, game)
+                    with open(lp, "w", newline="\n") as f:
+                        f.write(_linux_launcher(game))
+                    with open(os.path.join(stage, "install-shortcut.sh"), "w", newline="\n") as f:
+                        f.write(_install_shortcut_sh(game))
+                    for p in (lp, os.path.join(stage, "install-shortcut.sh")):
+                        os.chmod(p, 0o755)
+                    if os.path.isfile(os.path.join(brand, "icons", "logo_256.png")):
+                        shutil.copy2(os.path.join(brand, "icons", "logo_256.png"), os.path.join(stage, "icon.png"))
+                os.makedirs(os.path.join(stage, "saves"), exist_ok=True)
+                with open(os.path.join(stage, "README.txt"), "w", newline="\r\n" if target == "windows" else "\n") as f:
+                    f.write(f"{game}\nMade with Heaven3D.\n\n"
+                            + (f"Play: double-click {game}.exe\n" if target == "windows" else
+                               f"Play: ./{game}   (or double-click it)\n"
+                               f"Menu entry with icon: ./install-shortcut.sh\n")
+                            + "\nYour saved games are kept in the saves folder, so you can copy the whole\n"
+                              "folder to another computer (or a USB stick) and keep playing.\n")
+                zpath = None
+                if make_zip:
+                    log("[Export]   zipping...")
+                    zpath = stage + ".zip"
+                    zip_folder(stage, zpath, unix=(target == "linux"))
+                results.append((target, stage, zpath))
+                log(f"[Export] {target.title()} done.")
+            return results
+
+
+        def _is_unix_exec(rel):
+            r = to_posix(rel)
+            name = r.rsplit("/", 1)[-1]
+            return ("/bin/" in "/" + r or name.endswith(".sh") or ".so" in name
+                    or ("/" not in r and "." not in name))
+
+
+        def zip_folder(folder, zip_path, unix=False):
+            """Zip `folder` (as a top-level directory).  With unix=True the Linux
+            executable bits are stored, so it unpacks runnable even when the zip was
+            made on Windows."""
+            folder = os.path.abspath(folder)
+            top = os.path.basename(folder)
+            tmp = zip_path + ".part"
+            with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED, compresslevel=6) as z:
+                for dp, dns, fns in os.walk(folder):
+                    dns.sort()
+                    if not dns and not fns:                         # keep empty folders (saves/)
+                        zd = zipfile.ZipInfo(to_posix(os.path.join(top, os.path.relpath(dp, folder))) + "/")
+                        zd.external_attr = ((stat.S_IFDIR | 0o755) << 16) | 0x10
+                        z.writestr(zd, b"")
+                    for fn in sorted(fns):
+                        full = os.path.join(dp, fn)
+                        rel = os.path.relpath(full, folder)
+                        arc = to_posix(os.path.join(top, rel))
+                        zi = zipfile.ZipInfo.from_file(full, arc)
+                        zi.compress_type = zipfile.ZIP_DEFLATED
+                        if unix:
+                            mode = 0o755 if (_is_unix_exec(rel) or os.access(full, os.X_OK) and not sys.platform.startswith("win")) else 0o644
+                            zi.external_attr = ((stat.S_IFREG | mode) << 16)
+                            zi.create_system = 3
+                        with open(full, "rb") as src, z.open(zi, "w") as dst:
+                            shutil.copyfileobj(src, dst, 1 << 20)
+            os.replace(tmp, zip_path)
+            return zip_path
+
+        portable = _h3d27_types.SimpleNamespace(
+            is_media_ref=is_media_ref, safe_name=safe_name, Resolver=Resolver, Collector=Collector,
+            make_portable=make_portable, resolve_project_data=resolve_project_data,
+            SaveData=SaveData, user_data_root=user_data_root, export_game=export_game,
+            find_player=find_player, current_platform=current_platform, zip_folder=zip_folder,
+            atomic_write_json=atomic_write_json, IMPORT_DIR=IMPORT_DIR)
+        return _h3d27_types.SimpleNamespace(
+            load_blend=load_blend, load_gltf=load_gltf,
+            BlendFormatError=BlendFormatError, GltfError=GltfError,
+            MeshoptError=MeshoptError, decode_meshopt=decode_meshopt), portable
+
+    H3DImporters, H3DPortable = _h3d27_build_importers()
+
+    # =================================================================
+    #  Engine integration (runs at import time, before any shader compiles)
+    # =================================================================
+    HEAVEN_VERSION = "2.7.0"
+
+    class _H3D27Log:
+        @staticmethod
+        def warn(msg):
+            Log.warn(msg)
+
+        @staticmethod
+        def info(msg):
+            Log.info(msg)
+
+    _H3D27_ONCE = set()
+
+    def _h3d27_log_once(key, msg):
+        if key not in _H3D27_ONCE:
+            _H3D27_ONCE.add(key)
+            try:
+                Log.warn(msg)
+            except Exception:
+                pass
+
+    # ---------------------------------------------------------------
+    # 1. Shaders: vertex colours, 2nd UV set, per-texture UV transform /
+    #    wrap mode, normal scale, AO strength (anchored string surgery,
+    #    same idiom as the terrain patch; any missing anchor = disabled).
+    # ---------------------------------------------------------------
+    _H3D27_VERT_IN = (
+        "\nlayout (location = 8) in vec4 in_h3d_color;   // (1-r,1-g,1-b,a): unbound = white"
+        "\nlayout (location = 9) in vec2 in_h3d_uv1;"
+        "\nout vec4 v_h3d_color;"
+        "\nout vec2 v_h3d_uv1;")
+    _H3D27_VERT_MAIN = (
+        "\n    v_h3d_color = vec4(1.0 - in_h3d_color.rgb, in_h3d_color.a);"
+        "\n    v_h3d_uv1 = in_h3d_uv1;")
+    _H3D27_FRAG_HEAD = """
+in vec4 v_h3d_color;
+in vec2 v_h3d_uv1;
+uniform int   u_h3d_on;            // 1 = material carries Heaven3D 2.7 import data
+uniform int   u_h3d_uvset[5];      // albedo, metal-rough, normal, emissive, ao
+uniform int   u_h3d_xf_on[5];
+uniform mat3  u_h3d_uvxf[5];
+uniform int   u_h3d_wrap[10];      // 0 repeat, 1 clamp, 2 mirror (s,t per slot)
+uniform float u_h3d_normal_scale;
+uniform float u_h3d_ao_strength;
+uniform int   u_h3d_emis_srgb;
+float h3d_wrap1(float x, int m){
+    if (m == 2) return 1.0 - abs(mod(x, 2.0) - 1.0);
+    if (m == 1) return clamp(x, 0.0, 1.0);
+    return x;
+}
+vec2 h3d_uv(int s){
+    if (u_h3d_on != 1) return v_uv;
+    vec2 b = (u_h3d_uvset[s] == 1) ? v_h3d_uv1 : v_uv;
+    if (u_h3d_xf_on[s] == 1) b = (u_h3d_uvxf[s] * vec3(b, 1.0)).xy;
+    return vec2(h3d_wrap1(b.x, u_h3d_wrap[2 * s]), h3d_wrap1(b.y, u_h3d_wrap[2 * s + 1]));
+}
+"""
+    _H3D27_SLOTS = (("u_albedo_tex", 0), ("u_mr_tex", 1), ("u_normal_tex", 2),
+                    ("u_emissive_tex", 3), ("u_ao_tex", 4))
+
+    def _h3d27_patch_vert(src):
+        a1 = "layout (location = 3) in vec2 in_uv;"
+        a2 = "    v_uv = in_uv;"
+        if a1 not in src or a2 not in src or "in_h3d_color" in src:
+            return src, False
+        src = src.replace(a1, a1 + _H3D27_VERT_IN, 1)
+        src = src.replace(a2, a2 + _H3D27_VERT_MAIN, 1)
+        return src, True
+
+    def _h3d27_patch_frag(src, forward):
+        a_in = "in vec2 v_uv;"
+        if a_in not in src or "h3d_uv(" in src:
+            return src, False
+        src = src.replace(a_in, a_in + _H3D27_FRAG_HEAD, 1)
+        for sampler, slot in _H3D27_SLOTS:
+            src = src.replace(f"texture({sampler}, v_uv)", f"texture({sampler}, h3d_uv({slot}))")
+        if forward:
+            src = src.replace("    vec4 rgba = u_base_color;\n",
+                              "    vec4 rgba = u_base_color;\n    rgba *= v_h3d_color;\n", 1)
+        else:
+            src = src.replace("    vec4 albedo_rgba = u_base_color;\n",
+                              "    vec4 albedo_rgba = u_base_color;\n    albedo_rgba *= v_h3d_color;\n", 1)
+        src = src.replace("        N = normalize(T * tn.x + B * tn.y + N * tn.z);",
+                          "        if (u_h3d_on == 1) tn.xy *= u_h3d_normal_scale;\n"
+                          "        N = normalize(T * tn.x + B * tn.y + N * tn.z);")
+        src = src.replace("        ao = texture(u_ao_tex, h3d_uv(4)).r;",
+                          "        ao = mix(1.0, texture(u_ao_tex, h3d_uv(4)).r,"
+                          " (u_h3d_on == 1) ? u_h3d_ao_strength : 1.0);")
+        src = src.replace("        emis *= texture(u_emissive_tex, h3d_uv(3)).rgb;",
+                          "    {\n        vec3 h3d_et = texture(u_emissive_tex, h3d_uv(3)).rgb;\n"
+                          "        if (u_h3d_on == 1 && u_h3d_emis_srgb == 1) h3d_et = pow(h3d_et, vec3(2.2));\n"
+                          "        emis *= h3d_et;\n    }")
+        return src, True
+
+    try:
+        _ok = []
+        GEOMETRY_VERT, _o = _h3d27_patch_vert(GEOMETRY_VERT); _ok.append(_o)
+        FORWARD_VERT, _o = _h3d27_patch_vert(FORWARD_VERT); _ok.append(_o)
+        GEOMETRY_INST_VERT, _o = _h3d27_patch_vert(GEOMETRY_INST_VERT); _ok.append(_o)
+        GEOMETRY_FRAG, _o = _h3d27_patch_frag(GEOMETRY_FRAG, False); _ok.append(_o)
+        FORWARD_FRAG, _o = _h3d27_patch_frag(FORWARD_FRAG, True); _ok.append(_o)
+        _H3D27_SHADERS_OK = all(_ok)
+        if not _H3D27_SHADERS_OK:
+            print("[Heaven3D][WARN] 2.7 importer shader hooks partially applied: %s" % _ok)
+    except Exception as _h3d_ex:
+        _H3D27_SHADERS_OK = False
+        print(f"[Heaven3D][WARN] 2.7 importer shader hooks failed: {_h3d_ex}")
+
+    # ---------------------------------------------------------------
+    # 2. Mesh: optional 2nd vertex buffer (colour + uv1)
+    # ---------------------------------------------------------------
+    _H3D27_PREV_GET_VAO = Mesh.get_vao
+    _H3D27_PREV_MESH_RELEASE = Mesh.release
+
+    class _H3D27CullVAO:
+        """Back-face culling for single-sided glTF materials (the spec
+        requires it).  Enabled only around this draw; the engine default
+        (culling OFF) is restored straight after."""
+        __slots__ = ("_vao", "_ctx")
+
+        def __init__(self, vao, ctx):
+            self._vao, self._ctx = vao, ctx
+
+        def render(self, *a, **kw):
+            self._ctx.enable(moderngl.CULL_FACE)
+            try:
+                return self._vao.render(*a, **kw)
+            finally:
+                self._ctx.disable(moderngl.CULL_FACE)
+
+        def __getattr__(self, name):
+            return getattr(self._vao, name)
+
+    def _h3d27_is_surface_prog(program):
+        c = ShaderLib._cache
+        return program is c.get("geometry") or program is c.get("forward")
+
+    def _h3d27_get_vao(self, program):
+        if getattr(self, "_h3d_cull", False) and _h3d27_is_surface_prog(program):
+            key = ("cull", id(program))
+            v = self._vaos.get(key)
+            if v is None:
+                v = _H3D27CullVAO(_h3d27_get_vao_raw(self, program), self.ctx)
+                self._vaos[key] = v
+            return v
+        return _h3d27_get_vao_raw(self, program)
+
+    def _h3d27_get_vao_raw(self, program):
+        ext = getattr(self, "_h3d_vbo_ext", None)
+        if ext is None:
+            return _H3D27_PREV_GET_VAO(self, program)
+        pid = id(program)
+        if pid in self._vaos:
+            return self._vaos[pid]
+        if self.vbo is None:
+            raise RuntimeError(f"Mesh '{self.name}' has no VBO uploaded.")
+        attrs = set(program._members.keys()) if hasattr(program, "_members") else set()
+        fmt, names = [], []
+        for nm, n in (("in_position", 3), ("in_normal", 3), ("in_tangent", 4), ("in_uv", 2)):
+            if nm in attrs:
+                fmt.append(f"{n}f"); names.append(nm)
+            else:
+                fmt.append(f"{n}x4")
+        content = [(self.vbo, " ".join(fmt), *names)]
+        f2, n2 = [], []
+        for nm, n in (("in_h3d_color", 4), ("in_h3d_uv1", 2)):
+            if nm in attrs:
+                f2.append(f"{n}f"); n2.append(nm)
+            else:
+                f2.append(f"{n}x4")
+        if n2:
+            content.append((ext, " ".join(f2), *n2))
+        vao = self.ctx.vertex_array(program, content,
+                                    index_buffer=self.ibo if self.indexed else None)
+        self._vaos[pid] = vao
+        return vao
+
+    def _h3d27_mesh_release(self):
+        for k in [k for k in self._vaos if isinstance(k, tuple)]:
+            self._vaos.pop(k, None)
+        _H3D27_PREV_MESH_RELEASE(self)
+        ext = getattr(self, "_h3d_vbo_ext", None)
+        if ext is not None:
+            try:
+                ext.release()
+            except Exception:
+                pass
+            self._h3d_vbo_ext = None
+
+    Mesh.get_vao = _h3d27_get_vao
+    Mesh.release = _h3d27_mesh_release
+
+    def _h3d27_mesh_from_part(ctx, part):
+        md = GlbImporter.MeshData(
+            name=part.get("name", "mesh"), positions=part["positions"],
+            normals=part["normals"], uvs=part.get("uv0"),
+            tangents=part.get("tangents"), indices=part["indices"],
+            material_info=None)
+        mesh = Mesh.from_glb_mesh_data(ctx, md)
+        col, uv1 = part.get("colors"), part.get("uv1")
+        if col is not None or uv1 is not None:
+            n = len(part["positions"])
+            ext = np.zeros((n, 6), np.float32)
+            ext[:, 3] = 1.0
+            if col is not None:
+                ext[:, 0:3] = 1.0 - np.asarray(col, np.float32)[:, :3]
+                ext[:, 3] = np.asarray(col, np.float32)[:, 3]
+            if uv1 is not None:
+                ext[:, 4:6] = uv1
+            mesh._h3d_vbo_ext = ctx.buffer(ext.tobytes())
+            mesh._h3d_has_colors = col is not None
+        return mesh
+
+    # ---------------------------------------------------------------
+    # 3. Materials
+    # ---------------------------------------------------------------
+    _H3D27_SLOT_KEYS = ("base_color", "metallic_roughness", "normal", "emissive", "occlusion")
+
+    def _h3d27_pack_mr(pack):
+        """Blender: build a glTF-style metal(B)/rough(G) texture from the
+        image channels the node tree routes into Metallic / Roughness."""
+        try:
+            from PIL import Image
+            import io as _io
+            metal, rough = pack.get("metal"), pack.get("rough")
+            srcs = [x for x in (metal, rough) if x is not None]
+            if not srcs:
+                return None
+            if (metal and rough and metal[0]["desc"] == rough[0]["desc"]
+                    and metal[1] == "b" and rough[1] == "g"):
+                return metal[0]
+
+            def load(ti):
+                kind, payload = ti["desc"]
+                return Image.open(_io.BytesIO(payload) if kind == "bytes" else payload).convert("RGBA")
+
+            imgs = [(load(t), ch) for t, ch in srcs]
+            size = max((im.size for im, _ in imgs), key=lambda s: s[0] * s[1])
+            out = np.full((size[1], size[0], 3), 255, np.uint8)
+
+            def chan(im, ch):
+                a = np.asarray(im.resize(size), np.uint8)
+                if ch in ("r", "g", "b"):
+                    return a[..., "rgb".index(ch)]
+                return np.asarray(im.convert("L").resize(size), np.uint8)
+            if rough is not None:
+                out[..., 1] = chan(load(rough[0]), rough[1])
+            if metal is not None:
+                out[..., 2] = chan(load(metal[0]), metal[1])
+            else:
+                out[..., 2] = 255
+            buf = _io.BytesIO()
+            Image.fromarray(out, "RGB").save(buf, "PNG")
+            base = dict((rough or metal)[0])
+            base["desc"] = ("bytes", buf.getvalue())
+            return base
+        except Exception as ex:
+            _h3d27_log_once("mrpack", f"[Import] metal/rough texture packing failed: {ex}")
+            return None
+
+    def _h3d27_material_from_info(info):
+        ext = info.get("_h3d", {})
+        slots = dict(ext.get("slots", {}))
+        mr = slots.get("metallic_roughness")
+        if mr is not None and "pack" in mr:
+            mr = _h3d27_pack_mr(mr["pack"])
+            if mr is None:
+                slots.pop("metallic_roughness", None)
+            else:
+                slots["metallic_roughness"] = mr
+        base = dict(info)
+        for key, field in zip(_H3D27_SLOT_KEYS, ("base_color_tex", "metallic_roughness_tex",
+                                                  "normal_tex", "emissive_tex", "occlusion_tex")):
+            s = slots.get(key)
+            base[field] = s["desc"] if s else None
+        mat = Material.from_glb_info(base)
+        uvset, xf_on, xf, wrap = [], [], [], []
+        for key in _H3D27_SLOT_KEYS:
+            s = slots.get(key) or {}
+            uvset.append(int(s.get("uvset", 0)))
+            m = s.get("xf")
+            if m is not None:
+                xf_on.append(1)
+                xf.extend(np.asarray(m, np.float32).T.ravel().tolist())   # column-major
+            else:
+                xf_on.append(0)
+                xf.extend([1, 0, 0, 0, 1, 0, 0, 0, 1])
+            ws = int(s.get("wrap", 0)); wt = int(s.get("wrap_t", ws))
+            wrap += [ws, wt]
+        mat._h3d = {"uvset": uvset, "xf_on": xf_on, "xf": xf, "wrap": wrap,
+                    "normal_scale": float((slots.get("normal") or {}).get("scale", 1.0)),
+                    "ao_strength": float((slots.get("occlusion") or {}).get("strength", 1.0)),
+                    "emis_srgb": 1}
+        return mat
+
+    _H3D27_PREV_BIND = Renderer._bind_material
+
+    def _h3d27_bind_material(self, prog, mat):
+        _H3D27_PREV_BIND(self, prog, mat)
+        try:
+            on = prog.get("u_h3d_on", None)
+            if on is None:
+                return
+            ext = getattr(mat, "_h3d", None)
+            on.value = 1 if ext else 0
+            if not ext:
+                return
+            for name, data, dt in (("u_h3d_uvset", ext["uvset"], "i4"),
+                                   ("u_h3d_xf_on", ext["xf_on"], "i4"),
+                                   ("u_h3d_uvxf", ext["xf"], "f4"),
+                                   ("u_h3d_wrap", ext["wrap"], "i4")):
+                u = prog.get(name, None)
+                if u is not None:
+                    u.write(np.asarray(data, dt).tobytes())
+            for name, val in (("u_h3d_normal_scale", ext["normal_scale"]),
+                              ("u_h3d_ao_strength", ext["ao_strength"]),
+                              ("u_h3d_emis_srgb", ext["emis_srgb"])):
+                u = prog.get(name, None)
+                if u is not None:
+                    u.value = val
+            # clamp-to-edge sampling (mirror is done in the shader)
+            for i, attr in enumerate(("base_color_tex", "metallic_roughness_tex", "normal_tex",
+                                      "emissive_tex", "occlusion_tex")):
+                src = getattr(mat, attr, None)
+                if not src:
+                    continue
+                ws, wt = ext["wrap"][2 * i], ext["wrap"][2 * i + 1]
+                if ws == 0 and wt == 0:
+                    continue
+                tex = self.get_texture(src)
+                tex.repeat_x = ws != 1
+                tex.repeat_y = wt != 1
+        except Exception as ex:
+            _h3d27_log_once("bind", f"[Import] material binding: {ex}")
+
+    Renderer._bind_material = _h3d27_bind_material
+
+    # ---------------------------------------------------------------
+    # 4. Import entry points
+    # ---------------------------------------------------------------
+    def _h3d27_load_parts(path):
+        ext = os.path.splitext(path)[1].lower()
+        if ext == ".blend":
+            return H3DImporters.load_blend(path, _H3D27Log)
+        return H3DImporters.load_gltf(path, _H3D27Log)
+
+    def _h3d27_nodes_from_parts(parts):
+        roots = []
+        for p in parts:
+            md = GlbImporter.MeshData(name=p["name"], positions=p["positions"], normals=p["normals"],
+                                      uvs=p.get("uv0"), tangents=p.get("tangents"),
+                                      indices=p["indices"], material_info=p["material_info"])
+            md.uv1 = p.get("uv1")
+            md.colors = p.get("colors")
+            roots.append(GlbImporter.NodeData(name=p["name"], matrix=None, translation=None,
+                                              rotation=None, scale=None, meshes=[md], children=[]))
+        return roots
+
+    def _h3d27_glb_build_nodes(cls, path):
+        parts, _lights = H3DImporters.load_gltf(os.fspath(path), _H3D27Log)
+        return _h3d27_nodes_from_parts(parts)
+
+    def _h3d27_blend_build_nodes(cls, path):
+        parts, lights = H3DImporters.load_blend(os.fspath(path), _H3D27Log)
+        cls._pending_lights = list(lights)
+        return _h3d27_nodes_from_parts(parts)
+
+    GlbImporter.build_nodes = classmethod(_h3d27_glb_build_nodes)
+    BlendImporter.build_nodes = classmethod(_h3d27_blend_build_nodes)
+
+    _H3D27_PREV_LOAD_INTO = HeavenEngine.load_model_into
+
+    def _h3d27_load_model_into(self, node, path):
+        """.blend / .gltf / .glb through the Heaven3D 2.7 importers.  The
+        model is ONE object: part 0 lives on `node`, every other material
+        part is a locked child (hidden in the Hierarchy, never selectable,
+        moved/deleted/duplicated/saved together with the root)."""
+        ext = os.path.splitext(path)[1].lower()
+        if ext not in (".blend", ".gltf", ".glb"):
+            return _H3D27_PREV_LOAD_INTO(self, node, path)
+        try:
+            parts, lights = _h3d27_load_parts(path)
+        except Exception as ex:
+            Log.error(f"Model load failed '{os.path.basename(path)}': {ex}")
+            return False
+        if not parts:
+            Log.warn(f"'{os.path.basename(path)}' contains no visible geometry.")
+            return False
+        for c in list(node.children):
+            if getattr(c, "_heaven3d_imported_part", False):
+                c.remove()
+        try:
+            for i, part in enumerate(parts):
+                mesh = _h3d27_mesh_from_part(self.ctx, part)
+                mat = _h3d27_material_from_info(part["material_info"])
+                mesh._h3d_cull = not bool(mat.double_sided)
+                if i == 0:
+                    node.mesh = mesh
+                    node.material = mat
+                else:
+                    child = SceneNode(f"{node.name}_part{i}", parent=node)
+                    child._heaven3d_imported_part = ext
+                    child._h3d_locked = True
+                    child.mesh = mesh
+                    child.material = mat
+        except Exception as ex:
+            Log.error(f"Model upload failed '{os.path.basename(path)}': {ex}")
+            traceback.print_exc()
+            return False
+        node.source_path = path
+        node._h3d_collision_proxy = None
+        lights = [l for l in lights if not (ext != ".blend" and l.get("kind") == "sun")]
+        if lights:
+            try:
+                BlendImporter._pending_lights = list(lights)
+                BlendImporter.attach_imported_lights(self, node)
+                for c in node.children:
+                    if getattr(c, "_heaven3d_imported_part", False):
+                        c._heaven3d_imported_part = ext
+                        c._h3d_locked = True
+            except Exception as ex:
+                Log.warn(f"Imported lights skipped: {ex}")
+        tris = sum(len(p["indices"]) // 3 for p in parts)
+        Log.info(f"Imported '{os.path.basename(path)}' as one object: {len(parts)} material "
+                 f"part(s), {tris:,} triangles, {len(lights)} light(s)")
+        return True
+
+    HeavenEngine.load_model_into = _h3d27_load_model_into
+
+    # ---------------------------------------------------------------
+    # 5. Colliders treat an imported model as ONE shape
+    # ---------------------------------------------------------------
+    def _h3d27_has_parts(node):
+        return any(getattr(c, "_heaven3d_imported_part", False) and c.mesh is not None
+                   for c in node.children)
+
+    class _H3D27CollisionMesh:
+        __slots__ = ("cpu_positions", "cpu_indices", "vertex_count", "index_count",
+                     "_vertex_data", "indexed", "bounding_sphere", "name")
+
+    def _h3d27_collision_proxy(node):
+        key = tuple(id(c.mesh) for c in node.traverse()
+                    if c.mesh is not None and (c is node or getattr(c, "_heaven3d_imported_part", False)))
+        px = getattr(node, "_h3d_collision_proxy", None)
+        if px is not None and px[0] == key:
+            return px[1]
+        inv = glm.inverse(node.world_matrix())
+        P, I, off = [], [], 0
+        for c in node.traverse():
+            if c.mesh is None or not (c is node or getattr(c, "_heaven3d_imported_part", False)):
+                continue
+            pos, idx = _mesh_cpu_triangles(c.mesh)
+            if pos is None:
+                continue
+            rel = inv * c.world_matrix()
+            cols = np.array([[rel[a][b] for b in range(4)] for a in range(4)], np.float32)
+            hom = np.ones((len(pos), 4), np.float32); hom[:, :3] = pos
+            P.append((hom @ cols)[:, :3]); I.append(np.asarray(idx, np.uint32) + off)
+            off += len(pos)
+        if not P:
+            return None
+        m = _H3D27CollisionMesh()
+        m.cpu_positions = np.concatenate(P).astype(np.float32)
+        m.cpu_indices = np.concatenate(I).astype(np.uint32)
+        m.vertex_count = len(m.cpu_positions); m.index_count = len(m.cpu_indices)
+        m._vertex_data = None; m.indexed = True; m.name = node.name + "_collision"
+        lo, hi = m.cpu_positions.min(0), m.cpu_positions.max(0)
+        c = (lo + hi) * 0.5
+        m.bounding_sphere = (glm.vec3(*c.tolist()),
+                             float(np.linalg.norm(m.cpu_positions - c, axis=1).max()))
+        node._h3d_collision_proxy = (key, m)
+        return m
+
+    _H3D27_PREV_SHAPE_VIEW = _mesh_shape_view
+
+    def _mesh_shape_view(node, col):
+        if not _h3d27_has_parts(node):
+            return _H3D27_PREV_SHAPE_VIEW(node, col)
+        proxy = _h3d27_collision_proxy(node)
+        if proxy is None:
+            return _H3D27_PREV_SHAPE_VIEW(node, col)
+        real = node.mesh
+        node.mesh = proxy
+        try:
+            return _H3D27_PREV_SHAPE_VIEW(node, col)
+        finally:
+            node.mesh = real
+
+    _H3D27_PREV_ADD_BOX = HeavenEngine.add_box_collider
+    _H3D27_PREV_ADD_SPHERE = HeavenEngine.add_sphere_collider
+    _H3D27_PREV_ADD_CAPSULE = HeavenEngine.add_capsule_collider
+
+    def _h3d27_fit(self, node):
+        if node.source_path is None and not _h3d27_has_parts(node):
+            return None, None
+        try:
+            lo, hi = self._spawn_mesh_local_aabb(node)
+        except Exception:
+            return None, None
+        return lo, hi
+
+    def _h3d27_add_box(self, node, size=None, **kw):
+        if size is None and "center" not in kw:
+            lo, hi = _h3d27_fit(self, node)
+            if lo is not None:
+                s = glm.max(hi - lo, glm.vec3(0.02)); c = (lo + hi) * 0.5
+                return _H3D27_PREV_ADD_BOX(self, node, size=(s.x, s.y, s.z),
+                                           center=(c.x, c.y, c.z), **kw)
+        return _H3D27_PREV_ADD_BOX(self, node, size=size, **kw)
+
+    def _h3d27_add_sphere(self, node, radius=None, **kw):
+        if radius is None and "center" not in kw:
+            lo, hi = _h3d27_fit(self, node)
+            if lo is not None:
+                c = (lo + hi) * 0.5
+                return _H3D27_PREV_ADD_SPHERE(self, node, radius=float(glm.length(hi - lo)) * 0.5,
+                                              center=(c.x, c.y, c.z), **kw)
+        return _H3D27_PREV_ADD_SPHERE(self, node, radius=radius, **kw)
+
+    def _h3d27_add_capsule(self, node, radius=0.4, height=1.8, **kw):
+        if "center" not in kw and (radius, height) == (0.4, 1.8):
+            lo, hi = _h3d27_fit(self, node)
+            if lo is not None:
+                s = hi - lo; c = (lo + hi) * 0.5
+                r = max(float(max(s.x, s.z)) * 0.5, 0.01)
+                return _H3D27_PREV_ADD_CAPSULE(self, node, radius=r, height=max(float(s.y), 2 * r),
+                                               center=(c.x, c.y, c.z), **kw)
+        return _H3D27_PREV_ADD_CAPSULE(self, node, radius=radius, height=height, **kw)
+
+    HeavenEngine.add_box_collider = _h3d27_add_box
+    HeavenEngine.add_sphere_collider = _h3d27_add_sphere
+    HeavenEngine.add_capsule_collider = _h3d27_add_capsule
+
+    # ---------------------------------------------------------------
+    # 6. Projects (Heaven3D Hub): `--project` opens in the EDITOR too, and
+    #    every project's scripts/*.py blueprints are registered first.
+    # ---------------------------------------------------------------
+    # When the engine runs as a script (python Heaven3D.py / Heaven3D_runtime.py)
+    # it is the module "__main__".  Project scripts do `from Heaven3D import
+    # Blueprint, blueprint` — without this alias Python would load a SECOND
+    # copy of the engine and register their blueprints there, so saved
+    # blueprints would never be found ("not registered; not restored").
+    if __name__ == "__main__" and "Heaven3D" not in sys.modules:
+        sys.modules["Heaven3D"] = sys.modules["__main__"]
+
+    _H3D27_PREV_INIT = HeavenEngine.__init__
+
+    def _h3d27_import_project_scripts(project_dir):
+        sdir = os.path.join(project_dir, "scripts")
+        if not os.path.isdir(sdir):
+            return
+        if project_dir not in sys.path:
+            sys.path.insert(0, project_dir)
+        if sdir not in sys.path:
+            sys.path.insert(0, sdir)
+        import importlib
+        for fn in sorted(os.listdir(sdir)):
+            if not fn.endswith(".py") or fn.startswith("_"):
+                continue
+            mod = os.path.splitext(fn)[0]
+            try:
+                if mod in sys.modules:
+                    importlib.reload(sys.modules[mod])
+                else:
+                    importlib.import_module(mod)
+                Log.info(f"Project script loaded: scripts/{fn}")
+            except Exception as ex:
+                Log.error(f"Project script scripts/{fn} failed: {ex}")
+                traceback.print_exc()
+
+    def _h3d27_engine_init(self, *args, **kwargs):
+        names = ("mode", "width", "height", "project_path")
+        bound = dict(zip(names, args)); bound.update(kwargs)
+        mode = bound.get("mode", "editor")
+        project_path = bound.get("project_path")
+        proj_dir = os.path.dirname(os.path.abspath(project_path)) if project_path else os.getcwd()
+        try:
+            _h3d27_import_project_scripts(proj_dir)
+        except Exception as ex:
+            Log.warn(f"Project scripts not loaded: {ex}")
+        _H3D27_PREV_INIT(self, *args, **kwargs)
+        if mode == "editor" and project_path and os.path.isfile(project_path):
+            try:
+                self.load_project(project_path)
+                self.project_path = project_path
+                pygame.display.set_caption(
+                    f"Heaven3D v{HEAVEN_VERSION}  —  {os.path.splitext(os.path.basename(project_path))[0]}")
+                Log.info(f"Project opened: {project_path}")
+            except Exception as ex:
+                Log.error(f"Could not open project '{project_path}': {ex}")
+
+    HeavenEngine.__init__ = _h3d27_engine_init
+
+    # ---------------------------------------------------------------
+    # 7. Project thumbnails for the Hub (written next to the save file)
+    # ---------------------------------------------------------------
+    _H3D27_PREV_SAVE = HeavenEngine.save_project
+
+    def _h3d27_save_project(self, path=None):
+        result = _H3D27_PREV_SAVE(self, path)
+        try:
+            target = path or self.project_path
+            r = getattr(self, "renderer", None)
+            tex = getattr(r, "final_color", None) if r is not None else None
+            if target and tex is not None:
+                w, h = tex.size
+                surf = pygame.image.frombuffer(tex.read(), (w, h), "RGB")
+                surf = pygame.transform.flip(surf, False, True)
+                tw = 384
+                th = max(1, int(h * tw / max(w, 1)))
+                surf = pygame.transform.smoothscale(surf, (tw, th))
+                pygame.image.save(surf, os.path.join(
+                    os.path.dirname(os.path.abspath(target)), ".heaven3d_thumb.png"))
+        except Exception as ex:
+            _h3d27_log_once("thumb", f"[Hub] project thumbnail not written: {ex}")
+        return result
+
+    HeavenEngine.save_project = _h3d27_save_project
+
+    # ---------------------------------------------------------------
+    # 8. PORTABLE FILE SYSTEM  (FILE BURNER built in)
+    #    save : every asset path -> "assets/..." relative, '/' separators;
+    #           outside assets are copied into assets/imported/ (+ side files)
+    #    load : any old/foreign path is resolved (separators, letter case,
+    #           home-relative, absolute, FILE BURNER media/, name search)
+    #    + game save data (eng.saves / eng.save_game / eng.load_game),
+    #      eng.asset_path(), audio that resolves project files,
+    #      `--game DIR` (exported games) and `--export-game` (Hub export).
+    # ---------------------------------------------------------------
+    import json as _h3d27_json
+    import shutil
+    _H3D27_ENGINE_DIR = os.path.dirname(os.path.abspath(__file__))
+    _H3D27_STATE = {"project_dir": None, "game": None, "copy_cache": {}}
+
+    def _h3d27_project_dir():
+        return _H3D27_STATE["project_dir"] or os.getcwd()
+
+    def _h3d27_resolve(ref):
+        if not isinstance(ref, str) or not ref:
+            return None
+        if os.path.isfile(ref):
+            return os.path.abspath(ref)
+        if not H3DPortable.is_media_ref(ref):
+            return None
+        return H3DPortable.Resolver(_h3d27_project_dir(), [_H3D27_ENGINE_DIR]).resolve(ref)
+
+    def _h3d27_one_shot(module, name, transform):
+        """Temporarily wrap module.<name> so the FIRST project dict that
+        passes through it is transformed (json.dump / json.load)."""
+        real = getattr(module, name)
+        state = {"done": False}
+
+        def wrapper(*a, **kw):
+            if name == "dump":
+                obj = a[0]
+                if not state["done"] and isinstance(obj, dict) and obj.get("type") == "heaven3d_project":
+                    state["done"] = True
+                    transform(obj)
+                return real(*a, **kw)
+            obj = real(*a, **kw)
+            if not state["done"] and isinstance(obj, dict) and obj.get("type") == "heaven3d_project":
+                state["done"] = True
+                transform(obj)
+            return obj
+        setattr(module, name, wrapper)
+        return lambda: setattr(module, name, real)
+
+    _H3D27_PREV_PS_SAVE = ProjectSerializer.save.__func__
+    _H3D27_PREV_PS_LOAD = ProjectSerializer.load.__func__
+
+    def _h3d27_ps_save(cls, scene, path, *args, **kwargs):
+        path = os.path.abspath(path)
+        pdir = os.path.dirname(path)
+        _H3D27_STATE["project_dir"] = pdir
+        if os.path.isfile(path):                       # keep the previous save
+            try:
+                shutil.copy2(path, path + ".bak")
+            except OSError:
+                pass
+        collector = H3DPortable.Collector(pdir, Log.info)
+        collector.done = _H3D27_STATE["copy_cache"].setdefault(os.path.normcase(pdir), {})
+        report = {}
+
+        def portable(obj):
+            try:
+                report.update(H3DPortable.make_portable(obj, pdir, Log.info, collect=True,
+                                                        collector=collector))
+            except Exception as ex:
+                Log.warn(f"[Portable] save pass failed (project saved unchanged): {ex}")
+        restore = _h3d27_one_shot(json, "dump", portable)
+        try:
+            ok = _H3D27_PREV_PS_SAVE(cls, scene, path, *args, **kwargs)
+        finally:
+            restore()
+        # Point the scene at the project copies so the next save is instant.
+        try:
+            moved = {k[0]: os.path.join(pdir, *v.split("/")) for k, v in collector.done.items()}
+            for n in scene.root.traverse():
+                sp = getattr(n, "source_path", None)
+                if sp and os.path.normcase(os.path.abspath(sp)) in moved:
+                    n.source_path = moved[os.path.normcase(os.path.abspath(sp))]
+        except Exception:
+            pass
+        if report.get("copied"):
+            Log.info(f"[Portable] {report['copied']} file(s) copied into {H3DPortable.IMPORT_DIR}/ "
+                     f"- the project folder now holds everything it needs.")
+        return ok
+
+    def _h3d27_ps_load(cls, path, scene, engine):
+        path = os.path.abspath(path)
+        pdir = os.path.dirname(path)
+        _H3D27_STATE["project_dir"] = pdir
+        restore = _h3d27_one_shot(json, "load", lambda obj: H3DPortable.resolve_project_data(
+            obj, pdir, Log.warn, extra_dirs=[_H3D27_ENGINE_DIR]))
+        try:
+            return _H3D27_PREV_PS_LOAD(cls, path, scene, engine)
+        finally:
+            restore()
+
+    ProjectSerializer.save = classmethod(_h3d27_ps_save)
+    ProjectSerializer.load = classmethod(_h3d27_ps_load)
+
+    # -- audio finds project files wherever the project was moved -----
+    _H3D27_PREV_LOAD_SOUND = AudioSystem.load_sound
+    _H3D27_PREV_PLAY = AudioSystem.play
+    _H3D27_PREV_MUSIC = AudioSystem.play_music
+
+    def _h3d27_load_sound(self, path_or_name, name=None):
+        p = str(path_or_name)
+        if not os.path.isfile(p):
+            hit = _h3d27_resolve(p)
+            if hit:
+                name = name or os.path.splitext(os.path.basename(p.replace("\\", "/")))[0]
+                p = hit
+        return _H3D27_PREV_LOAD_SOUND(self, p, name)
+
+    def _h3d27_play(self, name, *a, **kw):
+        key = str(name)
+        if (getattr(self, "enabled", False) and key not in self._sounds
+                and not os.path.isfile(key) and H3DPortable.is_media_ref(key)):
+            hit = _h3d27_resolve(key)
+            if hit:
+                _H3D27_PREV_LOAD_SOUND(self, hit, key)
+        return _H3D27_PREV_PLAY(self, name, *a, **kw)
+
+    def _h3d27_play_music(self, path, *a, **kw):
+        return _H3D27_PREV_MUSIC(self, _h3d27_resolve(path) or path, *a, **kw)
+
+    AudioSystem.load_sound = _h3d27_load_sound
+    AudioSystem.play = _h3d27_play
+    AudioSystem.play_music = _h3d27_play_music
+
+    # -- game save data + asset lookup for scripts --------------------
+    def _h3d27_game_name(self):
+        g = _H3D27_STATE.get("game")
+        if g and g.get("name"):
+            return g["name"]
+        pdir = _H3D27_STATE["project_dir"] or (os.path.dirname(os.path.abspath(self.project_path))
+                                               if getattr(self, "project_path", None) else os.getcwd())
+        try:
+            with open(os.path.join(pdir, "project.json"), encoding="utf-8") as f:
+                return json.load(f).get("name") or os.path.basename(pdir)
+        except (OSError, ValueError):
+            return os.path.basename(pdir)
+
+    def _h3d27_saves(self):
+        sd = getattr(self, "_h3d27_savedata", None)
+        if sd is None:
+            g = _H3D27_STATE.get("game")
+            root = g["root"] if g else (_H3D27_STATE["project_dir"] or os.getcwd())
+            sd = H3DPortable.SaveData(_h3d27_game_name(self), portable_root=root)
+            self._h3d27_savedata = sd
+            Log.info(f"Game saves folder: {sd.folder}")
+        return sd
+
+    HeavenEngine.saves = property(_h3d27_saves)
+    HeavenEngine.save_game = lambda self, slot="save", data=None: self.saves.save(slot, data)
+    HeavenEngine.load_game = lambda self, slot="save", default=None: self.saves.load(slot, default)
+    HeavenEngine.asset_path = lambda self, ref: _h3d27_resolve(ref) or ref
+
+    # -- window title / taskbar identity -----------------------------
+    _H3D27_PREV_INIT2 = HeavenEngine.__init__
+
+    def _h3d27_engine_init2(self, *args, **kwargs):
+        names = ("mode", "width", "height", "project_path")
+        bound = dict(zip(names, args)); bound.update(kwargs)
+        pp = bound.get("project_path")
+        if pp:
+            _H3D27_STATE["project_dir"] = os.path.dirname(os.path.abspath(pp))
+        g = _H3D27_STATE.get("game")
+        if sys.platform.startswith("win"):
+            try:
+                import ctypes
+                ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
+                    ("Heaven3D.Game." + H3DPortable.safe_name(g["name"])) if g else "Heaven3D.Engine")
+            except Exception:
+                pass
+        _H3D27_PREV_INIT2(self, *args, **kwargs)
+        try:
+            if g:
+                pygame.display.set_caption(g["name"])
+            elif bound.get("mode") == "runtime" and pp:
+                pygame.display.set_caption(_h3d27_game_name(self))
+        except Exception:
+            pass
+
+    HeavenEngine.__init__ = _h3d27_engine_init2
+
+    # -- command line: exported games and the Hub's export ------------
+    def _h3d27_cli():
+        argv = sys.argv[1:]
+        if "--export-game" in argv:
+            import argparse
+            ap = argparse.ArgumentParser(prog="Heaven3D.py --export-game")
+            ap.add_argument("--export-game", dest="project", required=True)
+            ap.add_argument("--targets", default=H3DPortable.current_platform())
+            ap.add_argument("--out", required=True)
+            ap.add_argument("--name", default=None)
+            ap.add_argument("--width", type=int, default=1600)
+            ap.add_argument("--height", type=int, default=900)
+            ap.add_argument("--no-zip", action="store_true")
+            a = ap.parse_args(argv)
+            proj = a.project
+            if os.path.isdir(proj):
+                proj = os.path.join(proj, "main.heaven3d")
+            try:
+                res = H3DPortable.export_game(
+                    proj, a.out, [t.strip() for t in a.targets.split(",") if t.strip()],
+                    _H3D27_ENGINE_DIR, a.name, a.width, a.height, not a.no_zip,
+                    log=lambda m: print(m, flush=True))
+                for plat, folder, z in res:
+                    print(f"[Export] RESULT {plat} {folder} {z or ''}", flush=True)
+                sys.exit(0)
+            except Exception as ex:
+                print(f"[Export] ERROR {ex}", flush=True)
+                sys.exit(2)
+        if "--game" in argv:
+            i = argv.index("--game")
+            root = os.path.abspath(argv[i + 1] if i + 1 < len(argv) else os.getcwd())
+            cfg = {}
+            try:
+                with open(os.path.join(root, "engine", "game.json"), encoding="utf-8") as f:
+                    cfg = json.load(f)
+            except (OSError, ValueError):
+                pass
+            name = cfg.get("name") or os.path.basename(root)
+            _H3D27_STATE["game"] = {"name": name, "root": root}
+            # pythonw (Windows) has no console: keep a log next to the saves
+            for logdir in (os.path.join(root, "saves"), os.path.join(H3DPortable.user_data_root(), H3DPortable.safe_name(name))):
+                try:
+                    os.makedirs(logdir, exist_ok=True)
+                    fh = open(os.path.join(logdir, "last_run.log"), "w", encoding="utf-8", buffering=1)
+                    if sys.stdout is None or not getattr(sys.stdout, "isatty", lambda: False)():
+                        sys.stdout = fh
+                        sys.stderr = fh
+                    break
+                except OSError:
+                    continue
+            project = os.path.join(root, *cfg.get("project", "game/main.heaven3d").split("/"))
+            os.chdir(os.path.dirname(project))
+            sys.argv = [sys.argv[0], "--runtime", "--project", project,
+                        "--width", str(cfg.get("width", 1600)), "--height", str(cfg.get("height", 900))]
+            # A game always shows the short "made with Heaven3D" splash.
+            globals()["_h3d_is_first_run"] = lambda: False
+
+    if __name__ == "__main__":
+        _h3d27_cli()
+
+    # -- the editor's Export button builds real stand-alone games ------
+    _H3D27_PREV_EXPORT_DLG = HeavenEngine.export_runtime_dialog
+
+    def _h3d27_export_dialog(self):
+        players = [p for p in ("windows", "linux") if H3DPortable.find_player(_H3D27_ENGINE_DIR, p)]
+        proj = getattr(self, "project_path", None)
+        if not players:
+            Log.info("[Export] Stand-alone game export needs the Heaven3D standalone edition "
+                     "(it ships runtime/players). Saving a .heaven3d copy instead.")
+            return _H3D27_PREV_EXPORT_DLG(self)
+        if not proj:
+            Log.warn("[Export] Save the project first (Save), then press Export again.")
+            return _H3D27_PREV_EXPORT_DLG(self)
+        if getattr(self, "_h3d27_exporting", False):
+            Log.info("[Export] An export is already running...")
+            return
+        self.save_project(proj)
+        pdir = os.path.dirname(os.path.abspath(proj))
+        out = os.path.join(os.path.dirname(os.path.dirname(pdir)), "Heaven3D Builds")
+        self._h3d27_exporting = True
+        Log.info(f"[Export] Building {' + '.join(p.title() for p in players)} into {out} ...")
+
+        def work():
+            try:
+                res = H3DPortable.export_game(proj, out, players, _H3D27_ENGINE_DIR,
+                                              width=self.width, height=self.height, make_zip=True,
+                                              log=lambda m: Log.info(m))
+                for plat, folder, z in res:
+                    Log.info(f"[Export] {plat.title()} ready: {z or folder}")
+            except Exception as ex:
+                Log.error(f"[Export] failed: {ex}")
+            finally:
+                self._h3d27_exporting = False
+        import threading
+        threading.Thread(target=work, daemon=True).start()
+
+    HeavenEngine.export_runtime_dialog = _h3d27_export_dialog
+
+# [H3D27:importers END]
+
+
 if __name__ == "__main__":
     main()
