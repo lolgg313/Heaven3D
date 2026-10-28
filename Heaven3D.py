@@ -180,7 +180,7 @@ class Log:
 # --------------------------------------------------------------------------- #
 #  Constants
 # --------------------------------------------------------------------------- #
-HEAVEN_VERSION = "2.7.0"
+HEAVEN_VERSION = "2.7.1"
 PROJECT_EXT = ".heaven3d"
 
 
@@ -36666,6 +36666,184 @@ if not globals().get("_H3D_BRANDING_INSTALLED"):
 # [BRANDING END]
 
 
+
+# =====================================================================
+# [FINALPATCH2:esc_menu]
+# Runtime-only ESC pause menu (Resume / Sound slider / Exit), built
+# entirely from the engine's own HUDRenderer primitives - no assets, no
+# new shaders.  This block only ships in the standalone runtime file;
+# every wrapper additionally re-checks self.mode == "runtime", so the
+# editor stays 100% untouched even if the block were ever copied into
+# the engine file.  Append-only, double-install guarded, try/except
+# everywhere with safe fallbacks.
+# =====================================================================
+if not globals().get("_FP2_ESC_INSTALLED"):
+    _FP2_ESC_INSTALLED = True
+
+    # Menu layout in normalised top-left coordinates: centred panel
+    # 0.34 x 0.42, title y~0.30, RESUME y~0.40 (h 0.055), slider label
+    # y~0.50 / track y~0.53 (h 0.03), EXIT y~0.62 (h 0.055); buttons
+    # w 0.22, centred.
+    _FP2_ESC_PANEL = (0.33, 0.29, 0.34, 0.42)
+    _FP2_ESC_RESUME = (0.39, 0.40, 0.22, 0.055)
+    _FP2_ESC_SLIDER = (0.39, 0.53, 0.22, 0.03)
+    _FP2_ESC_EXIT = (0.39, 0.62, 0.22, 0.055)
+
+    def _fp2_in_rect(mx, my, rect):
+        x, y, w, h = rect
+        return x <= mx <= x + w and y <= my <= y + h
+
+    def _fp2_esc_resume(self):
+        self._fp2_paused = False
+        self._fp2_drag = False
+        self._playing = getattr(self, "_fp2_was_playing", True)
+
+    def _fp2_esc_set_vol(self, mx):
+        x, _y, w, _h = _FP2_ESC_SLIDER
+        vol = _clamp((float(mx) - x) / max(w, 1e-6), 0.0, 1.0)
+        self._fp2_vol = vol
+        try:
+            self.audio.set_master_volume(vol)
+        except Exception:
+            pass
+
+    def _fp2_esc_draw(self):
+        hud = self.hud
+        # Live slider dragging reads the held mouse state every frame.
+        if getattr(self, "_fp2_drag", False) and self.input.lmb:
+            _fp2_esc_set_vol(self, self.input.mouse_pos[0]
+                             / float(max(self.width, 1)))
+        vol = getattr(self, "_fp2_vol", None)
+        if vol is None:   # lazily initialise from the audio system
+            vol = float(getattr(self.audio, "master_volume", 1.0))
+        vol = _clamp(float(vol), 0.0, 1.0)
+        self._fp2_vol = vol
+        mx = self.input.mouse_pos[0] / float(max(self.width, 1))
+        my = self.input.mouse_pos[1] / float(max(self.height, 1))
+        hud.rect(0.0, 0.0, 1.0, 1.0, (0.02, 0.03, 0.06, 0.55))
+        px, py, pw, ph = _FP2_ESC_PANEL
+        hud.rect(px, py, pw, ph, (0.07, 0.09, 0.14, 0.92))
+        hud.center_text(0.305, "PAUSED", 34, (0.95, 0.96, 1.0, 1.0))
+        for rect, label, ty in ((_FP2_ESC_RESUME, "RESUME", 0.414),
+                                (_FP2_ESC_EXIT, "EXIT", 0.634)):
+            c = ((0.32, 0.58, 0.96, 0.95)
+                 if _fp2_in_rect(mx, my, rect)
+                 else (0.16, 0.24, 0.38, 0.95))
+            hud.rect(rect[0], rect[1], rect[2], rect[3], c)
+            hud.center_text(ty, label, 22, (1.0, 1.0, 1.0, 1.0))
+        hud.center_text(0.495, "SOUND  %d%%" % int(round(vol * 100.0)),
+                        18, (0.85, 0.88, 0.95, 1.0))
+        sx, sy, sw, sh = _FP2_ESC_SLIDER
+        hud.bar(sx, sy, sw, sh, vol,
+                fg=(0.30, 0.75, 0.42, 1.0),
+                bg=(0.10, 0.12, 0.18, 0.90),
+                border=(0.0, 0.0, 0.0, 0.90))
+        # The HUD clears its queue after render, so everything above is
+        # re-queued every frame while paused.
+        hud.render()
+
+    # ---- 1) ESC key toggles the pause menu ---------------------------
+    _FP2_PREV_ON_KEY = HeavenEngine._on_key
+
+    def _fp2_on_key(self, key):
+        try:
+            if getattr(self, "mode", None) == "runtime" \
+                    and key == pygame.K_ESCAPE \
+                    and (getattr(self, "_playing", False)
+                         or getattr(self, "_fp2_paused", False)):
+                if getattr(self, "_fp2_paused", False):
+                    _fp2_esc_resume(self)
+                else:
+                    # PAUSE: clearing _playing freezes the scheduler,
+                    # every blueprint tick and physics (the main loop
+                    # gates all of them on self._playing), and makes
+                    # _apply_mouse_capture release the mouse grab, so the
+                    # cursor appears for the menu.
+                    self._fp2_paused = True
+                    self._fp2_was_playing = self._playing
+                    self._playing = False
+                    self._fp2_drag = False
+                    if getattr(self, "_fp2_vol", None) is None:
+                        self._fp2_vol = float(getattr(
+                            self.audio, "master_volume", 1.0))
+                return  # consume ESC while playing / paused
+        except Exception:
+            pass
+        return _FP2_PREV_ON_KEY(self, key)
+
+    HeavenEngine._on_key = _fp2_on_key
+
+    # ---- 2) mouse: menu interaction while paused ---------------------
+    _FP2_PREV_MOUSE_DOWN = HeavenEngine._on_mouse_down
+
+    def _fp2_on_mouse_down(self, button, pos):
+        try:
+            if getattr(self, "mode", None) == "runtime" \
+                    and getattr(self, "_fp2_paused", False):
+                if button == 1:
+                    self.input.lmb = True
+                    mx = pos[0] / float(max(self.width, 1))
+                    my = pos[1] / float(max(self.height, 1))
+                    if _fp2_in_rect(mx, my, _FP2_ESC_RESUME):
+                        _fp2_esc_resume(self)
+                    elif _fp2_in_rect(mx, my, _FP2_ESC_EXIT):
+                        # Clean shutdown through the stock path: the QUIT
+                        # event ends the main loop -> release() ->
+                        # pygame.quit(); the runtime's atexit 10 s wait
+                        # then fires normally.
+                        pygame.event.post(pygame.event.Event(pygame.QUIT))
+                    elif _fp2_in_rect(mx, my, _FP2_ESC_SLIDER):
+                        self._fp2_drag = True
+                        _fp2_esc_set_vol(self, mx)
+                # Consume EVERY click while paused so it can never reach
+                # gameplay input (lmb_just_pressed) or pointer re-capture.
+                return
+        except Exception:
+            pass
+        return _FP2_PREV_MOUSE_DOWN(self, button, pos)
+
+    HeavenEngine._on_mouse_down = _fp2_on_mouse_down
+
+    _FP2_PREV_MOUSE_UP = HeavenEngine._on_mouse_up
+
+    def _fp2_on_mouse_up(self, button, pos):
+        try:
+            if getattr(self, "mode", None) == "runtime" \
+                    and getattr(self, "_fp2_paused", False):
+                if button == 1:
+                    self.input.lmb = False
+                    self._fp2_drag = False
+                return
+        except Exception:
+            pass
+        return _FP2_PREV_MOUSE_UP(self, button, pos)
+
+    HeavenEngine._on_mouse_up = _fp2_on_mouse_up
+
+    # ---- 3) drawing: ride the every-frame outline hook ---------------
+    _FP2_PREV_SELECTION_OUTLINE = HeavenEngine._render_selection_outline
+
+    def _fp2_render_selection_outline(self):
+        # _render_selection_outline is called EVERY frame in all modes
+        # (the stock implementation no-ops in runtime), which makes it
+        # the ideal draw hook: while paused the stock HUD path (gated on
+        # _playing) never runs, so the menu renders itself here.
+        _FP2_PREV_SELECTION_OUTLINE(self)
+        try:
+            if getattr(self, "mode", None) != "runtime":
+                return
+            if not getattr(self, "_fp2_paused", False):
+                return
+            if getattr(self, "hud", None) is None:
+                return
+            _fp2_esc_draw(self)   # HUD no-ops safely without its shader
+        except Exception:
+            pass
+
+    HeavenEngine._render_selection_outline = _fp2_render_selection_outline
+# [FINALPATCH2:esc_menu END]
+
+
 # #############################################################################
 # [H3D27:importers BEGIN]
 #  Heaven3D 2.7 — rewritten model importers + engine hooks (append-only patch
@@ -41216,7 +41394,8 @@ if not globals().get("_H3D27_IMPORTERS_INSTALLED"):
 
 
         # --------------------------------------------------------------------------- export
-        PLATFORMS = ("windows", "linux")
+        PLATFORMS = ("windows", "linux", "macos")
+        PLATFORM_TITLES = {"windows": "Windows", "linux": "Linux", "macos": "macOS"}
         _PRUNE_DIRS = {"__pycache__", "test", "tests", "idlelib", "turtledemo", "ensurepip", "lib2to3",
                        "pydoc_data", "tkinter", "tcl", "tcl8", "tcl8.6", "tk8.6", "tcl9.0", "tk9.0", "include",
                        "Tools", "Doc", "man", "conda-meta", "pkgconfig", "pip", "setuptools", "wheel",
@@ -41259,6 +41438,206 @@ if not globals().get("_H3D27_IMPORTERS_INSTALLED"):
             shutil.copytree(src, dst, ignore=ignore, symlinks=False)
 
 
+        # --------------------------------------------------------------------------- game icons
+        ICON_EXTS = (".png", ".jpg", ".jpeg", ".bmp")
+
+
+        def _load_image_square(path):
+            """-> ("pil", image) or ("pygame", surface): RGBA, square (padded)."""
+            try:
+                from PIL import Image
+                im = Image.open(path).convert("RGBA")
+                side = max(im.size)
+                sq = Image.new("RGBA", (side, side), (0, 0, 0, 0))
+                sq.paste(im, ((side - im.width) // 2, (side - im.height) // 2))
+                return "pil", sq
+            except ImportError:
+                pass
+            import pygame
+            surf = pygame.image.load(path)
+            w, h = surf.get_size()
+            side = max(w, h)
+            sq = pygame.Surface((side, side), pygame.SRCALPHA, 32)
+            sq.fill((0, 0, 0, 0))
+            sq.blit(surf, ((side - w) // 2, (side - h) // 2))
+            return "pygame", sq
+
+
+        def icon_png(img, size, limit=None):
+            """PNG bytes of the square image at size x size (smaller if `limit` bytes
+            is exceeded: palette-quantised first when Pillow is available)."""
+            import io
+            kind, im = img
+            if kind == "pil":
+                from PIL import Image
+                small = im.resize((size, size), getattr(Image, "LANCZOS", 1))
+                buf = io.BytesIO()
+                small.save(buf, "PNG", optimize=True)
+                data = buf.getvalue()
+                if limit and len(data) > limit:
+                    buf = io.BytesIO()
+                    small.quantize(colors=256, method=getattr(Image, "FASTOCTREE", 2)).save(buf, "PNG", optimize=True)
+                    data = buf.getvalue()
+                return data
+            import pygame
+            small = pygame.transform.smoothscale(im, (size, size))
+            buf = io.BytesIO()
+            pygame.image.save(small, buf, "icon.png")
+            return buf.getvalue()
+
+
+        def set_exe_icon(exe_path, image_path, log=None):
+            """Put a game's own icon into a Heaven3D game launcher (.exe), in place.
+
+            The launcher is built with roomy icon slots (build_standalone.padded_ico),
+            so each RT_ICON entry is overwritten by a new PNG of the same size and its
+            length fields are updated - no Windows tools needed, works on Linux too.
+            Returns the number of icon sizes replaced."""
+            import struct
+            log = log or (lambda m: None)
+            img = _load_image_square(image_path)
+            with open(exe_path, "rb") as f:
+                pe = bytearray(f.read())
+            e_lfanew = struct.unpack_from("<I", pe, 0x3C)[0]
+            if pe[e_lfanew:e_lfanew + 4] != b"PE\0\0":
+                raise ValueError("not a Windows executable")
+            nsec, opt_size = struct.unpack_from("<H", pe, e_lfanew + 6)[0], struct.unpack_from("<H", pe, e_lfanew + 20)[0]
+            opt = e_lfanew + 24
+            magic = struct.unpack_from("<H", pe, opt)[0]
+            dd = opt + (112 if magic == 0x20B else 96)
+            rsrc_rva = struct.unpack_from("<I", pe, dd + 2 * 8)[0]
+            sec = opt + opt_size
+            sections = []
+            for i in range(nsec):
+                o = sec + 40 * i
+                vsize, va, rsize, raw = struct.unpack_from("<IIII", pe, o + 8)
+                sections.append((va, max(vsize, rsize), raw))
+
+            def off(rva):
+                for va, size, raw in sections:
+                    if va <= rva < va + size:
+                        return raw + (rva - va)
+                raise ValueError("bad RVA")
+            base = off(rsrc_rva)
+
+            def entries(dir_off):
+                named, ids = struct.unpack_from("<HH", pe, dir_off + 12)
+                for k in range(named + ids):
+                    name, target = struct.unpack_from("<II", pe, dir_off + 16 + 8 * k)
+                    yield name, target
+
+            def leaves(type_id):
+                out = {}
+                for name, t in entries(base):
+                    if name != type_id or not (t & 0x80000000):
+                        continue
+                    for nid, t2 in entries(base + (t & 0x7FFFFFFF)):
+                        for _lang, t3 in entries(base + (t2 & 0x7FFFFFFF)):
+                            if not (t3 & 0x80000000):
+                                out[nid] = base + t3          # IMAGE_RESOURCE_DATA_ENTRY
+                return out
+            icons = leaves(3)                                  # RT_ICON
+            groups = leaves(14)                                # RT_GROUP_ICON
+            done = 0
+            for _gid, gentry in groups.items():
+                g_rva, g_size = struct.unpack_from("<II", pe, gentry)
+                g = off(g_rva)
+                count = struct.unpack_from("<H", pe, g + 4)[0]
+                for k in range(count):
+                    e = g + 6 + 14 * k
+                    w = pe[e] or 256
+                    icon_id = struct.unpack_from("<H", pe, e + 12)[0]
+                    if icon_id not in icons:
+                        continue
+                    d_rva, cap = struct.unpack_from("<II", pe, icons[icon_id])
+                    # capacity = the space the slot occupies (its original length)
+                    slot = getattr(set_exe_icon, "_caps", {}).get((exe_path, icon_id)) or cap
+                    data = icon_png(img, w, slot)
+                    if len(data) > slot:
+                        log(f"[Export] icon {w}px too detailed for its slot ({len(data)} > {slot} bytes), kept the default")
+                        continue
+                    o = off(d_rva)
+                    pe[o:o + slot] = data + b"\0" * (slot - len(data))
+                    struct.pack_into("<I", pe, icons[icon_id] + 4, len(data))
+                    struct.pack_into("<I", pe, e + 8, len(data))
+                    done += 1
+            tmp = exe_path + ".tmp"
+            with open(tmp, "wb") as f:
+                f.write(pe)
+            os.replace(tmp, exe_path)
+            return done
+
+
+        # --------------------------------------------------------------------------- macOS apps
+        def make_icns(img):
+            """Apple .icns (PNG flavour) from a square image - pure Python."""
+            import struct
+            parts = b""
+            for code, size in ((b"ic11", 32), (b"ic12", 64), (b"ic07", 128), (b"ic13", 256),
+                               (b"ic08", 256), (b"ic14", 512), (b"ic09", 512)):
+                data = icon_png(img, size)
+                parts += code + struct.pack(">I", len(data) + 8) + data
+            return b"icns" + struct.pack(">I", len(parts) + 8) + parts
+
+
+        def _plist_escape(t):
+            return str(t).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
+        def info_plist(name, exe, bundle_id, version="1.0", icon="icon"):
+            e = _plist_escape
+            return f"""<?xml version="1.0" encoding="UTF-8"?>
+        <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+        <plist version="1.0">
+        <dict>
+          <key>CFBundleName</key><string>{e(name)}</string>
+          <key>CFBundleDisplayName</key><string>{e(name)}</string>
+          <key>CFBundleExecutable</key><string>{e(exe)}</string>
+          <key>CFBundleIdentifier</key><string>{e(bundle_id)}</string>
+          <key>CFBundleIconFile</key><string>{e(icon)}</string>
+          <key>CFBundlePackageType</key><string>APPL</string>
+          <key>CFBundleShortVersionString</key><string>{e(version)}</string>
+          <key>CFBundleVersion</key><string>{e(version)}</string>
+          <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
+          <key>LSMinimumSystemVersion</key><string>11.0</string>
+          <key>LSApplicationCategoryType</key><string>public.app-category.games</string>
+          <key>NSHighResolutionCapable</key><false/>
+          <key>NSSupportsAutomaticGraphicsSwitching</key><true/>
+          <key>NSHumanReadableCopyright</key><string>Made with Heaven3D</string>
+        </dict>
+        </plist>
+        """
+
+
+        def bundle_id_for(name):
+            return "org.heaven3d.game." + (re.sub(r"[^A-Za-z0-9]+", "-", name).strip("-").lower() or "game")
+
+
+        def _mac_launcher(game):
+            # The real program is Contents/MacOS/python3 (Python's home is Contents/),
+            # so macOS shows the game's name and icon in the Dock and menu bar.
+            return f"""#!/bin/sh
+        # {game} - made with Heaven3D
+        C="$(cd "$(dirname "$0")/.." && pwd)"
+        export PYTHONNOUSERSITE=1
+        exec "$C/MacOS/python3" -E -s "$C/Resources/engine/Heaven3D.py" --game "$C/Resources" "$@"
+        """
+
+
+        def _copy_mac_python(player, contents, log):
+            """Lay a macOS Python out as an app bundle: bin/python3 -> MacOS/python3,
+            everything else (lib/, ssl/ ...) straight into Contents/."""
+            tmp = os.path.join(contents, "_py")
+            _copy_python(player, tmp, log)
+            os.makedirs(os.path.join(contents, "MacOS"), exist_ok=True)
+            shutil.move(os.path.join(tmp, "bin", "python3"), os.path.join(contents, "MacOS", "python3"))
+            os.chmod(os.path.join(contents, "MacOS", "python3"), 0o755)
+            shutil.rmtree(os.path.join(tmp, "bin"), ignore_errors=True)
+            for n in os.listdir(tmp):
+                shutil.move(os.path.join(tmp, n), os.path.join(contents, n))
+            os.rmdir(tmp)
+
+
         def _game_dir_name(name):
             return re.sub(r"\s+", " ", safe_name(name)).strip() or "Game"
 
@@ -41293,11 +41672,12 @@ if not globals().get("_H3D27_IMPORTERS_INSTALLED"):
 
 
         def export_game(project_file, out_dir, targets, engine_dir, game_name=None, width=1600, height=900,
-                        make_zip=True, log=print):
+                        make_zip=True, log=print, icon=None):
             """Build stand-alone copies of a project for each target platform.
 
             <out>/<Game>-Windows/<Game>.exe   double-click to play (Heaven3D logo)
             <out>/<Game>-Linux/<Game>         ./<Game>  (+ install-shortcut.sh)
+            <out>/<Game>-macOS/<Game>.app     double-click (game + engine inside the app)
             Both contain  game/ (the project, every asset inside),  engine/
             (Heaven3D + its own Python),  saves/  (game saves travel with the game).
             Returns [(platform, folder, zip or None)]."""
@@ -41313,6 +41693,15 @@ if not globals().get("_H3D27_IMPORTERS_INSTALLED"):
                 pass
             game = _game_dir_name(game_name or meta.get("name") or os.path.basename(project_dir))
             os.makedirs(out_dir, exist_ok=True)
+            icon_img = None
+            if icon:
+                icon = os.path.abspath(os.path.expanduser(icon))
+                if os.path.splitext(icon)[1].lower() not in ICON_EXTS:
+                    raise ValueError("The game icon must be a .png, .jpg or .bmp image.")
+                if not os.path.isfile(icon):
+                    raise FileNotFoundError(f"Game icon not found: {icon}")
+                icon_img = _load_image_square(icon)
+                log(f"[Export] game icon: {os.path.basename(icon)}")
             results = []
             for target in targets:
                 target = target.lower()
@@ -41321,15 +41710,25 @@ if not globals().get("_H3D27_IMPORTERS_INSTALLED"):
                 player = find_player(engine_dir, target)
                 if player is None:
                     raise FileNotFoundError(
-                        f"No {target.title()} player found in {os.path.join(engine_dir, 'runtime')}.\n"
-                        f"Exporting needs the Heaven3D standalone edition (it ships the Windows and Linux players).")
-                stage = os.path.join(out_dir, f"{game}-{target.title()}")
-                log(f"[Export] {target.title()}: {stage}")
+                        f"No {PLATFORM_TITLES[target]} player found in {os.path.join(engine_dir, 'runtime')}.\n"
+                        + ("Exporting for macOS needs the Heaven3D macOS edition."
+                           if target == "macos" else
+                           "Exporting needs the Heaven3D standalone edition (it ships the Windows and Linux players)."))
+                title = PLATFORM_TITLES[target]
+                stage = os.path.join(out_dir, f"{game}-{title}")
+                log(f"[Export] {title}: {stage}")
                 if os.path.isdir(stage):
                     shutil.rmtree(stage)
                 os.makedirs(stage)
+                # game/ and engine/ live next to the launcher - inside the .app on macOS
+                if target == "macos":
+                    contents = os.path.join(stage, f"{game}.app", "Contents")
+                    base = os.path.join(contents, "Resources")
+                    os.makedirs(base)
+                else:
+                    base = stage
                 # 1. the game (project folder, then every outside asset pulled in)
-                gdir = os.path.join(stage, "game")
+                gdir = os.path.join(base, "game")
 
                 def ignore(d, names):
                     skip = {n for n in names if n in SKIP_DIRS or n.endswith((".bak", ".tmp", ".pyc"))
@@ -41352,18 +41751,25 @@ if not globals().get("_H3D27_IMPORTERS_INSTALLED"):
                 log(f"[Export]   game files ready ({rep['copied']} outside assets pulled in, "
                     f"{len(rep['missing'])} missing)")
                 # 2. the engine + its Python
-                edir = os.path.join(stage, "engine")
+                edir = os.path.join(base, "engine")
                 os.makedirs(edir)
                 shutil.copy2(os.path.join(engine_dir, "Heaven3D.py"), edir)
                 for extra in ("LICENSE",):
                     if os.path.isfile(os.path.join(engine_dir, extra)):
                         shutil.copy2(os.path.join(engine_dir, extra), edir)
-                atomic_write_json(os.path.join(edir, "game.json"),
-                                  {"name": game, "width": int(width), "height": int(height),
-                                   "project": "game/main.heaven3d", "portable_saves": True,
-                                   "engine": globals().get("HEAVEN_VERSION", "")}, backup=False)
+                gcfg = {"name": game, "width": int(width), "height": int(height),
+                        "project": "game/main.heaven3d", "portable_saves": target != "macos",
+                        "engine": globals().get("HEAVEN_VERSION", "")}
+                if icon_img is not None:
+                    with open(os.path.join(edir, "icon.png"), "wb") as f:
+                        f.write(icon_png(icon_img, 256))
+                    gcfg["icon"] = "engine/icon.png"
+                atomic_write_json(os.path.join(edir, "game.json"), gcfg, backup=False)
                 log("[Export]   copying the Python runtime...")
-                _copy_python(player, os.path.join(edir, "python"), log)
+                if target == "macos":
+                    _copy_mac_python(player, contents, log)
+                else:
+                    _copy_python(player, os.path.join(edir, "python"), log)
                 # 3. launcher stamped with the Heaven3D logo
                 brand = os.path.join(engine_dir, "branding")
                 if target == "windows":
@@ -41371,6 +41777,23 @@ if not globals().get("_H3D27_IMPORTERS_INSTALLED"):
                     if not os.path.isfile(exe):
                         raise FileNotFoundError(f"missing launcher {exe}")
                     shutil.copy2(exe, os.path.join(stage, f"{game}.exe"))
+                    if icon:
+                        n = set_exe_icon(os.path.join(stage, f"{game}.exe"), icon, log)
+                        log(f"[Export]   {game}.exe carries your icon ({n} sizes)")
+                elif target == "macos":
+                    img = icon_img or _load_image_square(os.path.join(brand, "heaven3d_logo.png"))
+                    with open(os.path.join(base, "icon.icns"), "wb") as f:
+                        f.write(make_icns(img))
+                    exe_name = re.sub(r"[^A-Za-z0-9 _.-]+", "", game).strip() or "Game"
+                    lp = os.path.join(contents, "MacOS", exe_name)
+                    with open(lp, "w", newline="\n") as f:
+                        f.write(_mac_launcher(game))
+                    os.chmod(lp, 0o755)
+                    with open(os.path.join(contents, "Info.plist"), "w", newline="\n") as f:
+                        f.write(info_plist(game, exe_name, bundle_id_for(game), str(meta.get("version") or "1.0")))
+                    with open(os.path.join(contents, "PkgInfo"), "w") as f:
+                        f.write("APPL????")
+                    log(f"[Export]   {game}.app (icon: {'yours' if icon_img is not None else 'Heaven3D'})")
                 else:
                     lp = os.path.join(stage, game)
                     with open(lp, "w", newline="\n") as f:
@@ -41379,31 +41802,44 @@ if not globals().get("_H3D27_IMPORTERS_INSTALLED"):
                         f.write(_install_shortcut_sh(game))
                     for p in (lp, os.path.join(stage, "install-shortcut.sh")):
                         os.chmod(p, 0o755)
-                    if os.path.isfile(os.path.join(brand, "icons", "logo_256.png")):
+                    if icon_img is not None:
+                        shutil.copy2(os.path.join(edir, "icon.png"), os.path.join(stage, "icon.png"))
+                    elif os.path.isfile(os.path.join(brand, "icons", "logo_256.png")):
                         shutil.copy2(os.path.join(brand, "icons", "logo_256.png"), os.path.join(stage, "icon.png"))
-                os.makedirs(os.path.join(stage, "saves"), exist_ok=True)
+                if target != "macos":
+                    os.makedirs(os.path.join(stage, "saves"), exist_ok=True)
                 with open(os.path.join(stage, "README.txt"), "w", newline="\r\n" if target == "windows" else "\n") as f:
-                    f.write(f"{game}\nMade with Heaven3D.\n\n"
-                            + (f"Play: double-click {game}.exe\n" if target == "windows" else
-                               f"Play: ./{game}   (or double-click it)\n"
-                               f"Menu entry with icon: ./install-shortcut.sh\n")
-                            + "\nYour saved games are kept in the saves folder, so you can copy the whole\n"
-                              "folder to another computer (or a USB stick) and keep playing.\n")
+                    if target == "macos":
+                        f.write(f"{game}\nMade with Heaven3D.\n\n"
+                                f"Play: double-click {game}.app (drag it to Applications if you like).\n\n"
+                                "First start: this game isn't from the App Store, so macOS asks first.\n"
+                                f"  Right-click (or Control-click) {game}.app > Open > Open.\n"
+                                "  If macOS says the app is damaged, open Terminal and run:\n"
+                                f"    xattr -dr com.apple.quarantine \"{game}.app\"\n"
+                                "  (drag the app onto the Terminal window to type its path).\n\n"
+                                f"Saved games: ~/Library/Application Support/Heaven3D/{safe_name(game)}\n")
+                    else:
+                        f.write(f"{game}\nMade with Heaven3D.\n\n"
+                                + (f"Play: double-click {game}.exe\n" if target == "windows" else
+                                   f"Play: ./{game}   (or double-click it)\n"
+                                   f"Menu entry with icon: ./install-shortcut.sh\n")
+                                + "\nYour saved games are kept in the saves folder, so you can copy the whole\n"
+                                  "folder to another computer (or a USB stick) and keep playing.\n")
                 zpath = None
                 if make_zip:
                     log("[Export]   zipping...")
                     zpath = stage + ".zip"
-                    zip_folder(stage, zpath, unix=(target == "linux"))
+                    zip_folder(stage, zpath, unix=(target != "windows"))
                 results.append((target, stage, zpath))
-                log(f"[Export] {target.title()} done.")
+                log(f"[Export] {title} done.")
             return results
 
 
         def _is_unix_exec(rel):
             r = to_posix(rel)
             name = r.rsplit("/", 1)[-1]
-            return ("/bin/" in "/" + r or name.endswith(".sh") or ".so" in name
-                    or ("/" not in r and "." not in name))
+            return ("/bin/" in "/" + r or name.endswith((".sh", ".command", ".dylib")) or ".so" in name
+                    or "/Contents/MacOS/" in "/" + r or ("/" not in r and "." not in name))
 
 
         def zip_folder(folder, zip_path, unix=False):
@@ -41440,7 +41876,9 @@ if not globals().get("_H3D27_IMPORTERS_INSTALLED"):
             make_portable=make_portable, resolve_project_data=resolve_project_data,
             SaveData=SaveData, user_data_root=user_data_root, export_game=export_game,
             find_player=find_player, current_platform=current_platform, zip_folder=zip_folder,
-            atomic_write_json=atomic_write_json, IMPORT_DIR=IMPORT_DIR)
+            atomic_write_json=atomic_write_json, IMPORT_DIR=IMPORT_DIR, set_exe_icon=set_exe_icon,
+            icon_png=icon_png, ICON_EXTS=ICON_EXTS, make_icns=make_icns, info_plist=info_plist,
+            PLATFORMS=PLATFORMS, PLATFORM_TITLES=PLATFORM_TITLES)
         return _h3d27_types.SimpleNamespace(
             load_blend=load_blend, load_gltf=load_gltf,
             BlendFormatError=BlendFormatError, GltfError=GltfError,
@@ -41451,7 +41889,7 @@ if not globals().get("_H3D27_IMPORTERS_INSTALLED"):
     # =================================================================
     #  Engine integration (runs at import time, before any shader compiles)
     # =================================================================
-    HEAVEN_VERSION = "2.7.0"
+    HEAVEN_VERSION = "2.7.1"
 
     class _H3D27Log:
         @staticmethod
@@ -42221,6 +42659,8 @@ vec2 h3d_uv(int s){
         if sd is None:
             g = _H3D27_STATE.get("game")
             root = g["root"] if g else (_H3D27_STATE["project_dir"] or os.getcwd())
+            if g and not g.get("portable", True):
+                root = None                     # inside a macOS .app: saves go to Application Support
             sd = H3DPortable.SaveData(_h3d27_game_name(self), portable_root=root)
             self._h3d27_savedata = sd
             Log.info(f"Game saves folder: {sd.folder}")
@@ -42260,6 +42700,19 @@ vec2 h3d_uv(int s){
     HeavenEngine.__init__ = _h3d27_engine_init2
 
     # -- command line: exported games and the Hub's export ------------
+    def _h3d27_project_icon(project_file):
+        """The game icon chosen for a project (project.json "game_icon")."""
+        try:
+            pdir = os.path.dirname(os.path.abspath(project_file))
+            with open(os.path.join(pdir, "project.json"), encoding="utf-8") as f:
+                rel = json.load(f).get("game_icon")
+            if rel:
+                path = os.path.join(pdir, *rel.split("/"))
+                return path if os.path.isfile(path) else None
+        except (OSError, ValueError):
+            pass
+        return None
+
     def _h3d27_cli():
         argv = sys.argv[1:]
         if "--export-game" in argv:
@@ -42272,6 +42725,7 @@ vec2 h3d_uv(int s){
             ap.add_argument("--width", type=int, default=1600)
             ap.add_argument("--height", type=int, default=900)
             ap.add_argument("--no-zip", action="store_true")
+            ap.add_argument("--icon", default=None, help="game icon (.png .jpg .bmp)")
             a = ap.parse_args(argv)
             proj = a.project
             if os.path.isdir(proj):
@@ -42280,7 +42734,7 @@ vec2 h3d_uv(int s){
                 res = H3DPortable.export_game(
                     proj, a.out, [t.strip() for t in a.targets.split(",") if t.strip()],
                     _H3D27_ENGINE_DIR, a.name, a.width, a.height, not a.no_zip,
-                    log=lambda m: print(m, flush=True))
+                    log=lambda m: print(m, flush=True), icon=a.icon or _h3d27_project_icon(proj))
                 for plat, folder, z in res:
                     print(f"[Export] RESULT {plat} {folder} {z or ''}", flush=True)
                 sys.exit(0)
@@ -42297,9 +42751,13 @@ vec2 h3d_uv(int s){
             except (OSError, ValueError):
                 pass
             name = cfg.get("name") or os.path.basename(root)
-            _H3D27_STATE["game"] = {"name": name, "root": root}
+            portable = bool(cfg.get("portable_saves", True))       # False for macOS .app games
+            _H3D27_STATE["game"] = {"name": name, "root": root, "portable": portable}
             # pythonw (Windows) has no console: keep a log next to the saves
-            for logdir in (os.path.join(root, "saves"), os.path.join(H3DPortable.user_data_root(), H3DPortable.safe_name(name))):
+            logdirs = [os.path.join(H3DPortable.user_data_root(), H3DPortable.safe_name(name))]
+            if portable:
+                logdirs.insert(0, os.path.join(root, "saves"))
+            for logdir in logdirs:
                 try:
                     os.makedirs(logdir, exist_ok=True)
                     fh = open(os.path.join(logdir, "last_run.log"), "w", encoding="utf-8", buffering=1)
@@ -42315,6 +42773,14 @@ vec2 h3d_uv(int s){
                         "--width", str(cfg.get("width", 1600)), "--height", str(cfg.get("height", 900))]
             # A game always shows the short "made with Heaven3D" splash.
             globals()["_h3d_is_first_run"] = lambda: False
+            icon_file = os.path.join(root, *cfg["icon"].split("/")) if cfg.get("icon") else None
+            if icon_file and os.path.isfile(icon_file):
+                def _game_icon(path=icon_file):
+                    try:
+                        pygame.display.set_icon(pygame.transform.smoothscale(pygame.image.load(path), (64, 64)))
+                    except Exception:
+                        pass
+                globals()["_h3d_set_window_icon"] = _game_icon      # used before the window opens
 
     if __name__ == "__main__":
         _h3d27_cli()
@@ -42323,7 +42789,7 @@ vec2 h3d_uv(int s){
     _H3D27_PREV_EXPORT_DLG = HeavenEngine.export_runtime_dialog
 
     def _h3d27_export_dialog(self):
-        players = [p for p in ("windows", "linux") if H3DPortable.find_player(_H3D27_ENGINE_DIR, p)]
+        players = [p for p in ("windows", "linux", "macos") if H3DPortable.find_player(_H3D27_ENGINE_DIR, p)]
         proj = getattr(self, "project_path", None)
         if not players:
             Log.info("[Export] Stand-alone game export needs the Heaven3D standalone edition "
@@ -42345,7 +42811,7 @@ vec2 h3d_uv(int s){
             try:
                 res = H3DPortable.export_game(proj, out, players, _H3D27_ENGINE_DIR,
                                               width=self.width, height=self.height, make_zip=True,
-                                              log=lambda m: Log.info(m))
+                                              log=lambda m: Log.info(m), icon=_h3d27_project_icon(proj))
                 for plat, folder, z in res:
                     Log.info(f"[Export] {plat.title()} ready: {z or folder}")
             except Exception as ex:
@@ -42356,6 +42822,867 @@ vec2 h3d_uv(int s){
         threading.Thread(target=work, daemon=True).start()
 
     HeavenEngine.export_runtime_dialog = _h3d27_export_dialog
+
+    # ---------------------------------------------------------------
+    # 9. PACKAGES — pure-Python add-ons for the editor and for games
+    #    (the Hub manages them; see docs/PACKAGES.md).
+    #
+    #    <package>/package.json   {"id", "name", "version", "targets":
+    #                               ["hub","editor","game"], "engine": "engine.py",
+    #                               "hub": "hub.py", ...}
+    #    engine.py:  def register(h3d): ...   (h3d = H3DPackageAPI below)
+    #
+    #    Where packages come from:
+    #      ~/.heaven3d/packages/<id>     the user's library (enabled in the Hub)
+    #      <project>/packages/<id>      packages used by THIS game - they are
+    #                                   exported with it
+    #    Editor : enabled library packages (editor/game) + project packages
+    #    Game   : project packages with the "game" target only
+    #    --safe-mode or HEAVEN3D_SAFE_MODE=1 skips every package.
+    # ---------------------------------------------------------------
+    import importlib.util as _h3d27_ilu
+    _H3D27_PKG_STATE = {"apis": [], "tools": [], "menu_open": False, "loaded_for": None, "errors": {}}
+    H3DPackages = _H3D27_PKG_STATE["apis"]
+
+    def _h3d27_lib_root():
+        return os.path.join(os.path.expanduser("~"), ".heaven3d", "packages")
+
+    def _h3d27_read_manifest(folder):
+        try:
+            with open(os.path.join(folder, "package.json"), encoding="utf-8") as f:
+                m = json.load(f)
+            if not isinstance(m, dict) or not m.get("id"):
+                return None
+            m.setdefault("name", m["id"])
+            m.setdefault("version", "0.0.0")
+            m.setdefault("targets", [])
+            return m
+        except (OSError, ValueError):
+            return None
+
+    def _h3d27_enabled_ids():
+        try:
+            with open(os.path.join(os.path.expanduser("~"), ".heaven3d", "packages.json"), encoding="utf-8") as f:
+                d = json.load(f)
+            return set(i for i, on in d.get("enabled", {}).items() if on)
+        except (OSError, ValueError):
+            return set()
+
+    def _h3d27_discover(mode, project_dir):
+        wanted = {"editor", "game"} if mode == "editor" else {"game"}
+        found = {}
+        if mode == "editor" and not _H3D27_STATE.get("game"):
+            enabled = _h3d27_enabled_ids()
+            lib = _h3d27_lib_root()
+            for d in sorted(os.listdir(lib)) if os.path.isdir(lib) else []:
+                m = _h3d27_read_manifest(os.path.join(lib, d))
+                if m and m["id"] in enabled and wanted & set(m["targets"]) and m.get("engine"):
+                    found[m["id"]] = (m, os.path.join(lib, d), "library")
+        pk = os.path.join(project_dir, "packages") if project_dir else None
+        for d in sorted(os.listdir(pk)) if pk and os.path.isdir(pk) else []:
+            m = _h3d27_read_manifest(os.path.join(pk, d))
+            if m and wanted & set(m["targets"]) and m.get("engine"):
+                found[m["id"]] = (m, os.path.join(pk, d), "project")      # project copy wins
+        # dependency order: a package loads after the packages it requires
+        order, seen = [], set()
+
+        def visit(pid, stack=()):
+            if pid in seen or pid not in found or pid in stack:
+                return
+            for dep in found[pid][0].get("requires", []) or []:
+                visit(dep, stack + (pid,))
+            seen.add(pid)
+            order.append(found[pid])
+        for pid in sorted(found):
+            visit(pid)
+        return order
+
+    class H3DPackageAPI:
+        """What a package's engine.py receives in register(h3d).
+
+        h3d.engine        the HeavenEngine (None until the "init" event)
+        h3d.module        the Heaven3D module (Blueprint, SceneNode, Mesh, THEME, glm, ...)
+        h3d.mode          "editor" or "runtime"
+        h3d.path          this package's folder;  h3d.asset("x.png") -> full path
+        h3d.settings      dict saved with h3d.save_settings()
+        h3d.on(event, fn) events: init, update(dt), play_start, play_tick(dt), play_stop,
+                          render, key(key) -> True to consume, project_loaded(path),
+                          project_saved(path)
+        h3d.add_tool(label, fn)   button in the editor's Packages menu
+        h3d.wrap(owner, "method", wrapper)   wrapper(original, *args, **kw)
+        h3d.theme(**hex_colors)   change editor colours (THEME keys)
+        h3d.blueprint             decorator to register Blueprint classes
+        h3d.log / h3d.warn
+        """
+
+        EVENTS = ("init", "update", "play_start", "play_tick", "play_stop", "render", "key",
+                  "project_loaded", "project_saved")
+
+        def __init__(self, manifest, folder, origin, mode):
+            self.manifest = manifest
+            self.id = manifest["id"]
+            self.name = manifest.get("name", self.id)
+            self.version = manifest.get("version", "")
+            self.path = folder
+            self.origin = origin
+            self.mode = mode
+            self.engine = None
+            self.module = sys.modules[__name__]
+            self.blueprint = blueprint
+            self._handlers = {e: [] for e in self.EVENTS}
+            self._settings_file = (os.path.join(folder, "settings.json") if origin == "project" else
+                                   os.path.join(os.path.expanduser("~"), ".heaven3d", "package_settings",
+                                                self.id + ".json"))
+            self.settings = dict(manifest.get("default_settings", {}) or {})
+            try:
+                with open(self._settings_file, encoding="utf-8") as f:
+                    self.settings.update(json.load(f))
+            except (OSError, ValueError):
+                pass
+
+        # -- events / tools -------------------------------------------
+        def on(self, event, fn=None):
+            if event not in self._handlers:
+                raise ValueError(f"unknown event {event!r}; use one of {', '.join(self.EVENTS)}")
+            if fn is None:                       # decorator form: @h3d.on("update")
+                return lambda f: (self._handlers[event].append(f), f)[1]
+            self._handlers[event].append(fn)
+            return fn
+
+        def add_tool(self, label, fn, color=None):
+            """Adds a button to the editor's Packages menu.  fn(engine) runs on
+            click.  Returns the tool dict - change tool["label"] any time."""
+            tool = {"label": label, "fn": fn, "color": color, "pkg": self}
+            _H3D27_PKG_STATE["tools"].append(tool)
+            return tool
+
+        # -- helpers ----------------------------------------------------
+        def wrap(self, owner, name, wrapper):
+            """Replace owner.<name> with wrapper(original, *args, **kw).  If the
+            wrapper raises, the original runs instead (the engine never breaks)."""
+            original = getattr(owner, name)
+            api = self
+
+            def patched(*a, **kw):
+                try:
+                    return wrapper(original, *a, **kw)
+                except Exception as ex:
+                    api._error(f"wrap {name}", ex)
+                    return original(*a, **kw)
+            patched.__wrapped__ = original
+            setattr(owner, name, patched)
+            return original
+
+        def theme(self, **colors):
+            for k, v in colors.items():
+                THEME[k] = _hex(v) if isinstance(v, str) else tuple(v)
+
+        def asset(self, rel):
+            return os.path.join(self.path, *rel.replace("\\", "/").split("/"))
+
+        def load(self, filename):
+            """Import another .py file of this package as a module."""
+            name = f"h3dpkg_{self.id}_{os.path.splitext(os.path.basename(filename))[0]}"
+            spec = _h3d27_ilu.spec_from_file_location(name, self.asset(filename))
+            mod = _h3d27_ilu.module_from_spec(spec)
+            sys.modules[name] = mod
+            spec.loader.exec_module(mod)
+            return mod
+
+        def save_settings(self):
+            try:
+                H3DPortable.atomic_write_json(self._settings_file, self.settings, backup=False)
+            except Exception as ex:
+                self.warn(f"settings not saved: {ex}")
+
+        def log(self, msg):
+            Log.info(f"[{self.name}] {msg}")
+
+        def warn(self, msg):
+            Log.warn(f"[{self.name}] {msg}")
+
+        def _error(self, where, ex):
+            key = (self.id, where)
+            n = _H3D27_PKG_STATE["errors"].get(key, 0) + 1
+            _H3D27_PKG_STATE["errors"][key] = n
+            if n <= 3:
+                Log.error(f"[Package {self.id}] {where}: {ex}")
+                if n == 1:
+                    traceback.print_exc()
+            return n
+
+    def _h3d27_emit(event, *args):
+        result = None
+        for api in list(H3DPackages):
+            for fn in list(api._handlers.get(event, ())):
+                try:
+                    r = fn(*args)
+                    if event == "key" and r:
+                        result = True
+                except Exception as ex:
+                    if api._error(event, ex) >= 5 and event in ("update", "play_tick", "render"):
+                        api._handlers[event].remove(fn)      # stop a per-frame handler that keeps failing
+                        Log.error(f"[Package {api.id}] '{event}' handler disabled after repeated errors")
+        return result
+
+    def _h3d27_load_packages(mode, project_dir):
+        if _H3D27_PKG_STATE["loaded_for"] == (mode, project_dir):
+            return
+        if "--safe-mode" in sys.argv or os.environ.get("HEAVEN3D_SAFE_MODE") == "1":
+            Log.info("[Packages] safe mode: packages are not loaded")
+            _H3D27_PKG_STATE["loaded_for"] = (mode, project_dir)
+            return
+        _H3D27_PKG_STATE["loaded_for"] = (mode, project_dir)
+        for manifest, folder, origin in _h3d27_discover(mode, project_dir):
+            api = H3DPackageAPI(manifest, folder, origin, mode)
+            try:
+                entry = os.path.join(folder, manifest["engine"])
+                spec = _h3d27_ilu.spec_from_file_location(f"h3dpkg_{api.id}", entry)
+                mod = _h3d27_ilu.module_from_spec(spec)
+                mod.h3d = api
+                sys.modules[spec.name] = mod
+                spec.loader.exec_module(mod)
+                if hasattr(mod, "register"):
+                    mod.register(api)
+                H3DPackages.append(api)
+                Log.info(f"[Packages] {api.name} {api.version} loaded ({origin})")
+            except Exception as ex:
+                Log.error(f"[Packages] {manifest.get('id')} failed to load: {ex}")
+                traceback.print_exc()
+
+    # -- engine hooks -------------------------------------------------
+    _H3D27_PREV_INIT3 = HeavenEngine.__init__
+
+    def _h3d27_engine_init3(self, *args, **kwargs):
+        names = ("mode", "width", "height", "project_path")
+        bound = dict(zip(names, args)); bound.update(kwargs)
+        mode = bound.get("mode", "editor")
+        pp = bound.get("project_path")
+        pdir = os.path.dirname(os.path.abspath(pp)) if pp else os.getcwd()
+        try:
+            _h3d27_load_packages(mode, pdir)        # before the project loads: blueprints exist
+        except Exception as ex:
+            Log.error(f"[Packages] {ex}")
+        self._h3d27_last_t = None
+        _H3D27_PREV_INIT3(self, *args, **kwargs)
+        for api in H3DPackages:
+            api.engine = self
+        _h3d27_emit("init", self)
+
+    HeavenEngine.__init__ = _h3d27_engine_init3
+
+    _H3D27_PREV_CAPTURE = HeavenEngine._apply_mouse_capture
+
+    def _h3d27_capture(self):
+        if H3DPackages:
+            t = float(getattr(self, "time", 0.0))
+            last = getattr(self, "_h3d27_last_t", None)
+            self._h3d27_last_t = t
+            _h3d27_emit("update", self, 0.0 if last is None else max(0.0, t - last))
+        return _H3D27_PREV_CAPTURE(self)
+
+    HeavenEngine._apply_mouse_capture = _h3d27_capture
+
+    _H3D27_PREV_SCHED = HeavenEngine._process_scheduler
+
+    def _h3d27_sched(self):
+        r = _H3D27_PREV_SCHED(self)
+        if H3DPackages:
+            t = float(getattr(self, "time", 0.0))
+            last = getattr(self, "_h3d27_last_pt", None)
+            self._h3d27_last_pt = t
+            _h3d27_emit("play_tick", self, 0.0 if last is None else min(0.1, max(0.0, t - last)))
+        return r
+
+    HeavenEngine._process_scheduler = _h3d27_sched
+
+    _H3D27_PREV_BEGIN = HeavenEngine._begin_play
+    _H3D27_PREV_STOP = HeavenEngine._stop_play
+
+    def _h3d27_begin(self, *a, **kw):
+        r = _H3D27_PREV_BEGIN(self, *a, **kw)
+        self._h3d27_last_pt = None
+        _h3d27_emit("play_start", self)
+        return r
+
+    def _h3d27_stop(self, *a, **kw):
+        _h3d27_emit("play_stop", self)
+        return _H3D27_PREV_STOP(self, *a, **kw)
+
+    HeavenEngine._begin_play = _h3d27_begin
+    HeavenEngine._stop_play = _h3d27_stop
+
+    _H3D27_PREV_OUTLINE = HeavenEngine._render_selection_outline
+
+    def _h3d27_outline(self):
+        r = _H3D27_PREV_OUTLINE(self)
+        if H3DPackages:
+            _h3d27_emit("render", self)
+        return r
+
+    HeavenEngine._render_selection_outline = _h3d27_outline
+
+    _H3D27_PREV_KEY = HeavenEngine._on_key
+
+    def _h3d27_key(self, key):
+        if H3DPackages and _h3d27_emit("key", self, key):
+            return None
+        return _H3D27_PREV_KEY(self, key)
+
+    HeavenEngine._on_key = _h3d27_key
+
+    _H3D27_PREV_LOADP = HeavenEngine.load_project
+    _H3D27_PREV_SAVEP = HeavenEngine.save_project
+
+    def _h3d27_loadp(self, path=None):
+        r = _H3D27_PREV_LOADP(self, path)
+        _h3d27_emit("project_loaded", self, path or getattr(self, "project_path", None))
+        return r
+
+    def _h3d27_savep(self, path=None):
+        r = _H3D27_PREV_SAVEP(self, path)
+        _h3d27_emit("project_saved", self, path or getattr(self, "project_path", None))
+        return r
+
+    HeavenEngine.load_project = _h3d27_loadp
+    HeavenEngine.save_project = _h3d27_savep
+
+    # runtime-mode projects load inside __init__ (before "init"): announce it
+    _H3D27_PREV_PSLOAD2 = ProjectSerializer.load.__func__
+
+    def _h3d27_psload2(cls, path, scene, engine):
+        ok = _H3D27_PREV_PSLOAD2(cls, path, scene, engine)
+        if ok and getattr(engine, "mode", None) == "runtime":
+            engine._h3d27_runtime_loaded = path
+        return ok
+
+    ProjectSerializer.load = classmethod(_h3d27_psload2)
+
+    def _h3d27_runtime_announce(engine):
+        p = getattr(engine, "_h3d27_runtime_loaded", None)
+        if p:
+            _h3d27_emit("project_loaded", engine, p)
+    if True:
+        _H3D27_PREV_INIT4 = HeavenEngine.__init__
+
+        def _h3d27_engine_init4(self, *a, **kw):
+            _H3D27_PREV_INIT4(self, *a, **kw)
+            _h3d27_runtime_announce(self)
+        HeavenEngine.__init__ = _h3d27_engine_init4
+
+    # -- the editor's "Packages" menu (Hierarchy header) ---------------
+    _H3D27_PREV_BUILD_UI = HeavenEngine._build_ui
+
+    def _h3d27_build_ui(self):
+        _H3D27_PREV_BUILD_UI(self)
+        try:
+            if self.ui is None or self.mode != "editor" or self._playing:
+                return
+            tools = _H3D27_PKG_STATE["tools"]
+            T = THEME
+            label = f"Packages ({len(H3DPackages)})"
+            self.ui.button(UIRect(0.098, 0.879, 0.075, 0.030), label,
+                           lambda: _H3D27_PKG_STATE.update(menu_open=not _H3D27_PKG_STATE["menu_open"]),
+                           T["accent_dim"] if _H3D27_PKG_STATE["menu_open"] else T["button"])
+            if not _H3D27_PKG_STATE["menu_open"]:
+                return
+            rows = tools or [{"label": "No package tools - add packages in the Hub", "fn": None, "color": None}]
+            h = 0.034
+            top = 0.872
+            height = len(rows) * (h + 0.006) + 0.014
+            self.ui.panel(UIRect(0.182, top - height, 0.20, height), T["panel"])
+            y = top - 0.007 - h
+            for t in rows:
+                def run(t=t):
+                    _H3D27_PKG_STATE["menu_open"] = False
+                    if t["fn"] is None:
+                        return
+                    try:
+                        t["fn"](self)
+                    except TypeError:
+                        try:
+                            t["fn"]()
+                        except Exception as ex:
+                            t["pkg"]._error(f"tool {t['label']}", ex)
+                    except Exception as ex:
+                        t["pkg"]._error(f"tool {t['label']}", ex)
+                col = _hex(t["color"]) if isinstance(t.get("color"), str) else (t.get("color") or T["button"])
+                self.ui.button(UIRect(0.188, y, 0.188, h), t["label"], run, col, align="left", pad_x_px=12)
+                y -= h + 0.006
+        except Exception as ex:
+            _h3d27_log_once("pkg_menu", f"[Packages] menu: {ex}")
+
+    HeavenEngine._build_ui = _h3d27_build_ui
+
+    # ---------------------------------------------------------------
+    # 10. VIEW MENU (viewport top-left "View" button, not in the main bar)
+    #     Shading: Lit / Lit + Wireframe / Wireframe (x-ray), grid on/off.
+    #     Wireframes are drawn into a private framebuffer and composited, so
+    #     no engine GL state is disturbed (same approach as the outline).
+    # ---------------------------------------------------------------
+    _H3D27_WIRE_VERT = """#version 330 core
+in vec3 in_position;
+uniform mat4 u_mvp;
+void main() { gl_Position = u_mvp * vec4(in_position, 1.0); }
+"""
+    _H3D27_WIRE_FRAG = """#version 330 core
+uniform vec4 u_color;
+out vec4 frag;
+void main() { frag = u_color; }
+"""
+    _H3D27_BLIT_VERT = """#version 330 core
+out vec2 v_uv;
+void main() {
+    vec2 p = vec2((gl_VertexID << 1) & 2, gl_VertexID & 2);
+    v_uv = p;
+    gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
+}
+"""
+    _H3D27_BLIT_FRAG = """#version 330 core
+in vec2 v_uv;
+uniform sampler2D u_tex;
+out vec4 frag;
+void main() { frag = texture(u_tex, v_uv); }
+"""
+    SHADING_MODES = (("lit", "Lit"), ("lit_wire", "Lit + Wireframe"), ("wire", "Wireframe"))
+
+    def _h3d27_view(self):
+        st = self.__dict__.get("_h3d27_view_state")
+        if st is None:
+            st = {"shading": "lit", "grid": True, "menu": False}
+            self.__dict__["_h3d27_view_state"] = st
+        return st
+
+    def set_shading(self, mode):
+        """Editor viewport shading: "lit", "lit_wire" or "wire"."""
+        if mode not in [m for m, _ in SHADING_MODES]:
+            raise ValueError(mode)
+        _h3d27_view(self)["shading"] = mode
+
+    def set_grid_visible(self, on):
+        st = _h3d27_view(self)
+        st["grid"] = bool(on)
+        if on and getattr(self, "_h3d27_grid_saved", None) is not None and self.editor_grid is None:
+            self.editor_grid = self._h3d27_grid_saved
+        elif not on and self.editor_grid is not None:
+            self._h3d27_grid_saved = self.editor_grid
+            self.editor_grid = None
+
+    HeavenEngine.set_shading = set_shading
+    HeavenEngine.set_grid_visible = set_grid_visible
+
+    def _h3d27_draw_wire(self):
+        st = _h3d27_view(self)
+        mode = st["shading"]
+        if mode == "lit" or getattr(self, "mode", None) != "editor":
+            return
+        ctx = self.ctx
+        res = self.__dict__.get("_h3d27_wire_res")
+        if res is None:
+            try:
+                prog = ctx.program(vertex_shader=_H3D27_WIRE_VERT, fragment_shader=_H3D27_WIRE_FRAG)
+                blit = ctx.program(vertex_shader=_H3D27_BLIT_VERT, fragment_shader=_H3D27_BLIT_FRAG)
+                res = {"prog": prog, "blit": blit, "blit_vao": ctx.vertex_array(blit, []), "fbo": None}
+            except Exception as ex:
+                _h3d27_log_once("wire_prog", f"[View] wireframe shaders failed: {ex}")
+                res = False
+            self.__dict__["_h3d27_wire_res"] = res
+        if not res:
+            return
+        w, h = int(self.width), int(self.height)
+        if res["fbo"] is None or res["size"] != (w, h):
+            for k in ("fbo", "tex", "depth"):
+                try:
+                    res[k].release()
+                except Exception:
+                    pass
+            res["tex"] = ctx.texture((w, h), 4)
+            res["depth"] = ctx.depth_renderbuffer((w, h))
+            res["fbo"] = ctx.framebuffer([res["tex"]], res["depth"])
+            res["size"] = (w, h)
+        prog = res["prog"]
+        vp = self.camera.projection() * self.camera.view()
+        sel = getattr(self, "selected", None)
+        sel_ids = {id(n) for n in sel.traverse()} if sel is not None else set()
+        items = []
+        for node in self.scene.root.traverse():
+            mesh = getattr(node, "mesh", None)
+            if mesh is None or getattr(mesh, "vbo", None) is None or not getattr(node, "visible", True):
+                continue
+            if node.name.startswith("__"):
+                continue
+            try:
+                items.append((mesh, vp * node.world_matrix(), id(node) in sel_ids))
+            except Exception:
+                continue
+
+        def draw(color_fn):
+            for mesh, mvp, is_sel in items:
+                try:
+                    prog["u_mvp"].write(mvp.to_bytes())
+                    prog["u_color"].value = color_fn(is_sel)
+                    vao = mesh.get_vao(prog)
+                    if getattr(mesh, "indexed", False):
+                        vao.render(moderngl.TRIANGLES)
+                    else:
+                        vao.render(moderngl.TRIANGLES, vertices=mesh.vertex_count)
+                except Exception:
+                    continue
+        try:
+            fbo = res["fbo"]
+            fbo.use()
+            ctx.viewport = (0, 0, w, h)
+            ctx.disable(moderngl.CULL_FACE)
+            ctx.disable(moderngl.BLEND)
+            if mode == "wire":
+                fbo.clear(0.135, 0.145, 0.165, 1.0, depth=1.0)
+                ctx.disable(moderngl.DEPTH_TEST)
+                ctx.wireframe = True
+                draw(lambda s: (1.0, 0.62, 0.18, 1.0) if s else (0.72, 0.76, 0.84, 1.0))
+            else:
+                fbo.clear(0.0, 0.0, 0.0, 0.0, depth=1.0)
+                ctx.enable(moderngl.DEPTH_TEST)
+                ctx.depth_func = "<="
+                # depth prepass, pushed back a little so edges win the depth test
+                ctx.enable(moderngl.BLEND)
+                ctx.blend_func = (moderngl.ZERO, moderngl.ONE)
+                ctx.polygon_offset = (1.0, 1.0)
+                draw(lambda s: (0.0, 0.0, 0.0, 0.0))
+                ctx.polygon_offset = (0.0, 0.0)
+                ctx.disable(moderngl.BLEND)
+                ctx.wireframe = True
+                draw(lambda s: (1.0, 0.62, 0.18, 0.95) if s else (0.04, 0.05, 0.07, 0.75))
+            ctx.wireframe = False
+            ctx.screen.use()
+            ctx.viewport = (0, 0, w, h)
+            ctx.disable(moderngl.DEPTH_TEST)
+            ctx.enable(moderngl.BLEND)
+            ctx.blend_func = (moderngl.SRC_ALPHA, moderngl.ONE_MINUS_SRC_ALPHA)
+            res["tex"].use(location=0)
+            res["blit"]["u_tex"] = 0
+            res["blit_vao"].render(moderngl.TRIANGLES, vertices=3)
+        except Exception as ex:
+            _h3d27_log_once("wire_draw", f"[View] wireframe draw failed: {ex}")
+        finally:
+            try:
+                ctx.wireframe = False
+                ctx.polygon_offset = (0.0, 0.0)
+                ctx.screen.use()
+                ctx.disable(moderngl.BLEND)
+                ctx.enable(moderngl.DEPTH_TEST)
+                ctx.depth_func = "<"
+                ctx.depth_mask = True
+            except Exception:
+                pass
+
+    _H3D27_PREV_OUTLINE2 = HeavenEngine._render_selection_outline
+
+    def _h3d27_outline2(self):
+        try:
+            _h3d27_draw_wire(self)                # under the selection outline + gizmos
+        except Exception:
+            pass
+        return _H3D27_PREV_OUTLINE2(self)
+
+    HeavenEngine._render_selection_outline = _h3d27_outline2
+
+    _H3D27_PREV_BUILD_UI2 = HeavenEngine._build_ui
+
+    def _h3d27_build_ui2(self):
+        _H3D27_PREV_BUILD_UI2(self)
+        try:
+            if self.ui is None or self.mode != "editor":
+                return
+            st = _h3d27_view(self)
+            T = THEME
+            cur = dict(SHADING_MODES)[st["shading"]]
+            x, y = 0.186, 0.884
+            self.ui.button(UIRect(x, y, 0.085, 0.032), f"View: {cur}",
+                           lambda: st.update(menu=not st["menu"]),
+                           T["accent_dim"] if st["menu"] else T["panel_dark"], align="left", pad_x_px=10)
+            if not st["menu"]:
+                return
+            rows = [(f"{'●' if st['shading'] == m else '○'}  {label}", (lambda m=m: (set_shading(self, m), st.update(menu=False))))
+                    for m, label in SHADING_MODES]
+            rows.append((f"{'☑' if st['grid'] else '☐'}  Show grid",
+                         lambda: (set_grid_visible(self, not st["grid"]), st.update(menu=False))))
+            h = 0.032
+            height = len(rows) * (h + 0.005) + 0.012
+            top = y - 0.006
+            self.ui.panel(UIRect(x, top - height, 0.15, height), T["panel"])
+            yy = top - 0.006 - h
+            for label, fn in rows:
+                self.ui.button(UIRect(x + 0.005, yy, 0.14, h), label, fn, T["button"], align="left", pad_x_px=10)
+                yy -= h + 0.005
+        except Exception as ex:
+            _h3d27_log_once("view_menu", f"[View] menu: {ex}")
+
+    HeavenEngine._build_ui = _h3d27_build_ui2
+
+    # ---------------------------------------------------------------
+    # 11. macOS
+    #     * OpenGL 4.1 core / forward-compatible context (the only modern
+    #       GL macOS offers; every Heaven3D shader is GLSL 330 core).
+    #     * Tk can't share the Cocoa main thread with SDL, so on macOS no
+    #       Tk window lives in the engine process: askfloat / askstring /
+    #       askcolor / file dialogs / message boxes run in a tiny helper
+    #       process, and the Library popup becomes an in-editor dropdown.
+    #     HEAVEN3D_MAC_COMPAT=1 turns the same code on elsewhere (tests).
+    # ---------------------------------------------------------------
+    import subprocess as _h3d27_sp
+    H3D_MAC = sys.platform == "darwin"
+    H3D_MAC_COMPAT = H3D_MAC or os.environ.get("HEAVEN3D_MAC_COMPAT") == "1"
+
+    if H3D_MAC:
+        os.environ.setdefault("SDL_VIDEO_HIGHDPI_DISABLED", "1")   # 1 pixel = 1 point; no quarter-size viewport on Retina
+        os.environ.setdefault("SDL_MAC_CTRL_CLICK_EMULATE_RIGHT_CLICK", "1")
+
+    if H3D_MAC_COMPAT:
+        _H3D27_REAL_SET_MODE = pygame.display.set_mode
+
+        def _h3d27_mac_set_mode(*a, **kw):
+            flags = kw.get("flags", a[1] if len(a) > 1 else 0)
+            if flags & OPENGL:
+                try:
+                    pygame.display.gl_set_attribute(pygame.GL_CONTEXT_MAJOR_VERSION, 4)
+                    pygame.display.gl_set_attribute(pygame.GL_CONTEXT_MINOR_VERSION, 1)
+                    pygame.display.gl_set_attribute(pygame.GL_CONTEXT_PROFILE_MASK, pygame.GL_CONTEXT_PROFILE_CORE)
+                    pygame.display.gl_set_attribute(pygame.GL_CONTEXT_FLAGS, pygame.GL_CONTEXT_FORWARD_COMPATIBLE_FLAG)
+                    pygame.display.gl_set_attribute(pygame.GL_DEPTH_SIZE, 24)
+                except Exception as ex:
+                    Log.warn(f"[macOS] GL attributes: {ex}")
+            return _H3D27_REAL_SET_MODE(*a, **kw)
+
+        pygame.display.set_mode = _h3d27_mac_set_mode
+
+    _H3D27_DIALOG_CHILD = r'''
+import sys, json
+import tkinter as tk
+from tkinter import simpledialog, colorchooser, filedialog, messagebox
+req = json.loads(sys.argv[1])
+mod = {"simpledialog": simpledialog, "colorchooser": colorchooser,
+       "filedialog": filedialog, "messagebox": messagebox}[req["module"]]
+kw = req["kw"]
+if "filetypes" in kw:
+    kw["filetypes"] = [tuple(t) for t in kw["filetypes"]]
+if isinstance(kw.get("color"), list):
+    kw["color"] = tuple(kw["color"])
+root = tk.Tk()
+root.withdraw()
+try:
+    root.attributes("-topmost", True)
+    root.lift(); root.focus_force()
+except Exception:
+    pass
+res = getattr(mod, req["name"])(*req["args"], parent=root, **kw)
+if isinstance(res, tuple):
+    res = list(res)
+sys.stdout.write("H3DRESULT" + json.dumps(res))
+'''
+
+    def _h3d27_jsonable(v):
+        if isinstance(v, (list, tuple)):
+            return [_h3d27_jsonable(x) for x in v]
+        if isinstance(v, (str, int, float, bool)) or v is None:
+            return v
+        return str(v)
+
+    def _h3d27_remote_dialog(module, name, args, kw):
+        """Run one tkinter dialog in a helper process, keeping the game
+        window responsive (events pumped) until the player answers."""
+        kw = {k: _h3d27_jsonable(v) for k, v in kw.items() if k not in ("parent", "master")}
+        req = json.dumps({"module": module, "name": name, "args": _h3d27_jsonable(list(args)), "kw": kw})
+        try:
+            p = _h3d27_sp.Popen([sys.executable, "-E", "-s", "-c", _H3D27_DIALOG_CHILD, req],
+                                stdout=_h3d27_sp.PIPE, stderr=_h3d27_sp.PIPE, text=True)
+        except Exception as ex:
+            Log.error(f"[macOS] dialog helper: {ex}")
+            return None
+        while p.poll() is None:
+            try:
+                pygame.event.pump()
+            except Exception:
+                pass
+            time.sleep(0.03)
+        out, err = p.communicate()
+        if "H3DRESULT" not in (out or ""):
+            if err:
+                Log.warn(f"[macOS] dialog: {err.strip()[-300:]}")
+            return None
+        res = json.loads(out.split("H3DRESULT", 1)[1])
+        if module == "colorchooser" and isinstance(res, list):
+            rgb = tuple(res[0]) if isinstance(res[0], list) else res[0]
+            return (rgb, res[1])
+        if module == "filedialog" and isinstance(res, list):
+            return tuple(res)
+        return res
+
+    class _H3D27StubTk:
+        """Stands in for tkinter.Tk / Toplevel in the engine process."""
+        def __init__(self, *a, **kw):
+            self._alive = True
+
+        def winfo_exists(self):
+            return self._alive
+
+        def destroy(self):
+            self._alive = False
+
+        def __getattr__(self, name):
+            if name.startswith("_"):
+                raise AttributeError(name)
+            if name.startswith("winfo_"):
+                return lambda *a, **kw: 1
+            return lambda *a, **kw: None
+
+    def _h3d27_install_mac_dialogs():
+        try:
+            import tkinter
+            from tkinter import simpledialog, colorchooser, filedialog, messagebox
+        except Exception:
+            return              # no tkinter at all: dialogs are skipped as before
+        if getattr(tkinter, "_h3d27_mac", False):
+            return
+        tkinter._h3d27_mac = True
+        tkinter.Tk = _H3D27StubTk
+
+        def make(module, name):
+            return lambda *a, **kw: _h3d27_remote_dialog(module, name, a, kw)
+        for mod, names in ((simpledialog, ("askfloat", "askstring", "askinteger")),
+                           (colorchooser, ("askcolor",)),
+                           (filedialog, ("askopenfilename", "asksaveasfilename", "askdirectory", "askopenfilenames")),
+                           (messagebox, ("showinfo", "showwarning", "showerror", "askyesno",
+                                         "askokcancel", "askyesnocancel", "askquestion", "askretrycancel"))):
+            for n in names:
+                setattr(mod, n, make(mod.__name__.split(".")[-1], n))
+
+    # ---- Library popup -> in-editor dropdown -------------------------
+    class _H3D27LibRecorder:
+        """A fake `tkinter` module: running the real open_library_menu (and
+        any wrappers that add buttons, e.g. Flying Enemy) against it records
+        the sections and buttons instead of opening a Tk window."""
+        def __init__(self):
+            self.items = []
+            rec = self
+
+            class Widget(_H3D27StubTk):
+                def __init__(self, master=None, *a, **kw):
+                    super().__init__()
+                    text = kw.get("text", "")
+                    if isinstance(self, Button):
+                        rec.items.append(("button", text, kw.get("command")))
+                    elif isinstance(self, Label) and text:
+                        rec.items.append(("label", text, None))
+
+            class Button(Widget):
+                pass
+
+            class Label(Widget):
+                pass
+            self.Toplevel = Widget
+            self.Tk = _H3D27StubTk
+            self.Frame = Widget
+            self.Button = Button
+            self.Label = Label
+            self.Canvas = Widget
+            self.Scrollbar = Widget
+
+        def __getattr__(self, name):
+            if name.isupper():
+                return name.lower()
+            return _H3D27StubTk
+
+    _H3D27_LIB_STATE = {"open": False, "items": []}
+
+    def _h3d27_capture_library(self, real):
+        rec = _H3D27LibRecorder()
+        saved = sys.modules.get("tkinter")
+        sys.modules["tkinter"] = rec
+        try:
+            self._library_window = None
+            real(self)
+        except Exception as ex:
+            Log.warn(f"[macOS] library: {ex}")
+        finally:
+            if saved is not None:
+                sys.modules["tkinter"] = saved
+            else:
+                sys.modules.pop("tkinter", None)
+            self._library_window = None
+        return rec.items
+
+    if H3D_MAC_COMPAT:
+        _H3D27_LIB_STATE["real"] = HeavenEngine.open_library_menu
+
+        def _h3d27_lib_cmd(cmd):
+            def run():
+                _H3D27_LIB_STATE["open"] = False
+                try:
+                    cmd()
+                except Exception as ex:
+                    Log.warn(f"[Library] {ex}")
+            return run
+
+        _H3D27_LIB_STATE["base"] = _H3D27_LIB_STATE["real"]
+
+        def _h3d27_mac_library(self):
+            if _H3D27_LIB_STATE.get("capturing"):
+                # a wrapper installed after us called down into us: act as
+                # the original Tk popup (recorded by the fake tkinter)
+                return _H3D27_LIB_STATE["base"](self)
+            if _H3D27_LIB_STATE["open"]:
+                _H3D27_LIB_STATE["open"] = False
+                return
+            _H3D27_LIB_STATE["capturing"] = True
+            try:
+                items = _h3d27_capture_library(self, _H3D27_LIB_STATE["real"])
+            finally:
+                _H3D27_LIB_STATE["capturing"] = False
+            # keep section titles + buttons; the popup's title/subtitle go
+            items = [(k, t, _h3d27_lib_cmd(c) if k == "button" else None)
+                     for k, t, c in items if k == "button" or t.isupper()]
+            _H3D27_LIB_STATE.update(open=bool(items), items=items)
+
+        def _h3d27_claim_library():
+            # other patches may wrap open_library_menu later (Flying Enemy
+            # adds its button that way): fold them into what we record.
+            cur = HeavenEngine.__dict__.get("open_library_menu")
+            if cur is not _h3d27_mac_library:
+                _H3D27_LIB_STATE["real"] = cur
+                HeavenEngine.open_library_menu = _h3d27_mac_library
+
+        HeavenEngine.open_library_menu = _h3d27_mac_library
+        _H3D27_PREV_BUILD_UI3 = HeavenEngine._build_ui
+
+        def _h3d27_build_ui3(self):
+            _h3d27_claim_library()
+            _H3D27_PREV_BUILD_UI3(self)
+            try:
+                if (self.ui is None or self.mode != "editor" or self._playing
+                        or not _H3D27_LIB_STATE["open"]):
+                    return
+                T = THEME
+                items = _H3D27_LIB_STATE["items"]
+                h, lh = 0.032, 0.026
+                height = sum(h + 0.004 if k == "button" else lh for k, _t, _c in items) + 0.014
+                x, w, top = 0.659, 0.16, 0.926       # under Library, inside the viewport
+                self.ui.panel(UIRect(x, top - height, w, height), T["panel"])
+                yy = top - 0.007
+                for kind, text, cmd in items:
+                    if kind == "label":
+                        yy -= lh
+                        self.ui.button(UIRect(x + 0.004, yy, w - 0.008, lh), text, lambda: None, T["panel"],
+                                       align="left", text_color=T["accent"], pad_x_px=8, pad_y_px=5)
+                        continue
+                    yy -= h
+                    self.ui.button(UIRect(x + 0.006, yy, w - 0.012, h), text, cmd, T["button"], align="left", pad_x_px=10)
+                    yy -= 0.004
+            except Exception as ex:
+                _h3d27_log_once("mac_library", f"[macOS] library menu: {ex}")
+
+        HeavenEngine._build_ui = _h3d27_build_ui3
+        _h3d27_install_mac_dialogs()
+        Log.info("[macOS] GL 4.1 core context, out-of-process dialogs, in-editor Library menu")
 
 # [H3D27:importers END]
 

@@ -1,0 +1,11 @@
+{
+  "id": "spline_roads",
+  "name": "Spline Roads",
+  "version": "1.0.0",
+  "author": "Heaven3D",
+  "category": "Terrain",
+  "description": "Draw roads with control points. The road is a smooth curve that sits on your terrain, with lane markings, side skirts and a collider so cars can drive on it. Rebuilds live while you move the points.",
+  "heaven3d": ">=2.7.0",
+  "targets": ["editor", "game"],
+  "engine": "engine.py"
+}

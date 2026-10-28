@@ -1,0 +1,12 @@
+{
+  "id": "light_theme",
+  "name": "Light Theme",
+  "version": "1.0.0",
+  "author": "Heaven3D",
+  "category": "Theme",
+  "description": "A clean light look for the Heaven3D Hub and the editor. Turn it off to go back to dark.",
+  "heaven3d": ">=2.7.0",
+  "targets": ["hub", "editor"],
+  "hub": "hub.py",
+  "engine": "engine.py"
+}

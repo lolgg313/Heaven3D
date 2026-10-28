@@ -1,0 +1,9 @@
+{
+  "title": "Race Track",
+  "order": 5,
+  "desc": "A circuit with a spline road, checkpoint gates, an arcade car and a race manager (3 laps, countdown, best lap saved). Press Play and drive.",
+  "packages": [
+    "car_race_kit",
+    "spline_roads"
+  ]
+}

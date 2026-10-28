@@ -10,9 +10,9 @@
 
 Deferred PBR rendering · CPU physics · Built-in editor · Standalone runtime
 
-![Version](https://img.shields.io/badge/version-2.7.0-blue)
+![Version](https://img.shields.io/badge/version-2.7.1-blue)
 ![Python](https://img.shields.io/badge/python-3.10%2B-yellow)
-![OpenGL](https://img.shields.io/badge/OpenGL-4.6%20Core-green)
+![OpenGL](https://img.shields.io/badge/OpenGL-3.3%2B%20Core-green)
 ![License](https://img.shields.io/badge/license-Apache%202.0-orange)
 
 </div>
@@ -25,12 +25,21 @@ Heaven3D is a from-scratch 3D game engine written in Python on top of [ModernGL]
 
 The whole engine ships as a single file, `Heaven3D.py`, so it is easy to read, hack on, and bundle into your own projects.
 
-## 🆕 What's new in 2.7.0
+## 🆕 What's new in 2.7.1
+
+- **macOS support**: standalone editions for **Apple Silicon** and **Intel** Macs (`Heaven3D Hub.app`, `Heaven3D Editor.app`), and **macOS `.app` export** for your games (with your game icon). The editor runs on Apple's OpenGL 4.1 core profile; dialogs and the Library open the Mac way.
+- **Wireframe view**: a **View** menu in the top-left corner of the viewport (not in the crowded toolbar) switches between *Lit*, *Lit + Wireframe* and *Wireframe* (x-ray), and shows or hides the grid. The selected object is drawn in orange.
+- **Car Race Kit 1.1**: replace the dummy car's **body and wheels with your own 3D models** (`.glb`, `.gltf`, `.blend`, `.obj`). They're fitted automatically; the wheels spin and steer.
+
+## What's new in 2.7.0
 
 - **Standalone editions for Windows and Linux**: unzip and double-click. Python and every library are inside, so there's nothing to install.
 - **Export your game** for **Windows (.exe)** and **Linux** from either system, with the Heaven3D logo as its icon. Your players install nothing either.
 - **Portable projects** (FILE BURNER built in): every save stores asset paths inside the project folder, and anything imported from outside is copied in. Projects open on any PC and either OS.
 - **Save games** for your scripts: `engine.save_game()` / `engine.load_game()`, crash-safe, and they travel with the exported game.
+- **Packages**: pure-Python add-ons for the Hub, the editor and games, managed from the Hub's new **Packages** page. Included: *Light Theme*, *Physics Plus*, *Spline Roads* and *Car Race Kit* (with a *Race Track* template). See [docs/PACKAGES.md](docs/PACKAGES.md).
+- **Your own game icon** (`.png`, `.jpg` or `.bmp`) on exported games: the `.exe` icon, the window, the taskbar and the Linux menu.
+- **In-game pause menu** (Esc: Resume, Sound volume, Exit) in Play and in every exported game.
 - **Heaven3D Hub** (`Heaven3D_Hub.py`): a launcher like Unity Hub. Create projects from templates, open them in the editor or play them, export them, and follow offline tutorials.
 - **New `.blend`, `.gltf` and `.glb` importers**, tested against Blender and the Khronos samples with 8 hard test files per format (31/31 pass, see [tests/importers](tests/importers/README.md)).
 - **Imported models are one object**: children and material parts are locked to the main object, so you can't select, move or delete them separately.
@@ -61,6 +70,7 @@ The whole engine ships as a single file, `Heaven3D.py`, so it is easy to read, h
 ### Editor
 - Built-in scene editor with Inspector / properties panel
 - Transform gizmos, light gizmos, spawn gizmos, view gizmo, and a visual collider shape editor
+- **View menu** (top-left of the viewport): Lit, Lit + Wireframe and Wireframe (x-ray) shading, grid on/off
 - Procedural terrain generation
 - **Building editor**: generate, paint, or manually place modular building sectors on a 2 m grid with a snapped ghost preview, across 5 biomes
 - Save and load projects as JSON (`.heaven3d`)
@@ -84,14 +94,42 @@ The whole engine ships as a single file, `Heaven3D.py`, so it is easy to read, h
 
 | Download | Contents | Start |
 | --- | --- | --- |
-| `Heaven3D-2.7.0-Windows.zip` | Hub, editor and a bundled Windows Python | double-click **Heaven3D Hub.exe** |
-| `Heaven3D-2.7.0-Linux.zip` | Hub, editor and a bundled Linux Python (glibc 2.17+) | run **./Heaven3D-Hub** (`./install-desktop-shortcuts.sh` adds menu entries) |
+| `Heaven3D-2.7.1-Windows.zip` | Hub, editor and a bundled Windows Python | double-click **Heaven3D Hub.exe** |
+| `Heaven3D-2.7.1-Linux.zip` | Hub, editor and a bundled Linux Python (glibc 2.17+) | run **./Heaven3D-Hub** (`./install-desktop-shortcuts.sh` adds menu entries) |
+| `Heaven3D-2.7.1-macOS-AppleSilicon.zip` | Hub, editor and a bundled macOS Python for M1/M2/M3/M4 Macs (macOS 11+) | unlock once (below), then double-click **Heaven3D Hub.app** |
+| `Heaven3D-2.7.1-macOS-Intel.zip` | the same for Intel Macs | the same |
 
-Unzip anywhere, even a USB stick. Each edition also contains the other platform's game player, so you can export Windows **and** Linux games from either one. The editions are built by `tools/standalone/build_standalone.py`.
+| `Heaven3D-2.7.1-Export-Players.zip` | add-on for the macOS editions: the Windows and Linux game players | move its `windows` and `linux` folders into `runtime/players` |
+
+Unzip anywhere, even a USB stick. The Windows and Linux editions each contain both game players, so you can export Windows **and** Linux games from either one. The macOS editions export macOS games; add the Export-Players download to export Windows and Linux games from a Mac too (it's separate to keep the Mac downloads small). The editions are built by `tools/standalone/build_standalone.py`.
+
+**macOS, first start.** Heaven3D isn't from the App Store, so macOS blocks it until you unlock it once: right-click **Fix macOS security warning.command** in the Heaven3D folder and choose **Open**, or run `xattr -dr com.apple.quarantine` on the folder in Terminal. On a trackpad, right-click is a two-finger click (or Control-click).
+
+## 🧩 Packages
+
+Packages add features to the Hub, the editor and your games, and they're plain Python. Open **Packages** in the Hub to install the included ones, **Create package** to start your own (a working example is generated), or **Install from file** for a `.h3dpkg` someone shared.
+
+| Included package | Runs in | Adds |
+| --- | --- | --- |
+| Light Theme | Hub, Editor | a light look |
+| Physics Plus | Editor, Game | physics quality presets (120 Hz, more solver iterations) and gravity presets |
+| Spline Roads | Editor, Game | roads drawn with control points that follow the terrain |
+| Car Race Kit | Editor, Game | arcade car (use your own body and wheel models), checkpoints, race manager, and a *Race Track* template |
+
+```python
+# engine.py of a package
+def register(h3d):
+    @h3d.on("play_tick")
+    def tick(engine, dt):
+        engine.hud.text(0.02, 0.95, "Hello from my package", size=18)
+    h3d.add_tool("My tool", lambda engine: engine.add_cube())
+```
+
+A game uses the packages inside its project folder (**Add to project**), so exported games carry everything they need. Full API: [docs/PACKAGES.md](docs/PACKAGES.md).
 
 ## 🚢 Exporting a game
 
-In the Hub, press **Export** on a project (or press the **Export** button in the editor's toolbar). Choose Windows and/or Linux and a window size. You get:
+In the Hub, press **Export** on a project (or press the **Export** button in the editor's toolbar). Choose Windows, Linux and/or macOS, a window size and, if you like, your own **game icon** (`.png`, `.jpg` or `.bmp`). It becomes the `.exe` icon, the Mac app icon, the window and taskbar icon and the Linux menu icon. You get:
 
 ```
 My Game-Windows/                     My Game-Linux/
@@ -100,15 +138,18 @@ My Game-Windows/                     My Game-Linux/
 ├── engine/       Heaven3D + Python  ├── engine/
 └── saves/        player saves       ├── saves/
                                      ├── icon.png + install-shortcut.sh
+
+My Game-macOS/
+└── My Game.app   ← double-click (game, engine and Python are inside the app)
 ```
 
 …and a `.zip` of each, ready to upload. From a terminal:
 
 ```bash
-python Heaven3D.py --export-game "path/to/My Game" --targets windows,linux --out builds
+python Heaven3D.py --export-game "path/to/My Game" --targets windows,linux,macos --out builds --icon my_logo.png
 ```
 
-Exporting needs the standalone edition (it carries the game players in `runtime/`).
+Exporting needs a standalone edition (it carries the game players in `runtime/`); `macos` needs a macOS edition, and `windows`/`linux` from a Mac need the Export-Players add-on. A game built with the Apple Silicon edition runs on Apple Silicon Macs; one built with the Intel edition runs on every Mac (through Rosetta 2 on Apple Silicon). Mac players unlock the game once, like Heaven3D itself (the game's `README.txt` explains how).
 
 ## 📂 Portable projects and save games
 
@@ -122,12 +163,12 @@ progress = self.engine.load_game("slot1", default={})
 path = self.engine.asset_path("assets/music/theme.ogg")   # finds project files anywhere
 ```
 
-Saves are written atomically (a crash can't corrupt them) with an automatic backup. They're stored in the game's `saves/` folder, so they move with the game. If that folder can't be written to, they go to `%APPDATA%\Heaven3D\<Game>` on Windows or `~/.local/share/heaven3d/<Game>` on Linux.
+Saves are written atomically (a crash can't corrupt them) with an automatic backup. They're stored in the game's `saves/` folder, so they move with the game. If that folder can't be written to, they go to `%APPDATA%\Heaven3D\<Game>` on Windows or `~/.local/share/heaven3d/<Game>` on Linux. macOS games always save to `~/Library/Application Support/Heaven3D/<Game>` (an app should never write inside itself).
 
 ## 📦 Requirements (running from source)
 
 - Python **3.10+**
-- A GPU and driver supporting **OpenGL 4.6 Core**
+- A GPU and driver supporting **OpenGL 3.3 Core** or newer (macOS: the built-in OpenGL 4.1)
 
 The easiest way is the installer, which creates a virtual environment and checks everything:
 
@@ -250,6 +291,8 @@ Heaven3D/
 ├── Heaven3D_Hub.py    # The Hub: projects, templates and offline tutorials
 ├── Heaven3D_Hub.pyw   # Double-click launcher for the Hub on Windows (no console window)
 ├── branding/          # Heaven3D logo (PNG sizes + .ico) used by the Hub, editor, launchers and exported games
+├── packages/          # Packages included with Heaven3D (light_theme, physics_plus, spline_roads, car_race_kit)
+├── docs/PACKAGES.md   # How to write packages (engine + Hub API)
 ├── install.py         # Creates a virtual environment and installs/checks dependencies
 ├── templates/         # Starter projects used by the Hub (main.heaven3d + thumbnail + scripts)
 ├── tutorials/         # Offline tutorials shown in the Hub (Markdown)
@@ -258,6 +301,8 @@ Heaven3D/
 │   ├── test_one_object.py        # Imported model = one locked object (editor checks)
 │   ├── test_portable_projects.py # Portable paths, outside assets, moved projects, save games
 │   ├── test_portable_editor.py   # Same, end to end in the real editor (needs a GPU)
+│   ├── test_pause_menu.py        # Esc pause menu (needs a GPU)
+│   ├── test_packages.py          # Package system + included packages (needs a GPU)
 │   └── importers/                # 8 hard .blend / .gltf / .glb files each + test runner
 ├── LICENSE        # Apache License 2.0
 └── README.md
@@ -269,6 +314,8 @@ Heaven3D/
 python tests/importers/run_importer_tests.py   # 31 importer files, no GPU needed
 python tests/test_portable_projects.py         # portable projects + save games, no GPU needed
 python tests/test_one_object.py                # editor checks, needs a GPU
+python tests/test_pause_menu.py                # Esc pause menu in a running game, needs a GPU
+python tests/test_packages.py                  # packages: load order, tools, spline road, race kit, needs a GPU
 ```
 
 ## 🛠️ Building the standalone editions

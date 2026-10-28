@@ -44,7 +44,7 @@ import sys
 import threading
 import time
 
-HUB_VERSION = "1.2.0"
+HUB_VERSION = "1.4.0"
 HERE = os.path.dirname(os.path.abspath(__file__))
 TEMPLATES_DIR = os.path.join(HERE, "templates")
 BRANDING_DIR = os.path.join(HERE, "branding")
@@ -120,7 +120,7 @@ def export_players():
     out = {}
     rt = os.path.join(HERE, "runtime")
     for cand in (os.path.join(rt, "python"), os.path.join(rt, "players", "windows"),
-                 os.path.join(rt, "players", "linux")):
+                 os.path.join(rt, "players", "linux"), os.path.join(rt, "players", "macos")):
         try:
             with open(os.path.join(cand, "HEAVEN3D_PLATFORM")) as f:
                 out.setdefault(f.read().strip(), cand)
@@ -242,6 +242,19 @@ def list_templates():
                 info["dir"] = d
                 info["thumb"] = os.path.join(d, THUMB_FILE)
                 out.append(info)
+    try:
+        for tid, d, m in package_templates():
+            info = {"title": tid.split(":", 1)[1].replace("_", " ").title(), "desc": "", "order": 50}
+            meta = os.path.join(d, "template.json")
+            if os.path.isfile(meta):
+                try:
+                    info.update(json.load(open(meta, encoding="utf-8")))
+                except ValueError:
+                    pass
+            info.update(id=tid, dir=d, thumb=os.path.join(d, THUMB_FILE), package=m["name"])
+            out.append(info)
+    except Exception:
+        pass
     out.sort(key=lambda t: (t.get("order", 99), t["title"]))
     return out
 
@@ -285,6 +298,14 @@ def create_project(cfg, name, template_id, location):
             fh.write("Put your models (.glb .gltf .blend .obj), textures and sounds here.\n"
                      "Files inside the project folder are saved with RELATIVE paths, so\n"
                      "the project keeps working when you move or share the folder.\n")
+    for pid in list(tpl.get("packages", []) or []):          # packages the template needs
+        if os.path.isdir(os.path.join(dest, "packages", pid)):
+            continue
+        if find_package(pid) is None:
+            raise ValueError(f"This template needs the package '{pid}'.")
+        if not os.path.isdir(os.path.join(PKG_LIB_DIR, pid)):
+            install_package(find_package(pid)["dir"])
+        add_package_to_project(dest, pid)
     meta = {"name": name.strip(), "template": template_id, "created": _now(),
             "engine_version": engine_version(cfg.settings.get("engine_path", "")),
             "hub_version": HUB_VERSION}
@@ -292,6 +313,330 @@ def create_project(cfg, name, template_id, location):
         json.dump(meta, fh, indent=2)
     return cfg.add_project(dest, name.strip(), template_id)
 
+
+
+# =============================================================================
+#  Packages (no GUI) - pure-Python add-ons for the Hub, the editor and games
+# =============================================================================
+PKG_LIB_DIR = os.path.join(CONFIG_DIR, "packages")          # the user's library
+PKG_BUNDLED_DIR = os.path.join(HERE, "packages")             # shipped with Heaven3D
+PKG_STATE_FILE = os.path.join(CONFIG_DIR, "packages.json")   # {"enabled": {id: bool}}
+PKG_TARGETS = ("hub", "editor", "game")
+_PKG_ID = re.compile(r"^[a-z][a-z0-9_]{1,40}$")
+
+
+def _version_tuple(v):
+    return tuple(int(x) if x.isdigit() else 0 for x in re.split(r"[.\-+]", str(v))[:3])
+
+
+def read_manifest(folder):
+    try:
+        with open(os.path.join(folder, "package.json"), encoding="utf-8") as fh:
+            m = json.load(fh)
+    except (OSError, ValueError):
+        return None
+    if not isinstance(m, dict) or not _PKG_ID.match(str(m.get("id", ""))):
+        return None
+    m.setdefault("name", m["id"])
+    m.setdefault("version", "0.0.0")
+    m.setdefault("targets", [])
+    m.setdefault("description", "")
+    m["dir"] = folder
+    return m
+
+
+def validate_package(folder):
+    """Return (manifest, None) or (None, "what is wrong")."""
+    m = read_manifest(folder)
+    if m is None:
+        return None, 'package.json is missing or invalid (it needs an "id" like my_package).'
+    bad = [t for t in m["targets"] if t not in PKG_TARGETS]
+    if bad or not m["targets"]:
+        return None, '"targets" must list one or more of ' + ", ".join(PKG_TARGETS) + "."
+    for key in ("hub", "engine"):
+        if m.get(key) and not os.path.isfile(os.path.join(folder, m[key])):
+            return None, f'"{key}" entry file {m[key]} is missing.'
+    if "hub" in m["targets"] and not m.get("hub") and not os.path.isdir(os.path.join(folder, "templates")):
+        return None, 'A "hub" package needs a "hub" entry file (e.g. hub.py).'
+    if ("editor" in m["targets"] or "game" in m["targets"]) and not m.get("engine"):
+        return None, 'An "editor" or "game" package needs an "engine" entry file (e.g. engine.py).'
+    req = str(m.get("heaven3d", "")).strip()
+    if req.startswith(">="):
+        ev = engine_version(os.path.join(HERE, "Heaven3D.py"))
+        if ev != "?" and _version_tuple(ev) < _version_tuple(req[2:]):
+            return None, f"Needs Heaven3D {req[2:]} or newer (this is {ev})."
+    return m, None
+
+
+def _pkg_state():
+    try:
+        with open(PKG_STATE_FILE, encoding="utf-8") as fh:
+            d = json.load(fh)
+        return d if isinstance(d, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def _save_pkg_state(d):
+    os.makedirs(CONFIG_DIR, exist_ok=True)
+    tmp = PKG_STATE_FILE + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as fh:
+        json.dump(d, fh, indent=2)
+    os.replace(tmp, PKG_STATE_FILE)
+
+
+def is_enabled(pid):
+    return bool(_pkg_state().get("enabled", {}).get(pid, False))
+
+
+def set_enabled(pid, on):
+    d = _pkg_state()
+    d.setdefault("enabled", {})[pid] = bool(on)
+    _save_pkg_state(d)
+
+
+def _list_dir(root):
+    out = []
+    if os.path.isdir(root):
+        for d in sorted(os.listdir(root)):
+            m = read_manifest(os.path.join(root, d))
+            if m:
+                out.append(m)
+    return out
+
+
+def library_packages():
+    return _list_dir(PKG_LIB_DIR)
+
+
+def bundled_packages():
+    return _list_dir(PKG_BUNDLED_DIR)
+
+
+def find_package(pid):
+    """Library copy first, then the copy shipped with Heaven3D."""
+    for m in library_packages() + bundled_packages():
+        if m["id"] == pid:
+            return m
+    return None
+
+
+def install_package(source, enable=True):
+    """Install from a folder, a .zip or a .h3dpkg file into the library.
+    Returns the manifest.  Replaces an older copy (its settings are kept)."""
+    import tempfile
+    import zipfile
+    source = os.path.abspath(os.path.expanduser(source))
+    tmp = None
+    try:
+        if os.path.isfile(source):
+            tmp = tempfile.mkdtemp(prefix="h3dpkg_")
+            with zipfile.ZipFile(source) as z:
+                root = os.path.abspath(tmp)
+                for n in z.namelist():
+                    target = os.path.abspath(os.path.join(tmp, n))
+                    if not (target == root or target.startswith(root + os.sep)):
+                        raise ValueError("unsafe path inside the package file")
+                z.extractall(tmp)
+            folder = tmp
+            if not os.path.isfile(os.path.join(folder, "package.json")):
+                subs = [os.path.join(tmp, d) for d in os.listdir(tmp) if os.path.isdir(os.path.join(tmp, d))]
+                if len(subs) == 1:
+                    folder = subs[0]
+        elif os.path.isdir(source):
+            folder = source
+        else:
+            raise ValueError(f"Not found: {source}")
+        m, err = validate_package(folder)
+        if err:
+            raise ValueError(err)
+        dest = os.path.join(PKG_LIB_DIR, m["id"])
+        if os.path.normcase(os.path.abspath(folder)) != os.path.normcase(os.path.abspath(dest)):
+            keep = None
+            if os.path.isfile(os.path.join(dest, "settings.json")):
+                with open(os.path.join(dest, "settings.json"), "rb") as fh:
+                    keep = fh.read()
+            if os.path.isdir(dest):
+                shutil.rmtree(dest)
+            os.makedirs(PKG_LIB_DIR, exist_ok=True)
+            shutil.copytree(folder, dest, ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+            if keep:
+                with open(os.path.join(dest, "settings.json"), "wb") as fh:
+                    fh.write(keep)
+        for dep in m.get("requires", []) or []:          # install what it needs
+            if not os.path.isdir(os.path.join(PKG_LIB_DIR, dep)):
+                b = next((x for x in bundled_packages() if x["id"] == dep), None)
+                if b:
+                    install_package(b["dir"], enable)
+        if enable:
+            set_enabled(m["id"], True)
+        return read_manifest(dest)
+    finally:
+        if tmp:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+
+def uninstall_package(pid):
+    d = os.path.join(PKG_LIB_DIR, pid)
+    if os.path.isdir(d):
+        shutil.rmtree(d)
+    st = _pkg_state()
+    st.get("enabled", {}).pop(pid, None)
+    _save_pkg_state(st)
+
+
+def export_package(pid, dest_file):
+    """Write a shareable .h3dpkg (a zip with package.json at the top)."""
+    import zipfile
+    m = find_package(pid)
+    if m is None:
+        raise ValueError(f"unknown package {pid}")
+    with zipfile.ZipFile(dest_file, "w", zipfile.ZIP_DEFLATED) as z:
+        for dp, dns, fns in os.walk(m["dir"]):
+            dns[:] = [d for d in dns if d != "__pycache__"]
+            for fn in fns:
+                if fn.endswith(".pyc") or fn == "settings.json":
+                    continue
+                full = os.path.join(dp, fn)
+                z.write(full, os.path.relpath(full, m["dir"]).replace(os.sep, "/"))
+    return dest_file
+
+
+def project_packages(project_dir):
+    return _list_dir(os.path.join(project_dir, "packages"))
+
+
+def add_package_to_project(project_dir, pid, _seen=None):
+    """Copy a package (and the packages it requires) into <project>/packages so
+    the project - and every game exported from it - carries it."""
+    _seen = _seen if _seen is not None else set()
+    if pid in _seen:
+        return []
+    _seen.add(pid)
+    m = find_package(pid)
+    if m is None:
+        raise ValueError(f"Package '{pid}' isn't installed.")
+    added = []
+    for dep in m.get("requires", []) or []:
+        added += add_package_to_project(project_dir, dep, _seen)
+    dest = os.path.join(project_dir, "packages", pid)
+    keep = None
+    if os.path.isfile(os.path.join(dest, "settings.json")):
+        with open(os.path.join(dest, "settings.json"), "rb") as fh:
+            keep = fh.read()
+    if os.path.isdir(dest):
+        shutil.rmtree(dest)
+    os.makedirs(os.path.dirname(dest), exist_ok=True)
+    shutil.copytree(m["dir"], dest, ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "settings.json"))
+    if keep:
+        with open(os.path.join(dest, "settings.json"), "wb") as fh:
+            fh.write(keep)
+    return added + [pid]
+
+
+def remove_package_from_project(project_dir, pid):
+    d = os.path.join(project_dir, "packages", pid)
+    if os.path.isdir(d):
+        shutil.rmtree(d)
+
+
+def package_templates():
+    """Project templates shipped inside installed, enabled packages."""
+    out = []
+    for m in library_packages():
+        if not is_enabled(m["id"]):
+            continue
+        root = os.path.join(m["dir"], "templates")
+        for tid in sorted(os.listdir(root)) if os.path.isdir(root) else []:
+            d = os.path.join(root, tid)
+            if os.path.isfile(os.path.join(d, PROJECT_FILE)):
+                out.append((f"{m['id']}:{tid}", d, m))
+    return out
+
+
+def create_package(name, author="", description="", targets=("editor", "game"), location=None):
+    """Scaffold a new package in the library with working example code."""
+    name = (name or "").strip() or "My Package"
+    pid = re.sub(r"[^a-z0-9_]+", "_", name.lower()).strip("_") or "my_package"
+    if not pid[0].isalpha():
+        pid = "pkg_" + pid
+    pid = pid[:40]
+    dest = os.path.join(location or PKG_LIB_DIR, pid)
+    if os.path.exists(dest):
+        raise ValueError(f"A package called '{pid}' already exists.")
+    os.makedirs(dest)
+    targets = [t for t in PKG_TARGETS if t in targets] or ["editor", "game"]
+    manifest = {"id": pid, "name": name, "version": "0.1.0", "author": author,
+                "category": "Tools", "description": description or "My Heaven3D package.",
+                "heaven3d": ">=2.7.0", "targets": targets}
+    if "editor" in targets or "game" in targets:
+        manifest["engine"] = "engine.py"
+        with open(os.path.join(dest, "engine.py"), "w", encoding="utf-8") as fh:
+            fh.write(PACKAGE_ENGINE_EXAMPLE.replace("{name}", name))
+    if "hub" in targets:
+        manifest["hub"] = "hub.py"
+        with open(os.path.join(dest, "hub.py"), "w", encoding="utf-8") as fh:
+            fh.write(PACKAGE_HUB_EXAMPLE.replace("{name}", name))
+    with open(os.path.join(dest, "package.json"), "w", encoding="utf-8") as fh:
+        json.dump(manifest, fh, indent=2)
+    with open(os.path.join(dest, "README.md"), "w", encoding="utf-8") as fh:
+        fh.write(f"# {name}\n\n{manifest['description']}\n\n"
+                 "Edit engine.py / hub.py, then restart the editor (or the Hub) to see changes.\n"
+                 "The full API is in docs/PACKAGES.md in your Heaven3D folder.\n")
+    if location is None:
+        set_enabled(pid, True)
+    return read_manifest(dest)
+
+
+PACKAGE_ENGINE_EXAMPLE = r'''"""{name} - runs inside the editor and (when "game" is a target) in games.
+
+register(h3d) is called once at start-up.  h3d.module is the Heaven3D module
+(Blueprint, SceneNode, Mesh, Material, glm, ...).  See docs/PACKAGES.md.
+"""
+
+
+def register(h3d):
+    m = h3d.module
+
+    # 1) A blueprint you can attach to objects (also works in exported games)
+    @h3d.blueprint
+    class Spinner(m.Blueprint):
+        def __init__(self):
+            super().__init__()
+            self.properties.setdefault("speed", 90.0)     # editable in the Inspector
+
+        def on_tick(self, dt):
+            self.node.rotation_euler.y += float(self.properties["speed"]) * dt
+
+    # 2) A button in the editor's Packages menu
+    def add_spinning_cube(engine):
+        cube = engine.add_cube(name="Spinning Cube")
+        cube.position = engine.camera.position + engine.camera.forward() * 6.0
+        engine.attach_blueprint(cube, Spinner)
+        engine.select_node(cube)
+        h3d.log("added a spinning cube - press Play")
+
+    h3d.add_tool("{name}: add spinning cube", add_spinning_cube)
+
+    # 3) Events: init, update, play_start, play_tick, play_stop, render, key, ...
+    @h3d.on("play_start")
+    def hello(engine):
+        h3d.log("Play started!")
+'''
+
+PACKAGE_HUB_EXAMPLE = r'''"""{name} - runs inside the Heaven3D Hub.  See docs/PACKAGES.md."""
+
+
+def register(hub):
+    def build(page, ui):
+        ui.label(page, "{name}", 20, "bold").pack(anchor="w", padx=32, pady=(28, 6))
+        ui.label(page, "This page was added by a package.", 10, fg=ui.C["muted"]).pack(anchor="w", padx=32)
+        ui.Btn(page, "Say hello", lambda: ui.toast("Hello from {name}!"), kind="primary").pack(
+            anchor="w", padx=32, pady=16)
+
+    hub.add_page("{name}", build, icon="templates")
+    hub.add_project_action("Say hello", lambda project: hub.toast("Hello " + project["name"]))
+'''
 
 _VERSION_CACHE = {}
 
@@ -511,7 +856,7 @@ def _win_app_id(app_id="Heaven3D.Hub"):
         pass
 
 
-def _win_style_titlebar(win, caption_rgb=None):
+def _win_style_titlebar(win, caption_rgb=None, dark=True):
     """Windows 10/11: dark title bar (and caption colour on Windows 11)."""
     if not IS_WIN:
         return
@@ -519,7 +864,7 @@ def _win_style_titlebar(win, caption_rgb=None):
         import ctypes
         win.update_idletasks()
         hwnd = ctypes.windll.user32.GetParent(win.winfo_id()) or win.winfo_id()
-        on = ctypes.c_int(1)
+        on = ctypes.c_int(1 if dark else 0)
         for attr in (20, 19):                                   # DWMWA_USE_IMMERSIVE_DARK_MODE
             if ctypes.windll.dwmapi.DwmSetWindowAttribute(hwnd, attr, ctypes.byref(on), 4) == 0:
                 break
@@ -598,10 +943,106 @@ def run_gui():
          "accent": "#4c7dff", "accent_hi": "#6890ff", "accent_soft": "#1f2b47", "accent_text": "#a9c0ff",
          "violet": "#8b5cf6", "ok": "#3ccf8e", "ok_soft": "#173628", "warn": "#f0b44c",
          "warn_soft": "#3a2f17", "danger": "#ff6b6b", "danger_soft": "#3d1e22", "danger_soft_hi": "#4d252a",
-         "code": "#121419", "code_text": "#d6dae2", "sel": "#212c45", "sel_hi": "#26334f"}
+         "code": "#121419", "code_text": "#d6dae2", "sel": "#212c45", "sel_hi": "#26334f",
+         "dark": True, "body": "#d3d7de", "icode": "#ffb3d1", "key_bg": "#343944", "key_fg": "#ffffff",
+         "tip_bg": "#15281f", "warn_bg": "#2b2415", "note_bg": "#1a2236", "callout": "#dfe3ea",
+         "dim_title": "#c9ced6"}
 
     cfg = Config()
     launcher = Launcher(cfg)
+
+    # ------------------------------------------------------------ packages (Hub side)
+    # Enabled library packages with the "hub" target are loaded BEFORE the
+    # window is built, so a theme package can recolour everything.
+    import types as _types
+    import importlib.util as _ilu
+    HUB_EXT = {"pages": [], "actions": [], "handlers": {}, "loaded": [], "errors": {}, "restart": False}
+    SAFE_MODE = "--safe-mode" in sys.argv or os.environ.get("HEAVEN3D_SAFE_MODE") == "1"
+
+    class HubAPI:
+        """What a package's hub.py receives in register(hub).
+
+        hub.set_theme({...})                       replace Hub colours (see the light_theme package)
+        hub.add_page(title, build, icon=)          new sidebar page; build(page_frame, ui)
+        hub.add_project_action(label, fn)          item in each project's ... menu; fn(project)
+        hub.on(event, fn)                          ready(hub) | project_created(project) |
+                                                   project_opened(project, mode) | export_finished(project)
+        hub.toast(msg) / hub.log(msg) / hub.config / hub.projects / hub.path / hub.settings
+        """
+        EVENTS = ("ready", "project_created", "project_opened", "export_finished")
+
+        def __init__(self, m):
+            self.manifest = m
+            self.id, self.name, self.path = m["id"], m["name"], m["dir"]
+            self.config = cfg
+            self.root = None
+            self.settings = dict(m.get("default_settings", {}) or {})
+            self._settings_file = os.path.join(CONFIG_DIR, "package_settings", self.id + ".json")
+            try:
+                with open(self._settings_file, encoding="utf-8") as fh:
+                    self.settings.update(json.load(fh))
+            except (OSError, ValueError):
+                pass
+
+        @property
+        def projects(self):
+            return cfg.projects
+
+        def set_theme(self, colors):
+            for k, v in dict(colors).items():
+                C[k] = v
+
+        def add_page(self, title, build, icon="templates"):
+            pid = f"ext_{self.id}_{len(HUB_EXT['pages'])}"
+            HUB_EXT["pages"].append({"id": pid, "title": title, "build": build, "icon": icon, "pkg": self})
+            return pid
+
+        def add_project_action(self, label, fn):
+            HUB_EXT["actions"].append((label, fn, self))
+
+        def on(self, event, fn=None):
+            if event not in self.EVENTS:
+                raise ValueError(f"unknown hub event {event!r}")
+            if fn is None:
+                return lambda f: (HUB_EXT["handlers"].setdefault(event, []).append((f, self)), f)[1]
+            HUB_EXT["handlers"].setdefault(event, []).append((fn, self))
+            return fn
+
+        def save_settings(self):
+            os.makedirs(os.path.dirname(self._settings_file), exist_ok=True)
+            with open(self._settings_file, "w", encoding="utf-8") as fh:
+                json.dump(self.settings, fh, indent=2)
+
+        def toast(self, msg, kind="ok"):
+            toast(msg, kind)
+
+        def log(self, msg):
+            print(f"[{self.name}] {msg}")
+
+    def hub_emit(event, *args):
+        for fn, api in list(HUB_EXT["handlers"].get(event, [])):
+            try:
+                fn(*args)
+            except Exception as ex:
+                HUB_EXT["errors"][api.id] = f"{event}: {ex}"
+                print(f"[Hub package {api.id}] {event} failed: {ex}")
+
+    if not SAFE_MODE:
+        for _m in library_packages():
+            if not (is_enabled(_m["id"]) and "hub" in _m["targets"] and _m.get("hub")):
+                continue
+            _api = HubAPI(_m)
+            try:
+                _spec = _ilu.spec_from_file_location(f"h3dhub_{_m['id']}", os.path.join(_m["dir"], _m["hub"]))
+                _mod = _ilu.module_from_spec(_spec)
+                sys.modules[_spec.name] = _mod
+                _spec.loader.exec_module(_mod)
+                if hasattr(_mod, "register"):
+                    _mod.register(_api)
+                HUB_EXT["loaded"].append(_api)
+            except Exception as ex:
+                HUB_EXT["errors"][_m["id"]] = str(ex)
+                print(f"[Hub] package {_m['id']} failed to load: {ex}")
 
     root = tk.Tk()
     root.withdraw()
@@ -633,7 +1074,12 @@ def run_gui():
                        default="TkFixedFont")
     _fonts = {}
 
+    # macOS Tk measures fonts at 72 dpi (1 pt = 1 px): scale up to match
+    # how the Hub looks on Windows/Linux (96 dpi)
+    FS = 96.0 / 72.0 if IS_MAC else 1.0
+
     def F(size=10, weight="normal", mono=False):
+        size = int(round(size * FS))
         if mono:
             return (mono_family, size, "bold" if weight in ("bold", "semibold") else "normal")
         if weight == "semibold":
@@ -647,7 +1093,7 @@ def run_gui():
 
     for name in ("TkDefaultFont", "TkTextFont", "TkMenuFont", "TkHeadingFont"):
         try:
-            tkfont.nametofont(name).configure(family=base_family, size=10)
+            tkfont.nametofont(name).configure(family=base_family, size=int(round(10 * FS)))
         except tk.TclError:
             pass
 
@@ -743,10 +1189,16 @@ def run_gui():
             b = ring(_sd_box(x, y, 8, 8, 5, 5, 1.3))
             return min(a, b if not (x > 6.2 and y > 6.2) else 99)
 
+        def d_box(x, y):
+            body = ring(_sd_box(x, y, 10, 11.3, 6.6, 5.2, 1.4))
+            lid = ring(_sd_box(x, y, 10, 5.2, 7.6, 1.6, 0.9))
+            return min(body, lid, _sd_seg(x, y, 8.0, 9.2, 12.0, 9.2) - 0.8)
+
         fns = {"projects": d_folder, "learn": d_book, "templates": d_grid, "settings": d_gear,
+               "packages": d_box,
                "search": d_search, "plus": d_plus, "more": d_dots,
                "check": d_check, "folder": d_folder_open, "copy": d_copy}
-        sd = fns[name]
+        sd = fns.get(name, d_grid)
 
         def fn(x, y):
             return _mix(fo, fc, _cov(sd(x * k, y * k) / k))
@@ -1305,10 +1757,10 @@ def run_gui():
         if refresh:
             refresh()
 
-    def nav(name, text):
+    def nav(name, text, icon_name=None):
         card = Card(side, C["side"], radius=9, cursor="hand2")
         card.pack(fill="x", padx=px(12), pady=px(2))
-        ic = IconLabel(card, name, C["muted"], 20)
+        ic = IconLabel(card, icon_name or name, C["muted"], 20)
         ic.pack(side="left", padx=(px(14), px(12)), pady=px(10))
         lab = tk.Label(card, text=text, bg=C["side"], fg=C["muted"], font=F(10, "semibold"), anchor="w")
         lab.pack(side="left", fill="x", expand=True)
@@ -1321,6 +1773,9 @@ def run_gui():
     nav("projects", "Projects")
     nav("learn", "Learn")
     nav("templates", "Templates")
+    for _ext in HUB_EXT["pages"]:
+        nav(_ext["id"], _ext["title"][:22], _ext.get("icon") or "templates")
+    nav("packages", "Packages")
     nav("settings", "Settings")
 
     foot = tk.Frame(side, bg=C["side"])
@@ -1438,6 +1893,14 @@ def run_gui():
         menu = tk.Menu(root, tearoff=0, bg=C["raised"], fg=C["text"], activebackground=C["accent"],
                        activeforeground="#ffffff", bd=0, relief="flat", font=F(10))
         menu.add_command(label="  Export game…", command=lambda: export_dialog(p))
+        menu.add_command(label="  Packages…", command=lambda: project_packages_dialog(p))
+        for _lab, _fn, _api in HUB_EXT["actions"]:
+            def _run(fn=_fn, api=_api):
+                try:
+                    fn(p)
+                except Exception as ex:
+                    error(api.name, str(ex))
+            menu.add_command(label="  " + _lab, command=_run)
         menu.add_separator()
         menu.add_command(label="  Show in folder", command=lambda: safe(open_in_file_manager, path))
         menu.add_command(label="  Open last engine log", command=lambda: show_log(p))
@@ -1502,6 +1965,7 @@ def run_gui():
             error("Heaven3D Hub", str(ex))
 
     def launch(p, mode):
+        hub_emit("project_opened", p, mode)
         try:
             launcher.launch(p, mode)
             toast(("Opening " if mode == "editor" else "Playing ") + (p.get("name") or ""), "ok")
@@ -1577,7 +2041,7 @@ def run_gui():
         x = root.winfo_rootx() + (root.winfo_width() - px(w)) // 2
         y = root.winfo_rooty() + (root.winfo_height() - px(h)) // 3
         win.geometry(f"{px(w)}x{px(h)}+{max(0, x)}+{max(0, y)}")
-        _win_style_titlebar(win, _rgb(C["bg"]))
+        _win_style_titlebar(win, _rgb(C["bg"]), C.get("dark", True))
         win.deiconify()
         return win
 
@@ -1639,7 +2103,7 @@ def run_gui():
     def export_dialog(p):
         path = p["path"]
         players = export_players()
-        win = dialog(f"Export · {p.get('name')}", 640, 700)
+        win = dialog(f"Export · {p.get('name')}", 660, 820)
         win.minsize(px(560), px(600))
         pad = px(26)
         head = tk.Frame(win, bg=C["bg"])
@@ -1664,17 +2128,27 @@ def run_gui():
         caption("PLATFORMS")
         plat_vars = {}
         prow = tk.Frame(inner, bg=C["panel"])
-        prow.pack(fill="x", pady=(0, px(14)))
-        for plat, title in (("windows", "Windows  (.exe)"), ("linux", "Linux")):
+        prow.pack(fill="x", pady=(0, px(4)))
+        missing = []
+        for plat, title in (("windows", "Windows  (.exe)"), ("linux", "Linux"), ("macos", "macOS  (.app)")):
             v = tk.BooleanVar(value=plat in players)
             plat_vars[plat] = v
-            cell = tk.Frame(prow, bg=C["panel"])
-            cell.pack(side="left", padx=(0, px(28)))
             if plat in players:
+                cell = tk.Frame(prow, bg=C["panel"])
+                cell.pack(side="left", padx=(0, px(26)))
                 Switch(cell, v).pack(side="left")
                 label(cell, title, 10).pack(side="left", padx=px(10))
             else:
-                label(cell, f"{title}: needs the standalone edition", 9, fg=C["faint"]).pack(side="left")
+                missing.append(title.split("  ")[0])
+        if missing:
+            if "macos" in players:              # macOS edition without the add-on
+                note = (f"{' and '.join(missing)}: add the Export-Players download "
+                        f"(see runtime/players in your Heaven3D folder).")
+            else:
+                note = (f"{' and '.join(missing)} export needs the "
+                        f"{'macOS edition' if missing == ['macOS'] else 'standalone editions'} of Heaven3D.")
+            label(inner, note, 9, fg=C["faint"], anchor="w").pack(fill="x", pady=(px(4), 0))
+        tk.Frame(inner, bg=C["panel"], height=px(10)).pack(fill="x")
         caption("WINDOW SIZE")
         srow = tk.Frame(inner, bg=C["panel"])
         srow.pack(fill="x", pady=(0, px(14)))
@@ -1684,6 +2158,87 @@ def run_gui():
         label(srow, "×", 11, fg=C["muted"]).pack(side="left", padx=px(8))
         b2, _e2 = entry(srow, h_var, width=6)
         b2.pack(side="left")
+        caption("GAME ICON")
+        irow = tk.Frame(inner, bg=C["panel"])
+        irow.pack(fill="x", pady=(0, px(14)))
+        icon_state = {"path": None}
+        irow.columnconfigure(0, weight=0)
+        _gi = project_meta(path).get("game_icon")
+        if _gi and os.path.isfile(os.path.join(path, *_gi.split("/"))):
+            icon_state["path"] = os.path.join(path, *_gi.split("/"))
+        icon_prev = tk.Frame(irow, bg=C["panel"])
+        icon_prev.pack(side="left", anchor="n")
+        icon_txt = tk.Frame(irow, bg=C["panel"])
+        icon_txt.pack(side="left", padx=px(12))
+        icon_name = label(icon_txt, "", 10, "semibold", anchor="w")
+        icon_name.pack(anchor="w")
+        label(icon_txt, "Used for the .exe, the Mac app, the window and the taskbar.", 9,
+              fg=C["muted"], anchor="w").pack(anchor="w")
+
+        def show_icon():
+            for w in icon_prev.winfo_children():
+                w.destroy()
+            pth = icon_state["path"]
+            img = load_thumb(pth, 44, C["panel"], radius=9) if pth else None
+            if pth is None:
+                tk.Label(icon_prev, image=brand(44), bg=C["panel"], bd=0).pack()
+            elif img is not None:
+                lab = tk.Label(icon_prev, image=img, bg=C["panel"], bd=0)
+                lab.image = img
+                lab.pack()
+            else:                                    # .jpg/.bmp without Pillow: no preview
+                n = px(44)
+                tk.Label(icon_prev, image=rrect(n, n, px(9), C["raised"], C["panel"]),
+                         text=os.path.splitext(pth)[1][1:].upper(), compound="center", fg=C["muted"],
+                         font=F(9, "bold"), bg=C["panel"], bd=0).pack()
+            icon_name.configure(text=os.path.basename(pth) if pth else "Heaven3D logo (default)")
+
+        def _set_meta_icon(rel):
+            mp = os.path.join(path, PROJECT_META)
+            try:
+                meta = json.load(open(mp, encoding="utf-8")) if os.path.isfile(mp) else {}
+            except ValueError:
+                meta = {}
+            if rel:
+                meta["game_icon"] = rel
+            else:
+                meta.pop("game_icon", None)
+            with open(mp, "w", encoding="utf-8") as fh:
+                json.dump(meta, fh, indent=2)
+
+        def choose_icon():
+            f = filedialog.askopenfilename(parent=win, title="Choose your game's icon",
+                                           filetypes=[("Images", "*.png *.jpg *.jpeg *.bmp"), ("PNG", "*.png"),
+                                                      ("JPEG", "*.jpg *.jpeg"), ("Bitmap", "*.bmp")])
+            if not f:
+                return
+            ext = os.path.splitext(f)[1].lower()
+            if ext not in (".png", ".jpg", ".jpeg", ".bmp"):
+                error("Game icon", "Please choose a .png, .jpg or .bmp image.")
+                return
+            adir = os.path.join(path, "assets")
+            os.makedirs(adir, exist_ok=True)
+            for old in os.listdir(adir):
+                if old.lower().startswith("game_icon."):
+                    try:
+                        os.remove(os.path.join(adir, old))
+                    except OSError:
+                        pass
+            dest = os.path.join(adir, "game_icon" + (".jpg" if ext == ".jpeg" else ext))
+            shutil.copy2(f, dest)                    # travels with the project
+            _set_meta_icon("assets/" + os.path.basename(dest))
+            icon_state["path"] = dest
+            show_icon()
+
+        def reset_icon():
+            _set_meta_icon(None)
+            icon_state["path"] = None
+            show_icon()
+        ibtns = tk.Frame(icon_txt, bg=C["panel"])
+        ibtns.pack(anchor="w", pady=(px(6), 0))
+        Btn(ibtns, "Choose image…", choose_icon, size=9, padx=10, pady=5).pack(side="left")
+        Btn(ibtns, "Use Heaven3D logo", reset_icon, kind="ghost", size=9, padx=10, pady=5).pack(side="left", padx=px(4))
+        show_icon()
         caption("SAVE TO")
         out_var = tk.StringVar(value=cfg.settings.get("export_root") or os.path.join(
             os.path.dirname(cfg.settings.get("projects_root") or _default_projects_root()), "Heaven3D Builds"))
@@ -1722,6 +2277,7 @@ def run_gui():
             go.set_enabled(True)
             if rc == 0:
                 status.configure(text="Done! Your game is ready.", fg=C["ok"])
+                hub_emit("export_finished", p)
                 go.set_text("Show folder")
                 go._cmd = lambda: safe(open_in_file_manager, state["out"])
                 toast("Export finished")
@@ -1751,7 +2307,8 @@ def run_gui():
             iso = (["-E", "-s"] if py == _bundled_python() else []) + ["-u"]
             cmd = [py] + iso + [engine, "--export-game", os.path.join(path, PROJECT_FILE),
                                 "--targets", ",".join(targets), "--out", out, "--name", name_var.get().strip(),
-                                "--width", str(wv), "--height", str(hv)] + ([] if zip_var.get() else ["--no-zip"])
+                                "--width", str(wv), "--height", str(hv)] + ([] if zip_var.get() else ["--no-zip"]) + \
+                (["--icon", icon_state["path"]] if icon_state["path"] else [])
             go.set_enabled(False)
             status.configure(text="Exporting… this can take a minute.", fg=C["muted"])
             log("Exporting " + ", ".join(t.title() for t in targets) + " build(s)…")
@@ -1935,6 +2492,7 @@ def run_gui():
             win.destroy()
             show("projects")
             toast(f"Created '{p['name']}'")
+            hub_emit("project_created", p)
             if on_created:
                 on_created(p)
             if open_var.get():
@@ -1980,21 +2538,21 @@ def run_gui():
     reader.tag_configure("h1", font=F(20, "bold"), spacing1=px(4), spacing3=px(12))
     reader.tag_configure("h2", font=F(14, "semibold"), foreground=C["accent_text"], spacing1=px(18), spacing3=px(8))
     reader.tag_configure("h3", font=F(12, "semibold"), spacing1=px(12), spacing3=px(4))
-    reader.tag_configure("p", spacing3=px(10), foreground="#d3d7de")
+    reader.tag_configure("p", spacing3=px(10), foreground=C["body"])
     reader.tag_configure("bold", font=F(11, "semibold"), foreground=C["text"])
     reader.tag_configure("ital", font=(base_family, 11, "italic"))
-    reader.tag_configure("icode", font=F(10, mono=True), foreground="#ffb3d1", background=C["code"])
+    reader.tag_configure("icode", font=F(10, mono=True), foreground=C["icode"], background=C["code"])
     reader.tag_configure("code", font=F(10, mono=True), foreground=C["code_text"], background=C["code"],
                          lmargin1=px(40), lmargin2=px(40), rmargin=px(30), spacing1=0, spacing2=px(2), spacing3=0)
     reader.tag_configure("codepad", font=F(5), background=C["code"], lmargin1=px(40), rmargin=px(30))
-    reader.tag_configure("bullet", lmargin1=px(28), lmargin2=px(46), spacing3=px(5), foreground="#d3d7de")
+    reader.tag_configure("bullet", lmargin1=px(28), lmargin2=px(46), spacing3=px(5), foreground=C["body"])
     reader.tag_configure("bdot", foreground=C["accent_text"])
-    reader.tag_configure("num", lmargin1=px(28), lmargin2=px(52), spacing3=px(6), foreground="#d3d7de")
+    reader.tag_configure("num", lmargin1=px(28), lmargin2=px(52), spacing3=px(6), foreground=C["body"])
     reader.tag_configure("numlab", foreground=C["accent_text"], font=F(11, "semibold"))
-    reader.tag_configure("key", font=F(9, "bold", mono=True), background=C["raised_hi"], foreground="#ffffff")
-    for k, col, soft in (("tip", C["ok"], "#15281f"), ("warn", C["warn"], "#2b2415"), ("note", C["accent_text"], "#1a2236")):
+    reader.tag_configure("key", font=F(9, "bold", mono=True), background=C["key_bg"], foreground=C["key_fg"])
+    for k, col, soft in (("tip", C["ok"], C["tip_bg"]), ("warn", C["warn"], C["warn_bg"]), ("note", C["accent_text"], C["note_bg"])):
         reader.tag_configure(k, lmargin1=px(40), lmargin2=px(40), rmargin=px(36), background=soft,
-                             spacing1=px(10), spacing3=px(10), foreground="#dfe3ea")
+                             spacing1=px(10), spacing3=px(10), foreground=C["callout"])
         reader.tag_configure(k + "_label", foreground=col, font=F(9, "bold"))
     reader.tag_configure("hr", font=F(3), background=C["line"], spacing1=px(8), spacing3=px(8))
 
@@ -2171,7 +2729,7 @@ def run_gui():
             num_badge(row, "✓" if is_done else str(idx + 1), is_done, on).pack(side="left", anchor="n")
             txt = tk.Frame(row, bg=bg)
             txt.pack(side="left", fill="x", expand=True, padx=(px(12), 0))
-            label(txt, t["title"], 10, "semibold", fg=C["text"] if on or not is_done else "#c9ced6",
+            label(txt, t["title"], 10, "semibold", fg=C["text"] if on or not is_done else C["dim_title"],
                   anchor="w", wraplength=px(210), justify="left").pack(fill="x")
             info = "  ·  ".join(x for x in (t.get("level"), (t.get("minutes") + " min") if t.get("minutes") else "") if x)
             label(txt, info, 8, fg=C["muted"], anchor="w").pack(fill="x", pady=(px(2), 0))
@@ -2221,6 +2779,330 @@ def run_gui():
         tg.columnconfigure(0, weight=1)
         tg.columnconfigure(1, weight=1)
     tp.refresh = refresh_templates
+
+
+    # ================================================================ PACKAGES
+    CAT_COLORS = {"Theme": "#8b5cf6", "Physics": "#14b8a6", "Terrain": "#22a565", "Gameplay": "#e0533d",
+                  "Tools": "#3b82f6", "Audio": "#d946ef", "Templates": "#f59e0b"}
+    kp = tk.Frame(content, bg=C["bg"])
+    pages["packages"] = kp
+    khead = page_header(kp, "Packages", "Add features to the Hub, the editor and your games. Packages are plain Python.")
+    kact = tk.Frame(khead, bg=C["bg"])
+    kact.pack(side="right")
+    Btn(kact, "Install from file", lambda: install_from_file()).pack(side="left", padx=(0, px(8)))
+    Btn(kact, "+   Create package", lambda: create_package_dialog(), kind="primary").pack(side="left")
+    restart_bar = Card(kp, C["accent_soft"], outer=C["bg"], radius=10)
+    rb_in = tk.Frame(restart_bar, bg=C["accent_soft"])
+    rb_in.pack(fill="x", padx=px(16), pady=px(10))
+    label(rb_in, "Restart the Hub to apply the package changes.", 10, "semibold", fg=C["accent_text"]).pack(side="left")
+    Btn(rb_in, "Restart now", lambda: restart_hub(), kind="primary", size=9, pady=5).pack(side="right")
+    trust = Card(kp, C["warn_soft"], outer=C["bg"], radius=10)
+    tr_in = tk.Frame(trust, bg=C["warn_soft"])
+    tr_in.pack(fill="x", padx=px(16), pady=px(9))
+    label(tr_in, "Packages run Python code on your computer. Only install packages from people you trust."
+          + ("   (Safe mode: packages are switched off.)" if SAFE_MODE else ""), 9, fg=C["warn"]).pack(side="left")
+    trust.pack(fill="x", padx=(px(32), px(40)), pady=(0, px(8)))
+    klist_o, klist, _kc = scrollable(kp, C["bg"])
+    klist_o.pack(fill="both", expand=True, padx=(px(20), px(8)), pady=(0, px(16)))
+
+    def restart_hub():
+        args = [sys.executable] + (["-E", "-s"] if sys.flags.ignore_environment else []) + \
+               [os.path.abspath(__file__)] + [a for a in sys.argv[1:] if a == "--safe-mode"]
+        try:
+            subprocess.Popen(args, cwd=HERE, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0) if IS_WIN else 0)
+        except Exception as ex:
+            error("Restart failed", str(ex))
+            return
+        root.after(200, root.destroy)
+
+    def need_restart():
+        HUB_EXT["restart"] = True
+        if not restart_bar.winfo_ismapped():
+            restart_bar.pack(fill="x", padx=(px(32), px(40)), pady=(0, px(8)), before=trust)
+
+    def pkg_tile(parent, m, size=46):
+        ip = os.path.join(m["dir"], m.get("icon", "icon.png"))
+        if os.path.isfile(ip):
+            img = load_thumb(ip, size, parent.cget("bg"), radius=10)
+            if img is not None:
+                lab = tk.Label(parent, image=img, bg=parent.cget("bg"), bd=0)
+                lab.image = img
+                return lab
+        col = CAT_COLORS.get(m.get("category", ""), C["accent"])
+        n = px(size)
+        return tk.Label(parent, image=rrect(n, n, px(12), col, parent.cget("bg")), text=m["name"][:1].upper(),
+                        compound="center", fg="#ffffff", font=F(16, "bold"), bg=parent.cget("bg"), bd=0)
+
+    def target_pills(parent, m):
+        row = tk.Frame(parent, bg=parent.cget("bg"))
+        for t in PKG_TARGETS:
+            if t in m["targets"]:
+                Pill(row, {"hub": "Hub", "editor": "Editor", "game": "Game"}[t],
+                     C["accent_text"], C["accent_soft"]).pack(side="left", padx=(0, px(6)))
+        return row
+
+    def package_card(m, installed):
+        card = Card(klist, C["panel"], outer=C["bg"], radius=12)
+        card.pack(fill="x", pady=px(5), padx=(px(12), px(6)))
+        body = tk.Frame(card, bg=C["panel"])
+        body.pack(fill="x", padx=px(16), pady=px(14))
+        pkg_tile(body, m).pack(side="left", anchor="n")
+        mid = tk.Frame(body, bg=C["panel"])
+        mid.pack(side="left", fill="x", expand=True, padx=(px(14), px(10)))
+        top = tk.Frame(mid, bg=C["panel"])
+        top.pack(fill="x")
+        label(top, m["name"], 12, "semibold").pack(side="left")
+        label(top, "  v" + str(m.get("version", "")), 9, fg=C["faint"]).pack(side="left", pady=(px(3), 0))
+        meta = "  ·  ".join(x for x in (("by " + m["author"]) if m.get("author") else "", m.get("category", "")) if x)
+        if meta:
+            label(mid, meta, 9, fg=C["muted"], anchor="w").pack(fill="x")
+        label(mid, m.get("description", ""), 10, fg=C["body"], anchor="w", justify="left",
+              wraplength=px(560)).pack(fill="x", pady=(px(5), px(7)))
+        pills = target_pills(mid, m)
+        pills.pack(fill="x")
+        if m.get("requires"):
+            label(mid, "Needs: " + ", ".join(m["requires"]), 9, fg=C["faint"], anchor="w").pack(fill="x", pady=(px(5), 0))
+        if installed and m["id"] in HUB_EXT["errors"]:
+            label(mid, "Problem: " + HUB_EXT["errors"][m["id"]], 9, fg=C["danger"], anchor="w",
+                  wraplength=px(560), justify="left").pack(fill="x", pady=(px(5), 0))
+        right = tk.Frame(body, bg=C["panel"])
+        right.pack(side="right", anchor="n")
+        if installed:
+            sw_row = tk.Frame(right, bg=C["panel"])
+            sw_row.pack(anchor="e")
+            var = tk.BooleanVar(value=is_enabled(m["id"]))
+            state_lbl = label(sw_row, "On" if var.get() else "Off", 9, "semibold",
+                              fg=C["ok"] if var.get() else C["faint"])
+
+            def toggled(*_a, m=m, var=var, state_lbl=state_lbl):
+                set_enabled(m["id"], var.get())
+                state_lbl.configure(text="On" if var.get() else "Off", fg=C["ok"] if var.get() else C["faint"])
+                if "hub" in m["targets"]:
+                    need_restart()
+                elif var.get():
+                    toast(f"{m['name']} is on: it loads the next time you open the editor")
+            var.trace_add("write", toggled)
+            state_lbl.pack(side="left", padx=(0, px(8)))
+            Switch(sw_row, var).pack(side="left")
+            btns = tk.Frame(right, bg=C["panel"])
+            btns.pack(anchor="e", pady=(px(10), 0))
+            if "editor" in m["targets"] or "game" in m["targets"]:
+                ab = Btn(btns, "Add to project", None, size=9, padx=10, pady=5)
+                ab.pack(side="left", padx=(0, px(4)))
+                ab._cmd = lambda m=m, ab=ab: project_picker(m, ab)
+            more = Btn(btns, "•••", None, kind="ghost", padx=10, size=9)
+            more.pack(side="left")
+            menu = tk.Menu(root, tearoff=0, bg=C["raised"], fg=C["text"], activebackground=C["accent"],
+                           activeforeground="#ffffff", bd=0, relief="flat", font=F(10))
+            menu.add_command(label="  Show folder", command=lambda m=m: safe(open_in_file_manager, m["dir"]))
+            menu.add_command(label="  Export as .h3dpkg…", command=lambda m=m: export_pkg(m))
+            menu.add_separator()
+            menu.add_command(label="  Uninstall", command=lambda m=m: uninstall(m))
+            more._cmd = lambda menu=menu, more=more: menu.tk_popup(more.winfo_rootx(),
+                                                                    more.winfo_rooty() + more.winfo_height() + px(4))
+        else:
+            Btn(right, "Install", lambda m=m: install_bundled(m), kind="primary", size=10).pack(anchor="e")
+        hoverable(card, C["panel"], C["panel_hi"])
+
+    def section_title(text):
+        label(klist, text, 8, "semibold", fg=C["faint"], anchor="w").pack(fill="x", padx=px(16), pady=(px(14), px(4)))
+
+    def render_packages():
+        for w in klist.winfo_children():
+            w.destroy()
+        lib = library_packages()
+        have = {m["id"] for m in lib}
+        section_title(f"INSTALLED  ({len(lib)})")
+        if not lib:
+            label(klist, "Nothing installed yet. Install one of the packages below, or create your own.",
+                  10, fg=C["muted"], anchor="w").pack(fill="x", padx=px(16), pady=px(6))
+        for m in lib:
+            package_card(m, True)
+        avail = [m for m in bundled_packages() if m["id"] not in have]
+        if avail:
+            section_title("INCLUDED WITH HEAVEN3D")
+            for m in avail:
+                package_card(m, False)
+        if HUB_EXT["restart"]:
+            need_restart()
+    kp.refresh = render_packages
+
+    def install_bundled(m):
+        try:
+            got = install_package(m["dir"])
+        except Exception as ex:
+            error("Install failed", str(ex))
+            return
+        render_packages()
+        toast(f"Installed {got['name']}")
+        if "hub" in got["targets"]:
+            need_restart()
+
+    def _peek_manifest(path):
+        import zipfile
+        try:
+            with zipfile.ZipFile(path) as z:
+                names = [n for n in z.namelist() if n.endswith("package.json")]
+                names.sort(key=lambda n: n.count("/"))
+                return json.loads(z.read(names[0]).decode("utf-8")) if names else None
+        except Exception:
+            return None
+
+    def install_from_file():
+        path = filedialog.askopenfilename(parent=root, title="Install a Heaven3D package",
+                                          filetypes=[("Heaven3D package", "*.h3dpkg *.zip"), ("All files", "*.*")])
+        if not path:
+            return
+        mm = _peek_manifest(path) or {}
+        who = mm.get("author") or "an unknown author"
+        if not messagebox.askyesno(
+                "Install package?",
+                f"{mm.get('name', os.path.basename(path))}  {mm.get('version', '')}\nby {who}\n\n"
+                f"Runs in: {', '.join(mm.get('targets', [])) or '?'}\n\n"
+                "Packages run Python code on your computer.\nOnly install packages from people you trust.",
+                parent=root):
+            return
+        try:
+            got = install_package(path)
+        except Exception as ex:
+            error("Install failed", str(ex))
+            return
+        render_packages()
+        toast(f"Installed {got['name']}")
+        if "hub" in got["targets"]:
+            need_restart()
+
+    def uninstall(m):
+        if not messagebox.askyesno("Uninstall", f"Uninstall {m['name']}?\n\nProjects that already use it keep "
+                                                f"their own copy.", parent=root):
+            return
+        uninstall_package(m["id"])
+        if "hub" in m["targets"]:
+            need_restart()
+        render_packages()
+
+    def export_pkg(m):
+        dest = filedialog.asksaveasfilename(parent=root, title="Export package", defaultextension=".h3dpkg",
+                                            initialfile=f"{m['id']}-{m.get('version', '1.0')}.h3dpkg",
+                                            filetypes=[("Heaven3D package", "*.h3dpkg")])
+        if dest:
+            try:
+                export_package(m["id"], dest)
+                toast("Package exported")
+            except Exception as ex:
+                error("Export failed", str(ex))
+
+    def project_picker(m, anchor_btn):
+        menu = tk.Menu(root, tearoff=0, bg=C["raised"], fg=C["text"], activebackground=C["accent"],
+                       activeforeground="#ffffff", bd=0, relief="flat", font=F(10))
+        if not cfg.projects:
+            menu.add_command(label="  (no projects yet)", state="disabled")
+        for p in cfg.projects:
+            if os.path.isfile(os.path.join(p["path"], PROJECT_FILE)):
+                menu.add_command(label="  " + (p.get("name") or os.path.basename(p["path"])),
+                                 command=lambda p=p: add_to(p, m))
+        menu.tk_popup(anchor_btn.winfo_rootx(), anchor_btn.winfo_rooty() + anchor_btn.winfo_height() + px(4))
+
+    def add_to(p, m):
+        try:
+            added = add_package_to_project(p["path"], m["id"])
+        except Exception as ex:
+            error("Couldn't add the package", str(ex))
+            return
+        extra = [a for a in added if a != m["id"]]
+        toast(f"{m['name']} added to {p.get('name')}" + (f" (+ {', '.join(extra)})" if extra else ""))
+
+    def project_packages_dialog(p):
+        win = dialog(f"Packages · {p.get('name')}", 620, 560)
+        pad = px(26)
+        label(win, "Packages in this project", 16, "bold").pack(anchor="w", padx=pad, pady=(px(22), px(2)))
+        label(win, "They are copied into the project's packages folder and exported with your game.",
+              10, fg=C["muted"]).pack(anchor="w", padx=pad)
+        box_o, box, _c = scrollable(win, C["bg"])
+        box_o.pack(fill="both", expand=True, padx=(px(18), px(6)), pady=px(12))
+        in_proj = {m["id"]: m for m in project_packages(p["path"])}
+        seen = {}
+        for m in library_packages() + bundled_packages() + list(in_proj.values()):
+            if m["id"] not in seen and ("editor" in m["targets"] or "game" in m["targets"]):
+                seen[m["id"]] = m
+        if not seen:
+            label(box, "No editor or game packages installed.", 10, fg=C["muted"]).pack(anchor="w", padx=px(10))
+        for pid, m in sorted(seen.items(), key=lambda kv: kv[1]["name"]):
+            card = Card(box, C["panel"], outer=C["bg"], radius=10)
+            card.pack(fill="x", pady=px(4), padx=px(6))
+            row = tk.Frame(card, bg=C["panel"])
+            row.pack(fill="x", padx=px(14), pady=px(10))
+            pkg_tile(row, m, 36).pack(side="left")
+            txt = tk.Frame(row, bg=C["panel"])
+            txt.pack(side="left", fill="x", expand=True, padx=px(12))
+            label(txt, m["name"], 11, "semibold", anchor="w").pack(fill="x")
+            target_pills(txt, m).pack(fill="x", pady=(px(4), 0))
+            var = tk.BooleanVar(value=pid in in_proj)
+
+            def flip(*_a, pid=pid, var=var):
+                try:
+                    if var.get():
+                        added = add_package_to_project(p["path"], pid)
+                        if len(added) > 1:
+                            toast("Also added: " + ", ".join(a for a in added if a != pid))
+                    else:
+                        remove_package_from_project(p["path"], pid)
+                except Exception as ex:
+                    error("Packages", str(ex))
+            var.trace_add("write", flip)
+            Switch(row, var).pack(side="right")
+        foot = tk.Frame(win, bg=C["bg"])
+        foot.pack(fill="x", padx=pad, pady=(0, px(18)))
+        Btn(foot, "Done", win.destroy, kind="primary").pack(side="right")
+
+    def create_package_dialog():
+        win = dialog("Create package", 560, 600)
+        pad = px(26)
+        label(win, "Create a package", 16, "bold").pack(anchor="w", padx=pad, pady=(px(22), px(2)))
+        label(win, "Makes a working example you can edit (a blueprint, an editor tool and a Hub page).",
+              10, fg=C["muted"], wraplength=px(500), justify="left").pack(anchor="w", padx=pad)
+        form = tk.Frame(win, bg=C["bg"])
+        form.pack(fill="x", padx=pad, pady=px(14))
+        vals = {}
+        for key, cap, default in (("name", "NAME", "My Package"), ("author", "AUTHOR", ""),
+                                  ("desc", "WHAT IT DOES", "")):
+            label(form, cap, 8, "semibold", fg=C["muted"], anchor="w").pack(fill="x")
+            v = tk.StringVar(value=default)
+            b, _e = entry(form, v, width=40)
+            b.pack(fill="x", pady=(px(5), px(12)))
+            vals[key] = v
+        label(form, "RUNS IN", 8, "semibold", fg=C["muted"], anchor="w").pack(fill="x")
+        trow = tk.Frame(form, bg=C["bg"])
+        trow.pack(fill="x", pady=(px(6), 0))
+        tvars = {}
+        for t, cap in (("hub", "Hub"), ("editor", "Editor"), ("game", "Games")):
+            v = tk.BooleanVar(value=t != "hub")
+            tvars[t] = v
+            Switch(trow, v).pack(side="left")
+            label(trow, cap, 10).pack(side="left", padx=(px(8), px(22)))
+        msg = label(win, "", 9, fg=C["danger"], anchor="w")
+        msg.pack(fill="x", padx=pad)
+        foot = tk.Frame(win, bg=C["bg"])
+        foot.pack(side="bottom", fill="x", padx=pad, pady=px(20))
+
+        def go():
+            targets = [t for t, v in tvars.items() if v.get()]
+            if not targets:
+                msg.configure(text="Pick at least one place for it to run.")
+                return
+            try:
+                m = create_package(vals["name"].get(), vals["author"].get(), vals["desc"].get(), targets)
+            except Exception as ex:
+                msg.configure(text=str(ex))
+                return
+            win.destroy()
+            render_packages()
+            if "hub" in m["targets"]:
+                need_restart()
+            toast(f"Created {m['name']}")
+            safe(open_in_file_manager, m["dir"])
+        Btn(foot, "Create", go, kind="primary", padx=20, pady=9).pack(side="right")
+        Btn(foot, "Cancel", win.destroy, pady=9).pack(side="right", padx=px(8))
 
     # ================================================================ SETTINGS
     sp = tk.Frame(content, bg=C["bg"])
@@ -2336,12 +3218,36 @@ def run_gui():
             root.after(0, lambda: lbl.configure(text=txt.strip(), fg=C["ok"] if ok else C["danger"]))
         threading.Thread(target=work, daemon=True).start()
 
+
+    # ================================================================ PAGES ADDED BY HUB PACKAGES
+    ui_kit = _types.SimpleNamespace(C=C, F=F, px=px, Card=Card, Btn=Btn, Pill=Pill, Switch=Switch, label=label,
+                                    entry=entry, scrollable=scrollable, toast=toast, brand=brand, root=root,
+                                    dialog=dialog, error=error, tk=tk, page_header=page_header, cfg=cfg)
+    for _ext in HUB_EXT["pages"]:
+        _pg = tk.Frame(content, bg=C["bg"])
+        pages[_ext["id"]] = _pg
+
+        def _build_ext(pg=_pg, ext=_ext):
+            for w in pg.winfo_children():
+                w.destroy()
+            try:
+                ext["build"](pg, ui_kit)
+            except Exception as ex:
+                HUB_EXT["errors"][ext["pkg"].id] = f"page: {ex}"
+                label(pg, f"This page (from the {ext['pkg'].name} package) failed:\n{ex}", 10,
+                      fg=C["danger"], justify="left").pack(anchor="w", padx=px(32), pady=px(32))
+        _pg.refresh = _build_ext
+    for _api in HUB_EXT["loaded"]:
+        _api.root = root
+
     # ------------------------------------------------------------ start
     update_footer()
     show("projects")
     globals()["HUB_UI"] = {"root": root, "show": show, "new_project": new_project_dialog,
                            "open_tutorial": open_tutorial, "tutorials": tutorials,
                            "launch": launch, "cfg": cfg, "launcher": launcher, "export": export_dialog,
+                           "packages": render_packages, "project_packages": project_packages_dialog,
+                           "create_package": create_package_dialog, "hub_ext": HUB_EXT,
                            "render_projects": render_projects}
     if not cfg.projects and not os.path.isfile(CONFIG_FILE):
         cfg.save()
@@ -2351,7 +3257,12 @@ def run_gui():
     except tk.TclError:
         pass
     root.deiconify()
-    _win_style_titlebar(root, _rgb(C["side"]))
+    _win_style_titlebar(root, _rgb(C["side"]), C.get("dark", True))
+    for fn, api in list(HUB_EXT["handlers"].get("ready", [])):
+        try:
+            fn(api)
+        except Exception as ex:
+            HUB_EXT["errors"][api.id] = f"ready: {ex}"
 
     def prewarm(jobs):
         if jobs:
@@ -2375,9 +3286,24 @@ def main(argv=None):
     ap.add_argument("--location", default=None)
     ap.add_argument("--open", metavar="PROJECT_DIR", help="open a project folder in the editor")
     ap.add_argument("--version", action="store_true")
+    ap.add_argument("--list-packages", action="store_true", help="list installed and included packages")
+    ap.add_argument("--install-package", metavar="PATH", help="install a package folder / .zip / .h3dpkg")
+    ap.add_argument("--safe-mode", action="store_true", help="start without any packages")
     a = ap.parse_args(argv)
     if a.version:
         print(f"Heaven3D Hub {HUB_VERSION}")
+        return 0
+    if a.list_packages:
+        have = {m["id"] for m in library_packages()}
+        for m in library_packages():
+            print(f"{'on ' if is_enabled(m['id']) else 'off'}  {m['id']:18s} {m['version']:8s} {', '.join(m['targets'])}")
+        for m in bundled_packages():
+            if m["id"] not in have:
+                print(f"     {m['id']:18s} {m['version']:8s} (included, not installed)")
+        return 0
+    if a.install_package:
+        m = install_package(a.install_package)
+        print(f"Installed {m['name']} {m['version']}")
         return 0
     if a.list_templates:
         for t in list_templates():
