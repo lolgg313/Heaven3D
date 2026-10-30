@@ -224,7 +224,7 @@ def _mesh_classes():
 
 
 # =========================================================================== model cache
-_MODELS = {}         # spec key -> (model, [geo], procedural clips)
+_MODELS = {}         # spec key -> (model, [geo], procedural clips, extras)
 _ORDER = []
 
 
@@ -236,8 +236,7 @@ def _model_for(engine, spec):
     t0 = time.perf_counter()
     model = CORE.build(_lib(), spec)
     geos = [_make_geo(engine.ctx, p, model.height) for p in model.parts]
-    clips = ANIM.procedural_clips(model)
-    hit = (model, geos, clips, {})
+    hit = (model, geos, None, {})
     _MODELS[key] = hit
     _ORDER.append(key)
     if len(_ORDER) > 48:                    # keep the cache bounded
@@ -246,6 +245,119 @@ def _model_for(engine, spec):
     H3D.log(f"character built in {1000 * (time.perf_counter() - t0):.0f} ms "
             f"({sum(g.nv for g in geos):,} verts, {len(geos)} parts)")
     return hit
+
+
+def _library():
+    return ANIM.load_library(H3D.asset("assets/anims/library.npz"))
+
+
+def _procedural(model):
+    c = getattr(model, "_procedural", None)
+    if c is None:
+        c = model._procedural = {k: [v] for k, v in ANIM.procedural_clips(model).items()}
+    return c
+
+
+def _box(lo, hi):
+    """Axis-aligned box (positions, normals, indices)."""
+    x0, y0, z0 = lo
+    x1, y1, z1 = hi
+    faces = [((1, 0, 0), [(x1, y0, z0), (x1, y1, z0), (x1, y1, z1), (x1, y0, z1)]),
+             ((-1, 0, 0), [(x0, y0, z1), (x0, y1, z1), (x0, y1, z0), (x0, y0, z0)]),
+             ((0, 1, 0), [(x0, y1, z0), (x0, y1, z1), (x1, y1, z1), (x1, y1, z0)]),
+             ((0, -1, 0), [(x0, y0, z1), (x0, y0, z0), (x1, y0, z0), (x1, y0, z1)]),
+             ((0, 0, 1), [(x0, y0, z1), (x1, y0, z1), (x1, y1, z1), (x0, y1, z1)]),
+             ((0, 0, -1), [(x1, y0, z0), (x0, y0, z0), (x0, y1, z0), (x1, y1, z0)])]
+    P, N, I = [], [], []
+    for n, quad in faces:
+        b = len(P)
+        P += quad
+        N += [n] * 4
+        I += [b, b + 1, b + 2, b, b + 2, b + 3]
+    return np.array(P, np.float64), np.array(N, np.float64), I
+
+
+# pistol in its own frame: origin = top of the grip (in the palm), barrel along -Z, +Y up
+_PISTOL = [((-0.016, 0.000, -0.170), (0.016, 0.040, 0.035)),     # slide
+           ((-0.013, -0.105, -0.010), (0.013, 0.000, 0.035)),    # grip
+           ((-0.004, -0.032, -0.055), (0.004, -0.004, -0.045)),  # trigger guard front
+           ((-0.004, -0.034, -0.050), (0.004, -0.028, -0.008)),  # trigger guard bottom
+           ((-0.009, 0.006, -0.200), (0.009, 0.026, -0.170))]    # barrel tip
+_MUZZLE = np.array([0.0, 0.016, -0.205, 1.0])
+
+
+def _gun_grip(model, library):
+    """Pistol frame relative to the right hand bone, from the aiming pose."""
+    g = getattr(model, "_gun_grip", None)
+    if g is not None:
+        return g
+    hand = model.bone("mixamorig:RightHand")
+    fore = model.bone("mixamorig:RightForeArm")
+    pose = ANIM.Pose(model)
+    src = library.get("Pistol_Aim_Neutral") or library.get("Pistol_Idle_Loop")
+    if src is not None:
+        clip = ANIM.retarget(src, model, loop=False)
+        G = pose.fk(clip.rot[0], clip.hips[0]).copy()
+    else:
+        G = model.rest_world.copy()
+    Hm = G[hand]
+    hand_dir = Hm[:3, 3] - G[fore, :3, 3]
+    hand_dir /= max(np.linalg.norm(hand_dir), 1e-6)
+    grip_pt = Hm[:3, 3] + hand_dir * 0.055 + np.array([0.0, -0.012, 0.0])
+    fwd = np.array([hand_dir[0], 0.0, hand_dir[2]])
+    if np.linalg.norm(fwd) < 1e-3:
+        fwd = np.array([0.0, 0.0, -1.0])
+    fwd /= np.linalg.norm(fwd)
+    z = -fwd                                      # barrel along -Z of the gun frame
+    y = np.array([0.0, 1.0, 0.0])
+    x = np.cross(y, z)
+    x /= np.linalg.norm(x)
+    y = np.cross(z, x)
+    Gw = np.eye(4)
+    Gw[:3, 0], Gw[:3, 1], Gw[:3, 2], Gw[:3, 3] = x, y, z, grip_pt
+    g = model._gun_grip = np.linalg.inv(Hm) @ Gw
+    return g
+
+
+def _gun_geo(engine, model, library):
+    """A pistol as a part skinned 100% to the right hand."""
+    hit = getattr(model, "_gun_geo", None)
+    if hit is not None:
+        return hit
+    hand = model.bone("mixamorig:RightHand")
+    M = model.rest_world[hand] @ _gun_grip(model, library)
+    P, N, I = [], [], []
+    for lo, hi in _PISTOL:
+        p, n, i = _box(lo, hi)
+        I += [k + len(P) for k in i]
+        P += list(p)
+        N += list(n)
+    P = np.array(P)
+    N = np.array(N)
+    Pw = (np.hstack([P, np.ones((len(P), 1))]) @ M.T)[:, :3]
+    Nw = N @ M[:3, :3].T
+    part = CORE.Part("gun/pistol", "weapon", Pw.astype(np.float32), Nw.astype(np.float32),
+                     np.zeros((len(P), 2), np.float32), np.array(I, np.uint32),
+                     np.tile([float(hand), 0, 0, 0], (len(P), 1)).astype(np.float32),
+                     np.tile([1.0, 0, 0, 0], (len(P), 1)).astype(np.float32),
+                     {"diffuse": None, "normal": None, "color": [0.09, 0.09, 0.1, 1.0], "alpha_mode": "OPAQUE",
+                      "double_sided": False, "roughness": 0.35, "cutoff": 0.5})
+    g = _make_geo(engine.ctx, part, model.height)
+    model._gun_geo = g
+    return g
+
+
+def desired_moveset(node, bp):
+    ms = str(bp.properties.get("moveset") or "auto")
+    if ms != "auto":
+        return ms
+    en = _bp(node, "MHEnemy")
+    spec = bp.properties.get("character") or {}
+    if "zombie" in str(spec.get("skin", "")):
+        return "zombie"
+    if en is not None:
+        return "pistol" if en.properties.get("attack_style") == "hitscan" else "brawler"
+    return "civilian"
 
 
 # =========================================================================== rig
@@ -257,7 +369,7 @@ class Rig:
         self.engine, self.node, self.bp = engine, node, bp
         spec = bp.properties.get("character") or CORE.default_spec()
         self.spec_key = CORE.spec_key(CORE.normalize_spec(spec, _lib()))
-        self.model, self.geos, proc, self.retarget_cache = _model_for(engine, spec)
+        self.model, self.geos, _unused, self.retarget_cache = _model_for(engine, spec)
         self.height = self.model.height
         self.half = self.height * 0.5
         nb = len(self.model.bone_names)
@@ -265,31 +377,88 @@ class Rig:
         mgl = CLS["moderngl"]
         self.tex.filter = (mgl.NEAREST, mgl.NEAREST)
         self.pose = ANIM.Pose(self.model)
-        self.clips = dict(proc)
         self.user_clips = {}
-        self._load_user_clips()
-        self.animator = ANIM.Animator(self.model, self.clips)
+        self.seed = (abs(hash(node.name)) % 100003) + random.randint(0, 99)
         self.parts = []
         for g in self.geos:
-            ch = m.SceneNode(f"{node.name} {g.slot}", parent=node)
-            ch._heaven3d_imported_part = "mh"
-            ch._h3d_locked = True
-            ch.position = m.glm.vec3(0.0, -self.half, 0.0)
-            mesh = CLS["SkinnedMesh"](engine.ctx, g, f"mh_{g.slot}")
-            mesh._mh_rig = self
-            ch.mesh = mesh
-            mat = g.material
-            ch.material = m.Material(name=f"MH {g.slot}", base_color=tuple(mat["color"]), metallic=0.0,
-                                     roughness=float(mat["roughness"]), base_color_tex=mat["diffuse"],
-                                     normal_tex=mat["normal"], double_sided=bool(mat["double_sided"]),
-                                     alpha_mode=mat["alpha_mode"], alpha_cutoff=float(mat["cutoff"]))
-            self.parts.append(ch)
+            self.parts.append(self._add_part(g))
+        self.gun = None
+        self.moveset = None
+        self.set_moveset(desired_moveset(node, bp))
         self.acc = 0.0
         self.frame = random.randint(0, 7)
-        self._step = 1
         self._ik_cache = {}
+        self.vis_off = 0.0
+        self._vis_y, self._vis_v = 0.0, 0.0
+        self._last_wy = None
         self.preview = None
         self.update(0.0, force=True)
+
+    def _add_part(self, g):
+        m = _m()
+        ch = m.SceneNode(f"{self.node.name} {g.slot}", parent=self.node)
+        ch._heaven3d_imported_part = "mh"
+        ch._h3d_locked = True
+        ch.position = m.glm.vec3(0.0, -self.half, 0.0)
+        mesh = CLS["SkinnedMesh"](self.engine.ctx, g, f"mh_{g.slot}")
+        mesh._mh_rig = self
+        ch.mesh = mesh
+        mat = g.material
+        ch.material = m.Material(name=f"MH {g.slot}", base_color=tuple(mat["color"]),
+                                 metallic=0.6 if g.slot == "weapon" else 0.0,
+                                 roughness=float(mat["roughness"]), base_color_tex=mat["diffuse"],
+                                 normal_tex=mat["normal"], double_sided=bool(mat["double_sided"]),
+                                 alpha_mode=mat["alpha_mode"], alpha_cutoff=float(mat["cutoff"]))
+        return ch
+
+    def set_moveset(self, ms):
+        """(Re)build the clip set + animator for a moveset (civilian, brawler, pistol, zombie, sword)."""
+        self.moveset = ms
+        lib = _library()
+        overrides = self._load_user_clips()
+        if lib:
+            clips = ANIM.clipset(self.model, ms, self.seed, lib, overrides)
+        else:
+            clips = dict(_procedural(self.model))
+            clips.update({k: [v] for k, v in overrides.items()})
+        for slot in ("idle", "walk", "run"):
+            if slot not in clips:
+                clips[slot] = _procedural(self.model)[slot]
+        self.clips = clips
+        self.animator = ANIM.Animator(self.model, clips, seed=self.seed)
+        if not hasattr(self.model, "_arm_clear"):
+            idle = clips["idle"][0]
+            try:
+                self.model._arm_clear = ANIM.arm_clearance(self.model, idle)
+            except Exception:
+                self.model._arm_clear = {}
+        self.pose.set_arm_clearance(self.model._arm_clear)
+        want_gun = ms == "pistol" and bool(lib)
+        if want_gun and self.gun is None:
+            self.gun = self._add_part(_gun_geo(self.engine, self.model, lib))
+            self.parts.append(self.gun)
+        elif not want_gun and self.gun is not None:
+            try:
+                self.gun.mesh.release()
+            except Exception:
+                pass
+            if self.gun.parent is not None:
+                self.gun.remove()
+            self.parts.remove(self.gun)
+            self.gun = None
+        if self.animator.has("upper"):
+            self.animator.set_overlay("upper")
+            if self.animator.overlay:
+                self.animator.overlay[1] = 1.0
+
+    def muzzle_world(self):
+        """World position of the pistol muzzle (or the right hand)."""
+        glm = _m().glm
+        hand = self.model.bone("mixamorig:RightHand")
+        G = self.pose.G
+        loc = G[hand] @ _gun_grip(self.model, _library()) @ _MUZZLE if self.gun is not None else G[hand][:, 3]
+        M = self.node.world_matrix() * glm.translate(glm.mat4(1.0), glm.vec3(0.0, -self.half + self.vis_off, 0.0))
+        return glm.vec3(M * glm.vec4(float(loc[0]), float(loc[1]), float(loc[2]), 1.0))
 
     # -- animation sources ------------------------------------------------
     def _resolve(self, path):
@@ -307,6 +476,8 @@ class Rig:
         return None
 
     def _load_user_clips(self):
+        out = {}
+        self.user_clips = {}
         anims = self.bp.properties.get("animations") or {}
         for slot, ref in anims.items():
             if not ref:
@@ -322,19 +493,17 @@ class Rig:
                 clip = self.retarget_cache.get(key)
                 if clip is None:
                     src = ANIM.pick(ANIM.load_source_cached(full), which)
-                    loop = slot in ("idle", "walk", "run")
+                    loop = slot in ANIM.LOOP_SLOTS
                     clip = ANIM.retarget(src, self.model, name=slot, loop=loop, in_place=True)
+                    ANIM.ground_fit(self.model, clip)
                     if slot in ("attack", "shoot"):
                         clip.events = {"hit": 0.45}
-                    if slot == "walk" and clip.speed < 0.3:
-                        clip.speed = self.clips["walk"].speed
-                    if slot == "run" and clip.speed < 0.5:
-                        clip.speed = self.clips["run"].speed
                     self.retarget_cache[key] = clip
-                self.clips[slot] = clip
+                out[slot] = clip
                 self.user_clips[slot] = ref
             except Exception as ex:
                 _warn_once(("bad", full), f"could not use animation '{os.path.basename(full)}' for {slot}: {ex}")
+        return out
 
     # -- per frame --------------------------------------------------------
     def update(self, dt, force=False):
@@ -342,14 +511,36 @@ class Rig:
         node = self.node
         self.acc += dt
         self.frame += 1
-        # animation LOD by distance to the camera
         try:
             cam = e.camera.position
             p = node.world_position()
             d = math.sqrt((cam.x - p.x) ** 2 + (cam.y - p.y) ** 2 + (cam.z - p.z) ** 2)
         except Exception:
-            d = 0.0
-        step = 1 if d < 22 else (2 if d < 45 else (4 if d < 90 else 8))
+            p, d = None, 0.0
+        # smooth out instant capsule pops (stairs / step-ups) so the body glides up
+        # (critically damped follow: no velocity jumps, so no visible stutter)
+        if p is not None and e._playing and dt > 0.0:
+            if self._last_wy is None or abs(p.y - self._last_wy) > 0.6:
+                self._vis_y, self._vis_v = p.y, 0.0          # spawn / teleport / big fall: snap
+            else:
+                st = 0.18
+                om = 2.0 / st
+                x = om * min(dt, 0.1)
+                ex = 1.0 / (1.0 + x + 0.48 * x * x + 0.235 * x * x * x)
+                ch = self._vis_y - p.y
+                tmp = (self._vis_v + om * ch) * min(dt, 0.1)
+                self._vis_v = (self._vis_v - om * tmp) * ex
+                self._vis_y = p.y + (ch + tmp) * ex
+            self._last_wy = p.y
+            self.vis_off = max(-0.6, min(0.6, self._vis_y - p.y))
+            if abs(self.vis_off) < 1e-4 and abs(self._vis_v) < 1e-3:
+                self.vis_off = 0.0
+        elif not e._playing:
+            self._last_wy, self.vis_off, self._vis_v = None, 0.0, 0.0
+        y = -self.half + self.vis_off
+        for ch in self.parts:
+            ch.position.y = y
+        step = 1 if d < 40 else (2 if d < 80 else 4)       # animation LOD (smooth up close)
         if not force and (self.frame % step) != 0:
             return
         if not node.visible and not force:
@@ -357,8 +548,7 @@ class Rig:
         dt_eff, self.acc = self.acc, 0.0
         q, h = self.animator.update(dt_eff)
         self.pose.fk(q, h)
-        self._step = step
-        if (bool(self.bp.properties.get("foot_ik", True)) and e._playing and d < 28.0
+        if (bool(self.bp.properties.get("foot_ik", True)) and e._playing and d < 30.0
                 and not self.animator.dead):
             self._foot_ik(dt_eff, d)
         skin = self.pose.skin()
@@ -368,11 +558,10 @@ class Rig:
         m = _m()
         glm = m.glm
         node = self.node
-        M = node.world_matrix() * glm.translate(glm.mat4(1.0), glm.vec3(0.0, -self.half, 0.0))
+        M = node.world_matrix() * glm.translate(glm.mat4(1.0), glm.vec3(0.0, -self.half + self.vis_off, 0.0))
         Mi = glm.inverse(M)
         e = self.engine
-        every = 1 if dist < 10.0 else (2 if dist < 18.0 else 3)
-        fresh = (self.frame // max(1, self._step)) % every == 0
+        fresh = dist < 18.0 or self.frame % 2 == 0
         cache = self._ik_cache
 
         def ground(k, x, z, y_start):
@@ -508,12 +697,13 @@ def _blueprints():
 
     @blueprint
     class MHCharacter(Blueprint):
-        """A MakeHuman character: look (character), animations per slot, foot IK."""
+        """A MakeHuman character: look (character), moveset, animations per slot, foot IK."""
 
         def __init__(self):
             super().__init__()
             self.properties.setdefault("foot_ik", True)
             self.properties.setdefault("preview", "idle")
+            self.properties.setdefault("moveset", "auto")
             self.properties.setdefault("animations", {})
             self.properties.setdefault("character", CORE.default_spec())
             self.properties.setdefault("capsule_height", 0.0)
@@ -522,10 +712,13 @@ def _blueprints():
             r = ensure_rig(self.engine, self.node, self)
             if r is not None:
                 r.animator.stop_action()
-                r.animator.set_speed(0.0)
+                r.animator.set_loop(None)
+                r.animator.set_speed(0.0, snap=True)
 
     class _Mover(Blueprint):
-        """Shared capsule movement for NPCs and enemies."""
+        """Shared movement for NPCs and enemies: capsule controller, smooth
+        acceleration and turning, and crowd steering (separation, following,
+        side-stepping) so characters flow around each other instead of bumping."""
         DEFAULTS = {}
 
         def __init__(self):
@@ -545,14 +738,18 @@ def _blueprints():
             self._home_rot = glm.vec3(n.rotation_euler)
             self._made_collider = n.collider is None
             if n.collider is None:
-                n.collider = m.CapsuleCollider(radius=min(0.4, max(0.22, 0.17 * h)), height=h)
+                n.collider = m.CapsuleCollider(radius=min(0.32, max(0.22, 0.15 * h)), height=h)
             e.physics.add_node(n)
             self.cc = m.CharacterController(e.physics, n, radius=n.collider.radius, height=h,
-                                            slope_limit_deg=50.0, step_offset=0.4)
+                                            slope_limit_deg=50.0, step_offset=0.42)
             self._vy = 0.0
             self._yaw = n.rotation_euler.y
             self._ignore = {id(x) for x in n.traverse()}
-            self._last = glm.vec3(n.position)
+            self._speed = 0.0                    # commanded, accelerates smoothly
+            self._vel = 0.0                      # measured, smoothed (drives the animation)
+            self._side = 1.0 if (id(n) // 16) % 2 else -1.0
+            self._stuck = 0.0
+            self._dt = 1.0 / 60.0
 
         def _restore(self):
             n = self.node
@@ -564,13 +761,18 @@ def _blueprints():
             r = rig_of(n)
             if r is not None:
                 r.animator.stop_action()
-                r.animator.set_speed(0.0)
+                r.animator.set_loop(None)
+                r.animator.set_speed(0.0, snap=True)
                 r.update(0.0, force=True)
 
         def _turn_to(self, d, dt, rate=300.0):
+            if abs(d.x) + abs(d.z) < 1e-6:
+                return 0.0
             want = math.degrees(math.atan2(-d.x, -d.z))
             diff = (want - self._yaw + 180.0) % 360.0 - 180.0
-            stepd = max(-rate * dt, min(rate * dt, diff))
+            # ease in: fast for big turns, gentle when nearly aligned; never overshoots
+            mag = min(abs(diff), max(abs(diff) * min(1.0, dt * 7.0), 25.0 * dt), rate * dt)
+            stepd = math.copysign(mag, diff)
             self._yaw = (self._yaw + stepd + 180.0) % 360.0 - 180.0
             self.node.rotation_euler.y = self._yaw
             return abs(diff - stepd)
@@ -579,17 +781,71 @@ def _blueprints():
             a = math.radians(self._yaw)
             return glm.vec3(-math.sin(a), 0.0, -math.cos(a))
 
-        def _move(self, speed, dt):
+        def _steer(self, desired, base_speed):
+            """Crowd avoidance: returns (direction, speed factor)."""
+            pos = self.node.position
+            dl = math.hypot(desired.x, desired.z)
+            if dl < 1e-6:
+                return desired, 1.0
+            dx, dz = desired.x / dl, desired.z / dl
+            sx = sz = 0.0
+            slow = 1.0
+            for other, ox, oz, ovx, ovz in STATE.get("agents", ()):
+                if other is self.node:
+                    continue
+                rx, rz = pos.x - ox, pos.z - oz
+                dist = math.hypot(rx, rz)
+                if dist < 1e-4 or dist > 2.4:
+                    continue
+                nx, nz = rx / dist, rz / dist
+                if dist < 1.25:                           # personal space
+                    k = (1.25 - dist) / 1.25
+                    sx += nx * k * 1.8
+                    sz += nz * k * 1.8
+                ahead = -(dx * nx + dz * nz)              # 1 = straight ahead
+                if ahead > 0.6 and dist < 2.2:
+                    ov = math.hypot(ovx, ovz)
+                    same = (ovx * dx + ovz * dz) / ov if ov > 0.05 else -1.0
+                    if same > 0.5 and ov > 0.3:          # follow: keep a gap, match pace
+                        slow = min(slow, max(0.15, (dist - 0.8) / 1.0), max(0.3, ov / max(base_speed, 0.1) + 0.1))
+                    else:                                 # standing or coming at us: step aside
+                        side_x, side_z = -dz * self._side, dx * self._side
+                        k = (2.2 - dist) / 2.2
+                        sx += side_x * k * 1.4
+                        sz += side_z * k * 1.4
+                        slow = min(slow, max(0.35, (dist - 0.6) / 1.2))
+            vx, vz = dx + sx, dz + sz
+            vl = math.hypot(vx, vz)
+            if vl < 1e-4:
+                vx, vz, vl = dx, dz, 1.0
+            vx, vz = vx / vl, vz / vl
+            # low-pass the steering so avoidance never makes the heading flicker
+            px, pz = getattr(self, "_sdir", (vx, vz))
+            k = min(1.0, self._dt * 5.0)
+            px, pz = px + (vx - px) * k, pz + (vz - pz) * k
+            pl = math.hypot(px, pz) or 1.0
+            self._sdir = (px / pl, pz / pl)
+            self._slow = getattr(self, "_slow", slow) + (slow - getattr(self, "_slow", slow)) * min(1.0, self._dt * 6.0)
+            return glm.vec3(px / pl, 0.0, pz / pl), self._slow
+
+        def _move(self, target_speed, dt, accel=2.6, decel=5.0):
+            self._dt = dt
+            if target_speed > self._speed:
+                self._speed = min(target_speed, self._speed + accel * dt)
+            else:
+                self._speed = max(target_speed, self._speed - decel * dt)
             fwd = self._forward()
             if self.cc.is_grounded and self._vy < 0.0:
                 self._vy = -2.0
             self._vy -= 22.0 * dt
             before = glm.vec3(self.node.position)
-            self.cc.move(glm.vec3(fwd.x * speed, self._vy, fwd.z * speed) * dt)
+            self.cc.move(glm.vec3(fwd.x * self._speed, self._vy, fwd.z * self._speed) * dt)
             mv = self.node.position - before
             actual = math.sqrt(mv.x * mv.x + mv.z * mv.z) / max(dt, 1e-4)
+            self._vel += (min(actual, self._speed + 0.3) - self._vel) * min(1.0, dt * 10.0)
+            self._vx, self._vz = mv.x / max(dt, 1e-4), mv.z / max(dt, 1e-4)
             if self.rig is not None:
-                self.rig.animator.set_speed(actual if speed > 0 else 0.0)
+                self.rig.animator.set_speed(self._vel if self._speed > 0.02 else min(self._vel, 0.0))
             return actual
 
         def _player(self):
@@ -602,18 +858,21 @@ def _blueprints():
     class NPCWalker(_Mover):
         """Walks the NPC path named in 'path' (an NPCPath node).  mode: loop,
         pingpong or random.  Waits 'wait_time' s at each point (or the point's
-        own 'wait').  With no path it wanders around its start point."""
+        own 'wait').  With no path it wanders around its start point.  Walkers
+        keep their own lane on the path, give way to each other, and stop to
+        talk to the player when 'greet_player' is on."""
         DEFAULTS = {"path": "", "speed": 1.3, "run": False, "mode": "loop", "wait_time": 1.5,
-                    "start_at_nearest": True, "wander_radius": 6.0, "greet_player": True, "greet_range": 3.0}
+                    "start_at_nearest": True, "wander_radius": 6.0, "greet_player": True, "greet_range": 2.6}
 
         def on_begin_play(self):
             self._setup()
             self.points = _path_points(self.engine, str(self.p("path")))
             self.idx = 0
             self.dir = 1
-            self.wait = random.uniform(0.0, 0.6)
-            self.greeted = False
+            self.wait = random.uniform(0.0, 0.8)
+            self.talking = False
             self._wander = None
+            self._lane = random.uniform(-0.55, 0.55)
             if self.points and self.p("start_at_nearest"):
                 pos = self.node.position
                 self.idx = min(range(len(self.points)), key=lambda i: glm.length(self.points[i][0] - pos))
@@ -633,63 +892,84 @@ def _blueprints():
             else:
                 self.idx = (self.idx + 1) % max(1, n)
 
+        def _target(self):
+            """Waypoint shifted sideways by this walker's lane."""
+            pt, wait = self.points[self.idx]
+            prev = self.points[(self.idx - self.dir) % len(self.points)][0] if len(self.points) > 1 else self._home
+            seg = pt - prev
+            sl = math.hypot(seg.x, seg.z)
+            if sl > 1e-3:
+                pt = pt + glm.vec3(-seg.z / sl, 0.0, seg.x / sl) * self._lane
+            return pt, wait
+
         def on_tick(self, dt):
             if self.rig is None:
                 return
+            an = self.rig.animator
             speed = float(self.p("speed")) * (2.6 if self.p("run") else 1.0)
             pb, pn = self._player()
             if pn is not None and self.p("greet_player"):
                 to = pn.world_position() - self.node.world_position()
                 d = math.sqrt(to.x * to.x + to.z * to.z)
-                if d < float(self.p("greet_range")):
-                    self._turn_to(glm.vec3(to.x, 0, to.z), dt, 220.0)
+                if d < float(self.p("greet_range")) or (self.talking and d < float(self.p("greet_range")) * 1.6):
+                    self._turn_to(glm.vec3(to.x, 0, to.z), dt, 200.0)
                     self._move(0.0, dt)
-                    if not self.greeted and self.rig.animator.action is None:
-                        self.greeted = self.rig.animator.play("wave")
+                    if self._speed < 0.2:
+                        if not self.talking and an.has("wave") and not an.busy:
+                            an.play("wave", fade=0.25)        # wave hello, then chat
+                        an.set_loop("talk")
+                        self.talking = True
                     return
-                if d > float(self.p("greet_range")) * 2.5:
-                    self.greeted = False
+            if self.talking:
+                an.set_loop(None)
+                self.talking = False
             if self.wait > 0.0:
                 self.wait -= dt
                 self._move(0.0, dt)
                 return
             if self.points:
-                target, wait = self.points[self.idx]
+                target, wait = self._target()
             else:
                 if self._wander is None:
                     r = float(self.p("wander_radius"))
                     a = random.uniform(0, 2 * math.pi)
-                    self._wander = self._home + glm.vec3(math.cos(a) * r * random.random(), 0, math.sin(a) * r * random.random())
+                    self._wander = self._home + glm.vec3(math.cos(a) * r * random.random(), 0,
+                                                         math.sin(a) * r * random.random())
                 target, wait = self._wander, float(self.p("wait_time"))
             to = target - self.node.position
             d = math.sqrt(to.x * to.x + to.z * to.z)
-            if d < 0.45:
-                self.wait = wait if wait >= 0 else float(self.p("wait_time"))
+            if d < 0.7:
+                crowded = any(math.hypot(ox - target.x, oz - target.z) < 0.9
+                              for o, ox, oz, _a, _b in STATE.get("agents", ()) if o is not self.node)
+                self.wait = 0.0 if crowded else (wait if wait >= 0 else float(self.p("wait_time")))
                 self._wander = None
                 if self.points:
                     self._next()
-                self._move(0.0, dt)
+                if self.wait > 0:
+                    self._move(0.0, dt)
                 return
-            err = self._turn_to(glm.vec3(to.x, 0, to.z), dt, 240.0)
-            slow = max(0.15, 1.0 - err / 120.0)
-            moved = self._move(speed * slow * min(1.0, d / 0.8 + 0.3), dt)
-            if moved < 0.05 * speed and d > 1.0:          # blocked: try the next point
-                self._stuck = getattr(self, "_stuck", 0.0) + dt
-                if self._stuck > 2.5:
+            dirv, slow = self._steer(glm.vec3(to.x, 0.0, to.z), speed)
+            err = self._turn_to(dirv, dt, 220.0)
+            turn_slow = max(0.25, 1.0 - err / 100.0)
+            arrive = min(1.0, d / 1.2 + 0.35)
+            moved = self._move(speed * slow * turn_slow * arrive, dt)
+            if moved < 0.08 and self._speed > 0.4 and d > 1.0:
+                self._stuck += dt
+                if self._stuck > 3.0:                    # blocked for a while: give up this point
                     self._stuck = 0.0
                     self._wander = None
                     if self.points:
                         self._next()
             else:
-                self._stuck = 0.0
+                self._stuck = max(0.0, self._stuck - dt)
 
     @blueprint
     class MHEnemy(_Mover):
         """Patrols its 'path' (or wanders), notices the player (sight cone,
         hearing range, optional line of sight), chases, attacks (melee or
-        hitscan), plays hit / death animations.  Takes 'damage' messages."""
-        DEFAULTS = {"path": "", "patrol_speed": 1.2, "chase_speed": 3.6, "detect_range": 18.0, "fov": 120.0,
-                    "hearing_range": 4.0, "require_los": True, "lose_interest": 6.0, "attack_range": 1.6,
+        hitscan with a pistol), plays hit / death animations.  Takes 'damage' messages."""
+        DEFAULTS = {"path": "", "patrol_speed": 1.2, "chase_speed": 3.8, "detect_range": 18.0, "fov": 120.0,
+                    "hearing_range": 4.0, "require_los": True, "lose_interest": 6.0, "attack_range": 1.5,
                     "attack_damage": 12.0, "attack_cooldown": 1.3, "attack_style": "melee", "hitscan_range": 25.0,
                     "max_health": 80.0, "wait_time": 2.0, "growl_sound": "enemy", "death_sound": "hurt"}
 
@@ -706,6 +986,8 @@ def _blueprints():
             self.stagger = 0.0
             self._wander = None
             self._attacking = False
+            if self.rig is not None and self.rig.moveset != desired_moveset(self.node, _char_bp(self.node)):
+                self.rig.set_moveset(desired_moveset(self.node, _char_bp(self.node)))
             if self.points:
                 pos = self.node.position
                 self.idx = min(range(len(self.points)), key=lambda i: glm.length(self.points[i][0] - pos))
@@ -735,8 +1017,7 @@ def _blueprints():
                 L = glm.length(v)
                 if L > 1e-4:
                     pb, _pn = self._player()
-                    ign = set(self._ignore)
-                    hit = self.engine.physics.raycast(eye, v / L, L, ignore=ign)
+                    hit = self.engine.physics.raycast(eye, v / L, L, ignore=set(self._ignore))
                     if hit is not None and pb is not None and not _is_under(hit.node, pb.node):
                         return False, d
             return True, d
@@ -746,10 +1027,11 @@ def _blueprints():
                 return
             e = self.engine
             an = self.rig.animator
+            ranged = self.p("attack_style") == "hitscan"
             self.cool -= dt
             if self.stagger > 0:
                 self.stagger -= dt
-                self._move(0.0, dt)
+                self._move(0.0, dt, decel=8.0)
                 return
             pb, pn = self._player()
             seen, d = (False, 1e9) if pn is None else self._sees(pn)
@@ -767,25 +1049,29 @@ def _blueprints():
             if self._attacking:
                 if an.action is None:
                     self._attacking = False
-                else:
+                elif not ranged:
                     if pn is not None:
                         to = pn.world_position() - self.node.world_position()
-                        self._turn_to(glm.vec3(to.x, 0, to.z), dt, 400.0)
-                    self._move(0.0, dt)
+                        self._turn_to(glm.vec3(to.x, 0, to.z), dt, 360.0)
+                    self._move(0.0, dt, decel=8.0)
                     return
             if self.state == "chase" and pn is not None:
                 to = pn.world_position() - self.node.world_position()
-                rng = float(self.p("attack_range")) if self.p("attack_style") == "melee" else \
-                    min(float(self.p("hitscan_range")), float(self.p("detect_range")) * 0.8)
+                rng = float(self.p("attack_range")) if not ranged else \
+                    min(float(self.p("hitscan_range")), float(self.p("detect_range")) * 0.75)
                 self._turn_to(glm.vec3(to.x, 0, to.z), dt, 360.0)
                 if d <= rng:
-                    self._move(0.0, dt)
-                    if self.cool <= 0.0 and (self.p("attack_style") == "melee" or self._sees(pn)[0]):
+                    keep = 0.0 if not ranged or d < rng * 0.6 else float(self.p("patrol_speed")) * 0.8
+                    self._move(keep, dt, decel=8.0)
+                    if self.cool <= 0.0 and (not ranged or seen):
                         self.cool = float(self.p("attack_cooldown"))
-                        self._attacking = an.play("shoot" if self.p("attack_style") == "hitscan" else "attack")
-                        e.audio.play_at(self.p("growl_sound"), self.node.world_position(), 0.5)
+                        self._attacking = an.play("shoot" if ranged else "attack", fade=0.08)
+                        if not ranged:
+                            e.audio.play_at(self.p("growl_sound"), self.node.world_position(), 0.5)
                 else:
-                    self._move(float(self.p("chase_speed")), dt)
+                    dirv, slow = self._steer(glm.vec3(to.x, 0, to.z), float(self.p("chase_speed")))
+                    self._turn_to(dirv, dt, 300.0)
+                    self._move(float(self.p("chase_speed")) * max(slow, 0.5), dt)
                 return
             # patrol
             if self.wait > 0:
@@ -802,34 +1088,35 @@ def _blueprints():
                 target, w = self._wander, -1
             to = target - self.node.position
             dd = math.sqrt(to.x * to.x + to.z * to.z)
-            if dd < 0.5:
+            if dd < 0.6:
                 self.wait = w if w >= 0 else float(self.p("wait_time"))
                 self._wander = None
                 if self.points:
                     self.idx = (self.idx + 1) % len(self.points)
                 self._move(0.0, dt)
                 return
-            err = self._turn_to(glm.vec3(to.x, 0, to.z), dt, 220.0)
-            self._move(float(self.p("patrol_speed")) * max(0.2, 1.0 - err / 120.0), dt)
+            dirv, slow = self._steer(glm.vec3(to.x, 0, to.z), float(self.p("patrol_speed")))
+            err = self._turn_to(dirv, dt, 200.0)
+            self._move(float(self.p("patrol_speed")) * slow * max(0.25, 1.0 - err / 100.0), dt)
 
         def _deal(self, pb, pn):
             e = self.engine
             dmg = float(self.p("attack_damage"))
             if self.p("attack_style") == "hitscan":
-                eye = self._eye()
+                muzzle = self.rig.muzzle_world() if self.rig is not None else self._eye()
                 chest = pn.world_position() + glm.vec3(0, -0.25, 0)
-                v = chest - eye
+                v = chest - muzzle
                 L = glm.length(v)
                 if L > float(self.p("hitscan_range")) or L < 1e-4:
                     return
-                e.audio.play_at("shoot", eye, 0.5)
-                hit = e.physics.raycast(eye, v / L, L, ignore=self._ignore)
-                if hit is not None and _is_under(hit.node, pn):
-                    e.message_ancestors(hit.node, "damage", {"amount": dmg, "point": hit.point, "source": "enemy"})
+                e.audio.play_at("shoot", muzzle, 0.5)
                 try:
-                    e.spawn_flash(eye + self._forward() * 0.6, color=(1.0, 0.75, 0.3), intensity=30.0, range=4.0, ttl=0.06)
+                    e.spawn_flash(muzzle, color=(1.0, 0.75, 0.3), intensity=30.0, range=4.0, ttl=0.06)
                 except Exception:
                     pass
+                hit = e.physics.raycast(muzzle, v / L, L, ignore=self._ignore)
+                if hit is not None and _is_under(hit.node, pn):
+                    e.message_ancestors(hit.node, "damage", {"amount": dmg, "point": hit.point, "source": "enemy"})
             else:
                 to = pn.world_position() - self.node.world_position()
                 if math.sqrt(to.x * to.x + to.z * to.z) <= float(self.p("attack_range")) * 1.35:
@@ -846,7 +1133,7 @@ def _blueprints():
             elif self.rig is not None and amt > 0:
                 self._attacking = False
                 self.rig.animator.play("hit", fade=0.06)
-                self.stagger = 0.3
+                self.stagger = 0.35
 
         def _die(self):
             e = self.engine
@@ -854,8 +1141,11 @@ def _blueprints():
             self.hp = 0.0
             e.audio.play_at(self.p("death_sound"), self.node.world_position(), 0.7)
             if self.rig is not None:
-                self.rig.animator.set_speed(0.0)
-                self.rig.animator.play("death", fade=0.1, hold=True)
+                self.rig.animator.set_speed(0.0, snap=True)
+                self.rig.animator.set_overlay(None)
+                if self.rig.animator.overlay:
+                    self.rig.animator.overlay = None
+                self.rig.animator.play("death", fade=0.12, hold=True)
             try:
                 e.physics.remove_node(self.node)
             except Exception:
@@ -1576,17 +1866,29 @@ def _anim_tab(w, engine, node, bp, rig):
         def f():
             bp.properties["preview"] = slot
             r = rig_of(node)
-            if r is not None:
-                r.animator.stop_action()
-                r.animator.set_speed({"walk": r.clips["walk"].speed, "run": r.clips["run"].speed}.get(slot, 0.0))
-                if slot not in ("idle", "walk", "run"):
-                    r.animator.play(slot, hold=slot == "death")
+            if r is not None and not engine._playing:
+                _apply_preview(r, bp)
         return f
     sl = list(ANIM.SLOTS)
     for i in range(0, len(sl), 4):
         w.buttons([(x, preview(x), pv == x) for x in sl[i:i + 4]], h=0.026)
+    w.header("Moveset")
+    cur_ms = str(bp.properties.get("moveset") or "auto")
+
+    def set_ms(ms):
+        def f():
+            bp.properties["moveset"] = ms
+            r = rig_of(node)
+            if r is not None:
+                r.set_moveset(desired_moveset(node, bp))
+                _apply_preview(r, bp)
+        return f
+    opts = ["auto"] + list(ANIM.MOVESETS)
+    for i in range(0, len(opts), 3):
+        w.buttons([(o, set_ms(o), cur_ms == o) for o in opts[i:i + 3]], h=0.026)
+    w.label(f"now: {rig.moveset if rig else '-'}  (auto: enemies with hitscan get a pistol, zombie skins walk like zombies)")
     w.header("Animation per slot  (Mixamo .fbx, .glb, .bvh)")
-    w.label("empty = built-in procedural animation", indent=0.0)
+    w.label("empty = built-in CC0 motion-captured animation", indent=0.0)
     for slot in ANIM.SLOTS:
         cur = anims.get(slot) or ""
 
@@ -1719,8 +2021,21 @@ def _on_update(engine, dt):
                 if r is not None and bp is not None and not engine._playing:
                     _apply_preview(r, bp)
     playing = engine._playing
+    agents = []
+    for node, bp in characters(engine):
+        mv = _bp(node, "NPCWalker") or _bp(node, "MHEnemy")
+        if mv is not None and getattr(mv, "alive", True) is not False and hasattr(mv, "_vel"):
+            agents.append((node, node.position.x, node.position.z, getattr(mv, "_vx", 0.0), getattr(mv, "_vz", 0.0)))
+        elif playing:
+            agents.append((node, node.position.x, node.position.z, 0.0, 0.0))
+    STATE["agents"] = agents
     for node, bp in characters(engine):
         r = rig_of(node)
+        if r is not None and not playing:
+            want = desired_moveset(node, bp)
+            if want != r.moveset:
+                r.set_moveset(want)
+                _apply_preview(r, bp)
         if r is None or not r.parts or r.parts[0].parent is not node:
             r = ensure_rig(engine, node, bp)
             if r is None:
@@ -1730,11 +2045,20 @@ def _on_update(engine, dt):
         r.update(min(0.1, dt))
 
 
+def _preview_speed(r, slot):
+    c = r.animator.clip(slot) if slot in ("walk", "run", "sprint") else None
+    return c.speed if c is not None else 0.0
+
+
 def _apply_preview(r, bp):
     pv = bp.properties.get("preview", "idle")
     r.animator.stop_action()
-    r.animator.set_speed({"walk": r.clips["walk"].speed, "run": r.clips["run"].speed}.get(pv, 0.0))
-    if pv not in ("idle", "walk", "run"):
+    r.animator.set_speed(_preview_speed(r, pv), snap=True)
+    if pv in ("talk",):
+        r.animator.set_loop(pv)
+        if r.animator.loop:
+            r.animator.loop[1] = 1.0
+    elif pv not in ("idle", "walk", "run", "sprint"):
         r.animator.play(pv, hold=pv == "death")
 
 

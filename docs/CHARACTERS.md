@@ -23,9 +23,13 @@ like), so nothing in the box carries someone else's brand. The package's code is
 Heaven3D (Apache 2.0). See `packages/mh_characters/ASSETS_LICENSE.md` for the full list of
 sources.
 
-Mixamo animations are free from Adobe for use in your games, but you download them yourself
-(they can't be redistributed as files), so none are included. Without them, every character
-still moves using the built-in procedural clips.
+Every character moves out of the box with **built-in motion-captured animations**: 38 clips
+from Quaternius' *Universal Animation Library* 1 + 2 (CC0 1.0, no attribution required),
+retargeted onto each body at build time: idles, talking, natural walk / jog / sprint, pistol
+aim, shoot and reload, punches, sword, hit reactions, death, zombie idle / walk / attack and more.
+Mixamo animations are free from Adobe for use in your games too, but you download them yourself
+(they can't be redistributed as files), so none are included; loaded files replace the built-in
+clip of their slot.
 
 ## What's in the library
 
@@ -92,9 +96,32 @@ opens, in the editor and in exported games.
    **Anim** and press **Load...** next to a slot. Loaded files are copied into
    `<project>/animations/`, so the project and its exported games carry them.
 
-Slots: `idle`, `walk`, `run` (looping, blended by speed), `attack`, `shoot`, `hit`,
-`death` (holds its last frame), `wave` (NPC greeting). Empty slots use the built-in
-procedural clips.
+Slots: `idle`, `walk`, `run` (looping, blended by speed with the feet kept in phase), `attack`,
+`shoot`, `hit`, `death` (holds its last frame), `talk` / `wave` (NPC greeting). Empty slots use
+the built-in clips of the character's **moveset**.
+
+### Movesets
+
+The `moveset` property (Anim tab) picks the built-in clips; `auto` chooses from the character:
+
+| Moveset | Used for | Clips |
+| --- | --- | --- |
+| `civilian` | walkers, `auto` default | idle variants, talking, a hello wave, walk / formal walk, jog, sprint |
+| `pistol` | `auto` for hitscan enemies | carries a pistol (a small skinned prop in the right hand), two-handed aim layered over the walk, shoot, reload |
+| `brawler` | `auto` for melee enemies | jab, cross, hook |
+| `zombie` | `auto` when the skin is a zombie | zombie idle / shamble / scratch attack |
+| `sword` | | sword idle and slash |
+
+Animation is layered: locomotion is blended by the speed the character actually moves (its
+natural stride speed is measured from the clip, so feet don't skate), an upper-body layer
+(the pistol aim) runs on top of it, and actions (shoot, hit, talk) play on the masked bones only
+so the legs keep walking. Arms are given extra clearance on wide hips so hands never sink into
+the body. `tools/anim_qa.py` renders contact sheets on male / female / heavy bodies and checks
+hand-body penetration, knee / elbow angles and foot slip for every clip.
+
+The library has no wave, so the `wave` clip is built from the idle: the arm rises out to the
+side (never across the body), the elbow stays at shoulder height, the open hand swings side to
+side away from the body, and only the right arm plays it, so a walker can wave and then chat.
 
 Also supported: **.glb / .gltf** (any skinned humanoid glTF animation; a file with several
 animations gets a **clip k/n** button to choose one) and **.bvh** motion capture (CMU and
@@ -124,6 +151,11 @@ character controller: they collide, slide along walls, climb steps and slopes, a
 smoothly; the walk animation speeds up and slows down with how fast they actually move. A
 walker that gets blocked for a few seconds gives up and heads for its next point.
 
+Crowds steer around each other: every walker keeps a personal space, slows down behind
+someone walking the same way instead of bumping into them, side-steps people coming the
+other way, walks slightly off the path's centre line (its own lane) and skips waiting at a
+waypoint that's crowded. Steering and turning are smoothed so nobody jitters.
+
 ## Enemies
 
 **MHEnemy**: patrols its `path` (or wanders), notices the player inside `detect_range`
@@ -144,7 +176,9 @@ On by default (Inspector / **Anim** tab: `foot_ik`). In Play, every character wi
 28 m raycasts the ground under each foot: the pelvis drops for the lower foot, each leg is
 solved as a two-bone chain that keeps the knee's bend plane, and planted feet tilt to the
 slope (up to 35°). Lifted feet keep their animated height above the ground, so walking up
-stairs or a ramp just works. On level ground the solve is skipped.
+stairs or a ramp just works. On level ground the solve is skipped. The body is lifted
+smoothly between steps (the capsule climbs in pops, the visible body glides), so climbing
+stairs doesn't stutter.
 
 ## Performance
 
@@ -153,7 +187,7 @@ stairs or a ramp just works. On level ground the solve is skipped.
 - Animation is level-of-detail'ed by distance (every frame up close, then every 2nd, 4th
   and 8th frame), foot IK only runs near the camera, and its raycasts use a cached broad phase.
 - Use the low-poly proxy bodies (`M low-poly`, `F low-poly`, `Lowest 741`) for big crowds.
-- Building a character takes about 0.2-0.3 s (morph, fit, rig and the built-in clips).
+- Building a character takes about 0.2-0.4 s (morph, fit, rig); retargeted clips are cached per body.
 
 ## Scripting
 

@@ -15,6 +15,8 @@ never required.
 | Mixamo-compatible skeleton and its vertex weights (`rig.mixamo.json`, `weights.mixamo.json`) | MPFB 2 | CC0 |
 | Proxies, eyes, eyebrows, eyelashes, hair, system clothes, skins | MakeHuman system assets pack | CC0 |
 | Clothes, hair, eyebrows, eyelashes, skins, extra looks | MakeHuman community asset packs: dress01, gloves01, hats01, hats02, pants01, shirts01, shoes01, skirts01, suits01, suits02, suits05, underwear01, underwear04, hair01, glasses01, jewelry01, masks01, eyebrows01, eyelashes01, skins01, skins02, skins03, clothes_materials01, system_clothes_materials01, system_hair_materials01, system_hair_materials02, system_eye_materials01 | CC0 (only the assets each pack lists as CC0) |
+| Built-in animations (`assets/anims/library.npz`, 38 motion-captured clips) | Quaternius, *Universal Animation Library* 1 and 2 (Standard), <https://quaternius.com/packs/universalanimationlibrary.html>, packed by `tools/build_anims.py` | CC0 |
+| Pistol prop | made in code for this package | CC0 |
 
 Asset packs: <https://static.makehumancommunity.org/assets/assetpacks/index.html>.
 MakeHuman / MPFB: <https://static.makehumancommunity.org>. The MakeHuman project's statement on
@@ -36,6 +38,5 @@ CC0 output: *"there is no limitation on what you can do with this combined outpu
 ## Not included
 
 Mixamo animations: free from Adobe for use in your games, but not redistributable as files, so
-you download them from mixamo.com yourself (see `docs/CHARACTERS.md`). The built-in idle / walk /
-run / attack / shoot / hit / death / wave animations are procedural code written for this
-package.
+you download them from mixamo.com yourself (see `docs/CHARACTERS.md`). The built-in clips above
+are CC0 motion capture and cover every slot without them.

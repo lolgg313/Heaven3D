@@ -17,6 +17,7 @@ of MakeHuman), and the hips motion is scaled by the hip height ratio.
 import json
 import math
 import os
+import re
 import struct
 import zlib
 
@@ -142,7 +143,7 @@ def euler_m(deg, order="XYZ"):
 
 # =========================================================================== bone names
 _ALIASES = {
-    "pelvis": "hips", "hip": "hips", "root": "hips", "lowerback": "spine", "spine01": "spine", "spine_01": "spine",
+    "pelvis": "hips", "hip": "hips", "lowerback": "spine", "spine01": "spine", "spine_01": "spine",
     "spine02": "spine1", "spine03": "spine2", "chest": "spine1", "upperchest": "spine2", "neck01": "neck",
     "lhipjoint": "", "rhipjoint": "", "lowerneck": "neck", "upperneck": "head",
     "lcollar": "leftshoulder", "rcollar": "rightshoulder", "lshoulder": "leftarm", "rshoulder": "rightarm",
@@ -165,18 +166,62 @@ _ALIASES = {
 }
 
 
+_SIDE_BASE = {
+    "shoulder": "shoulder", "clavicle": "shoulder", "collar": "shoulder",
+    "arm": "arm", "upperarm": "arm", "uparm": "arm", "shldr": "arm",
+    "forearm": "forearm", "lowerarm": "forearm", "elbow": "forearm",
+    "hand": "hand", "wrist": "hand",
+    "upleg": "upleg", "upperleg": "upleg", "thigh": "upleg", "femur": "upleg",
+    "leg": "leg", "lowerleg": "leg", "shin": "leg", "calf": "leg", "knee": "leg",
+    "foot": "foot", "ankle": "foot",
+    "toebase": "toebase", "toe": "toebase", "toes": "toebase", "ball": "toebase",
+}
+_CENTER = {"hips": "hips", "hip": "hips", "pelvis": "hips", "spine": "spine", "spine1": "spine1", "spine2": "spine2",
+           "chest": "spine1", "upperchest": "spine2", "abdomen": "spine", "neck": "neck", "neck1": "neck",
+           "head": "head"}
+
+
 def canon(name):
+    """Canonical (Mixamo-style, lower case) bone name for any common humanoid rig:
+    Mixamo, Rigify / Quaternius (DEF-thigh.L), Unreal (thigh_l, spine_01), BVH ..."""
     n = str(name)
     for sep in (":", "|"):
         if sep in n:
             n = n.split(sep)[-1]
     n = n.strip().lower().replace(" ", "")
+    n = re.sub(r"^(def|org|mch|bip0?1|b|j|jnt|bone)[-_.]", "", n)
     if n in _ALIASES:
         return _ALIASES[n]
-    n2 = n.replace("_", "").replace(".", "")
-    if n2 in _ALIASES:
-        return _ALIASES[n2]
-    return n2
+    flat = re.sub(r"[^a-z0-9]", "", n)
+    if flat in _ALIASES:
+        return _ALIASES[flat]
+    if any(k in flat for k in ("end", "leaf", "nub", "tip", "target", "twist", "ik", "pole", "roll")):
+        return flat
+    side, base = None, n
+    m = re.match(r"^(left|right)[-_.]?(.+)$", n) or re.match(r"^([lr])[-_.](.+)$", n)
+    if m:
+        side, base = m.group(1)[0], m.group(2)
+    else:
+        m = re.match(r"^(.+?)[-_.](l|r|left|right)$", n)
+        if m:
+            side, base = m.group(2)[0], m.group(1)
+    bflat = re.sub(r"[^a-z0-9]", "", base)
+    if side is None:
+        m = re.match(r"^spine[-_.]0*(\d+)$", base)
+        if m:                                   # Rigify spine.001 / Unreal spine_01 are 1-based
+            k = int(m.group(1))
+            return ("spine", "spine1", "spine2", "spine2", "spine2")[max(0, min(4, k - 1))]
+        m = re.match(r"^neck[-_.]0*\d+$", base)
+        if m:
+            return "neck"
+        return _CENTER.get(bflat, flat)
+    sd = "left" if side == "l" else "right"
+    m = re.match(r"^(?:hand|f)?(thumb|index|middle|ring|pinky)(?:finger)?0*([1-3])$", bflat)
+    if m:
+        return f"{sd}hand{m.group(1)}{m.group(2)}"
+    if bflat in _SIDE_BASE:
+        return sd + _SIDE_BASE[bflat]
+    return sd + bflat
 
 
 # =========================================================================== source animation
@@ -885,6 +930,10 @@ def retarget(src, model, name=None, loop=True, in_place=True):
         lin = np.linspace(0.0, 1.0, nf)[:, None]
         hp[:, 0] -= hp[0, 0] + (hp[-1, 0] - hp[0, 0]) * lin[:, 0]
         hp[:, 2] -= hp[0, 2] + (hp[-1, 2] - hp[0, 2]) * lin[:, 0]
+    if loop and nf > 3:                        # exported loops often repeat the first frame at the end
+        d = np.abs(np.sum(W[0] * W[-1], axis=1))
+        if float(d.min()) > 0.9999 and np.linalg.norm(hp[0] - hp[-1]) < 0.01:
+            W, hp, nf = W[:-1], hp[:-1], nf - 1
     P, _ = world_to_local(model, W, hp)
     for f in range(1, nf):                     # keep quaternions continuous
         s = np.sign(np.sum(P[f] * P[f - 1], axis=1))
@@ -1074,80 +1123,449 @@ def procedural_clips(model):
 
 
 # =========================================================================== runtime
-SLOTS = ("idle", "walk", "run", "attack", "shoot", "hit", "death", "wave")
+SLOTS = ("idle", "walk", "run", "sprint", "attack", "shoot", "hit", "death", "talk", "wave")
+
+# --------------------------------------------------------------------------- built-in CC0 library
+_LIB = {}
+
+
+def load_library(path):
+    """assets/anims/library.npz -> {clip name: SourceAnim} (Quaternius UAL 1+2, CC0)."""
+    key = os.path.abspath(path)
+    if key in _LIB:
+        return _LIB[key]
+    out = {}
+    if os.path.isfile(path):
+        z = np.load(path)
+        index = json.loads(bytes(z["index.json"]).decode("utf-8"))
+        rigs = {r["id"]: r for r in index["rigs"]}
+        for name, info in index["clips"].items():
+            rig = rigs[info["rig"]]
+            q = z[name + ".q"].astype(np.float64)
+            pos = z[name + ".p"].astype(np.float64)
+            fr = np.zeros(q.shape[:2] + (4, 4))
+            fr[..., :3, :3] = q_to_m(q)
+            fr[..., :3, 3] = pos
+            fr[..., 3, 3] = 1.0
+            out[name] = SourceAnim(name, rig["names"], rig["parents"], z[rig["id"] + ".rest"].astype(np.float64),
+                                   fr, fps=info.get("fps", FPS))
+    _LIB[key] = out
+    return out
+
+
+# Which built-in clips a character uses, per moveset.  Lists = variants (one is
+# picked per character for loops, per play for one-shots).
+MOVESETS = {
+    "civilian": {"idle": ["Idle_Loop", "Idle_Loop", "Idle_FoldArms_Loop", "Idle_TalkingPhone_Loop"],
+                 "walk": ["Walk_Loop", "Walk_Loop", "Walk_Formal_Loop"], "run": ["Jog_Fwd_Loop"],
+                 "sprint": ["Sprint_Loop"], "talk": ["Idle_Talking_Loop"], "wave": ["@wave"],
+                 "attack": ["Punch_Jab", "Punch_Cross"], "hit": ["Hit_Chest", "Hit_Head"], "death": ["Death01"],
+                 "yes": ["Yes"], "no": ["Idle_No_Loop"]},
+    "brawler": {"idle": ["Idle_Loop"], "walk": ["Walk_Loop"], "run": ["Jog_Fwd_Loop"], "sprint": ["Sprint_Loop"],
+                "attack": ["Punch_Jab", "Punch_Cross", "Melee_Hook"], "hit": ["Hit_Chest", "Hit_Head", "Hit_Knockback"],
+                "death": ["Death01"], "talk": ["Idle_Talking_Loop"], "wave": ["@wave"]},
+    "pistol": {"idle": ["Idle_Loop"], "walk": ["Walk_Loop"], "run": ["Jog_Fwd_Loop"], "sprint": ["Sprint_Loop"],
+               "upper": ["Pistol_Idle_Loop"], "shoot": ["Pistol_Shoot"], "reload": ["Pistol_Reload"],
+               "attack": ["Pistol_Shoot"], "hit": ["Hit_Chest", "Hit_Head"], "death": ["Death01"],
+               "talk": ["Idle_Talking_Loop"], "wave": ["@wave"]},
+    "zombie": {"idle": ["Zombie_Idle_Loop"], "walk": ["Zombie_Walk_Fwd_Loop"], "run": ["Zombie_Walk_Fwd_Loop"],
+               "sprint": ["Zombie_Walk_Fwd_Loop"], "attack": ["Zombie_Scratch"], "hit": ["Hit_Knockback", "Hit_Chest"],
+               "death": ["Death01"], "talk": ["Zombie_Idle_Loop"], "wave": ["Zombie_Idle_Loop"]},
+    "sword": {"idle": ["Sword_Idle"], "walk": ["Walk_Loop"], "run": ["Jog_Fwd_Loop"], "sprint": ["Sprint_Loop"],
+              "attack": ["Sword_Attack"], "hit": ["Hit_Chest", "Hit_Head"], "death": ["Death01"],
+              "talk": ["Idle_Talking_Loop"], "wave": ["@wave"]},
+}
+LOOP_SLOTS = ("idle", "walk", "run", "sprint", "upper", "talk")
+UPPER_SLOTS = ("shoot", "reload", "upper")
+EVENTS = {"Punch_Jab": {"hit": 0.38}, "Punch_Cross": {"hit": 0.42}, "Melee_Hook": {"hit": 0.55},
+          "Zombie_Scratch": {"hit": 0.5}, "Sword_Attack": {"hit": 0.45}, "Pistol_Shoot": {"hit": 0.12}}
+
+
+def clipset(model, moveset, seed, library, overrides=None):
+    """slot -> [Clip] for this character.  `overrides` (slot -> Clip) replace slots."""
+    import random as _r
+    rng = _r.Random(seed)
+    ms = MOVESETS.get(moveset) or MOVESETS["civilian"]
+    out = {}
+    cache = getattr(model, "_clip_cache", None)
+    if cache is None:
+        cache = model._clip_cache = {}
+    for slot, names in ms.items():
+        if names == ["@wave"]:
+            continue
+        names = [n for n in names if n in library]
+        if not names:
+            continue
+        if slot in LOOP_SLOTS:
+            names = [rng.choice(names)]            # one variant per character
+        clips = []
+        for n in names:
+            key = (n, slot in LOOP_SLOTS)
+            c = cache.get(key)
+            if c is None:
+                c = retarget(library[n], model, name=n, loop=slot in LOOP_SLOTS, in_place=True)
+                c.events = dict(EVENTS.get(n, {}))
+                if slot != "death":
+                    ground_fit(model, c)
+                if slot in ("walk", "run", "sprint"):
+                    measure_gait(model, c)
+                cache[key] = c
+            clips.append(c)
+        out[slot] = clips
+    if ms.get("wave") == ["@wave"] and out.get("idle"):
+        c = cache.get(("@wave", True))
+        if c is None:
+            base = out["idle"][0]
+            if "Idle_Loop" in library:                    # neutral arms to start the wave from
+                base = cache.get(("Idle_Loop", True))
+                if base is None:
+                    base = cache[("Idle_Loop", True)] = retarget(library["Idle_Loop"], model, name="Idle_Loop",
+                                                                 loop=True, in_place=True)
+                    ground_fit(model, base)
+            c = cache[("@wave", True)] = make_wave(model, base)
+        if c is not None:
+            out["wave"] = [c]
+    for slot, c in (overrides or {}).items():
+        if slot in ("walk", "run", "sprint") and c.loop and not getattr(c, "_measured", False):
+            measure_gait(model, c)
+        out[slot] = [c]
+    return out
+
+
+def ground_fit(model, clip, max_shift=0.15):
+    """Shift the clip's hips so its lowest foot contact sits on the ground
+    (different leg proportions otherwise leave feet floating or sinking)."""
+    lf, rf = model.bone("mixamorig:LeftFoot"), model.bone("mixamorig:RightFoot")
+    if lf < 0 or rf < 0 or len(clip.rot) == 0:
+        return clip
+    pose = Pose(model)
+    ank = model.metrics.get("ankle_height", 0.08)
+    lows = []
+    for f in range(0, len(clip.rot), max(1, len(clip.rot) // 24)):
+        G = pose.fk(clip.rot[f], clip.hips[f])
+        lows.append(min(G[lf, 1, 3], G[rf, 1, 3]))
+    shift = ank - float(np.percentile(lows, 10))
+    if abs(shift) <= max_shift:
+        clip.hips = clip.hips.copy()
+        clip.hips[:, 1] += shift
+    return clip
+
+
+def measure_gait(model, clip):
+    """Natural ground speed of an in-place loop (from the planted foot) and the
+    phase where the left foot is furthest forward (used to sync gaits)."""
+    pose = Pose(model)
+    lf, rf = model.bone("mixamorig:LeftFoot"), model.bone("mixamorig:RightFoot")
+    n = len(clip.rot)
+    if n < 4 or lf < 0 or rf < 0:
+        return clip
+    P = np.zeros((n, 2, 3))
+    for f in range(n):
+        G = pose.fk(clip.rot[f], clip.hips[f])
+        P[f, 0], P[f, 1] = G[lf, :3, 3], G[rf, :3, 3]
+    vel = []
+    for f in range(n):
+        g = (f + 1) % n
+        k = 0 if P[f, 0, 1] < P[f, 1, 1] else 1               # the lower foot is planted
+        if abs(P[f, k, 1] - P[:, k, 1].min()) < 0.03:
+            d = P[g, k] - P[f, k]
+            vel.append(math.hypot(d[0], d[2]) * clip.fps)
+    if vel:
+        clip.speed = float(np.median(vel))
+    rel = P[:, 0, 2] - 0.5 * (P[:, 0, 2] + P[:, 1, 2])
+    clip.phase0 = float(np.argmin(rel)) / n                      # left foot most forward (-Z)
+    clip._measured = True
+    return clip
+
+
+def arm_clearance(model, clip, margin=0.035):
+    """Extra shoulder abduction (radians) per arm so hands clear wide hips."""
+    body = model.parts[0]
+    lefts = {i for i, n in enumerate(model.bone_names) if canon(n).startswith(("leftarm", "leftforearm", "lefthand", "leftshoulder"))}
+    rights = {i for i, n in enumerate(model.bone_names) if canon(n).startswith(("rightarm", "rightforearm", "righthand", "rightshoulder"))}
+    dom = body.joints[np.arange(len(body.joints)), np.argmax(body.weights, axis=1)].astype(np.int64)
+    trunk = ~np.isin(dom, list(lefts | rights))
+    pts = body.positions[trunk]
+    pose = Pose(model)
+    out = {}
+    for side, hand, arm in (("left", "mixamorig:LeftHand", "mixamorig:LeftArm"),
+                            ("right", "mixamorig:RightHand", "mixamorig:RightArm")):
+        hi, ai = model.bone(hand), model.bone(arm)
+        worst = 1.0
+        for f in range(0, len(clip.rot), max(1, len(clip.rot) // 12)):
+            G = pose.fk(clip.rot[f], clip.hips[f])
+            hp = G[hi, :3, 3]
+            band = pts[np.abs(pts[:, 1] - hp[1]) < 0.04]
+            band = band[np.abs(band[:, 2] - hp[2]) < 0.12]
+            band = band[np.sign(band[:, 0]) == np.sign(hp[0])] if len(band) else band
+            if len(band) == 0:
+                continue
+            worst = min(worst, abs(hp[0]) - float(np.abs(band[:, 0]).max()))
+        if worst < margin:
+            arm_len = float(model.bone_len[ai] + model.bone_len[model.bone(arm.replace("Arm", "ForeArm"))])
+            out[side] = math.asin(min(0.5, (margin - worst) / max(arm_len, 0.3)))
+    return out
+
+
+def _sdir(a, b, t):
+    """Great-circle interpolation between unit directions."""
+    a = a / np.linalg.norm(a)
+    b = b / np.linalg.norm(b)
+    d = max(-1.0, min(1.0, float(np.dot(a, b))))
+    om = math.acos(d)
+    if om < 1e-4:
+        return b
+    return (math.sin((1 - t) * om) * a + math.sin(t * om) * b) / math.sin(om)
+
+
+def _via(a, m, b, t):
+    """Direction path a -> m -> b (t in 0..1), so a raise can't cut across the body."""
+    if t <= 0.0:
+        return a
+    a, m, b = (v / np.linalg.norm(v) for v in (a, m, b))
+    l1 = math.acos(max(-1.0, min(1.0, float(np.dot(a, m)))))
+    l2 = math.acos(max(-1.0, min(1.0, float(np.dot(m, b)))))
+    s = t * (l1 + l2)
+    if s <= l1 and l1 > 1e-6:
+        return _sdir(a, m, s / l1)
+    return _sdir(m, b, (s - l1) / max(l2, 1e-6))
+
+
+def make_wave(model, base, duration=2.8, freq=1.9):
+    """A friendly right-hand wave built on top of `base` (an idle Clip).
+
+    No CC0 mocap wave exists, so the arm is posed in world space: the upper arm
+    rises out to the side (never across the body), the forearm stands up and
+    swings side to side in the frontal plane, the palm faces forward.  The raise
+    follows a great circle through 'out to the side', so the hand can't pass
+    through the torso.  Played on the right arm only (clip.mask)."""
+    names = [canon(n) for n in model.bone_names]
+
+    def find(n):
+        return names.index(n) if n in names else -1
+    sh, ua, fa, hd = find("rightshoulder"), find("rightarm"), find("rightforearm"), find("righthand")
+    th = next((i for i, n in enumerate(names) if n.startswith("righthandthumb")), -1)
+    mid = next((i for i, n in enumerate(names) if n.startswith("righthandmiddle")), -1)
+    if min(ua, fa, hd) < 0:
+        return None
+    pose = Pose(model)
+    rl = model.rest_local[:, :3, :3]
+    fps = base.fps
+    n = int(duration * fps)
+    q0, h0 = base.sample(0.0)
+    G = pose.fk(q0, h0)
+    R = np.array([1.0 if G[ua, 0, 3] > G[model.parents[ua], 0, 3] else -1.0, 0.0, 0.0])   # character's right
+    U = np.array([0.0, 1.0, 0.0])
+    F = np.array([0.0, 0.0, -1.0])                                                      # facing -Z
+    rot = np.empty((n, len(names), 4))
+    hips = np.empty((n, 3))
+    mask = np.zeros(len(names))
+    for i in (sh, ua, fa, hd):
+        if i >= 0:
+            mask[i] = 1.0
+    for j in range(len(names)):
+        p = model.parents[j]
+        while p >= 0:
+            if p == hd:
+                mask[j] = 1.0
+                break
+            p = model.parents[p]
+
+    fingers = [j for j in range(len(names)) if mask[j] > 0 and j not in (sh, ua, fa, hd)]
+
+    def set_dir(q, b, child, want):
+        """Rotate bone b (global swing) so b->child points along `want`."""
+        G = pose.fk(q, h)
+        cur = G[child, :3, 3] - G[b, :3, 3]
+        S = q_to_m(qbetween(cur, want))
+        Gb = S @ G[b, :3, :3]
+        Gp = G[model.parents[b], :3, :3]
+        q[b] = m_to_q(rl[b].T @ Gp.T @ Gb)
+    for f in range(n):
+        t = f / fps
+        q, h = base.sample(t)
+        q = q.copy()
+        e_in = min(1.0, t / 0.45)
+        e_out = min(1.0, max(0.0, (duration - t) / 0.55))
+        e = min(e_in, e_out)
+        e = e * e * (3 - 2 * e)                                   # smoothstep
+        G = pose.fk(q, h)
+        d1_idle = G[fa, :3, 3] - G[ua, :3, 3]
+        d2_idle = G[hd, :3, 3] - G[fa, :3, 3]
+        sway = math.sin(2 * math.pi * freq * max(0.0, t - 0.3)) * min(1.0, max(0.0, t - 0.3) / 0.3)
+        d1 = 0.86 * R + 0.12 * U + 0.36 * F                     # elbow ~shoulder height, a bit forward
+        th_ = math.radians(12.0 + 20.0 * sway)                    # + = outward
+        d2 = math.sin(th_) * R + math.cos(th_) * U + 0.22 * F
+        if sh >= 0:                                               # shoulder lifts a little with the arm
+            G = pose.fk(q, h)
+            cur = G[ua, :3, 3] - G[sh, :3, 3]
+            set_dir(q, sh, ua, _sdir(cur, cur / np.linalg.norm(cur) + 0.10 * e * U, 1.0))
+        out = R + 0.25 * F                                        # raise / lower via 'out to the side'
+        set_dir(q, ua, fa, _via(d1_idle, out, d1, e))
+        set_dir(q, fa, hd, _via(d2_idle, out, d2, e))
+        # palm forward: twist the forearm about its axis so the thumb points to the midline
+        if th >= 0 and mid >= 0 and e > 1e-3:
+            q[hd] = (q[hd] * (1 - e) + np.array([1.0, 0, 0, 0]) * e)
+            q[hd] /= np.linalg.norm(q[hd])
+            G = pose.fk(q, h)
+            ax = G[hd, :3, 3] - G[fa, :3, 3]
+            ax /= np.linalg.norm(ax)
+            tv = G[th, :3, 3] - G[hd, :3, 3]
+            tv -= ax * np.dot(tv, ax)
+            want = -R - ax * np.dot(-R, ax)
+            if np.linalg.norm(tv) > 1e-5 and np.linalg.norm(want) > 1e-5:
+                tv /= np.linalg.norm(tv)
+                want /= np.linalg.norm(want)
+                ang = math.atan2(float(np.dot(np.cross(tv, want), ax)), float(np.dot(tv, want))) * e
+                Tw = q_to_m(qaxis(ax, ang))
+                Gf = Tw @ G[fa, :3, :3]
+                q[fa] = m_to_q(rl[fa].T @ G[model.parents[fa], :3, :3].T @ Gf)
+        for j in fingers:                                         # open hand (rest = straight fingers)
+            q[j] = q[j] * (1 - 0.8 * e) + np.array([1.0, 0, 0, 0]) * (0.8 * e)
+            q[j] /= np.linalg.norm(q[j])
+        rot[f] = q
+        hips[f] = h
+    c = Clip("Wave", rot, hips, fps=fps, loop=False)
+    c.mask = mask
+    return c
 
 
 class Animator:
-    """Locomotion blend (idle / walk / run by speed) + one-shot actions."""
+    """Layered animation:
+         locomotion   idle / walk / run / sprint blended by smoothed speed (phase synced)
+         overlay      an upper-body loop (e.g. holding a pistol) over the locomotion
+         loop action  a full-body loop that can be faded in / out (talking)
+         action       one-shots (attack, shoot, hit, death ...), full or upper body"""
 
-    def __init__(self, model, clips):
+    def __init__(self, model, clips, seed=0):
         self.m = model
-        self.clips = dict(clips)
+        self.clips = {k: (v if isinstance(v, list) else [v]) for k, v in clips.items()}
         self.nb = len(model.bone_names)
         self.t = 0.0
-        self.phase = 0.0
+        self.phase = (seed % 97) / 97.0
         self.speed = 0.0
-        self.action = None            # [clip, time, weight, fade_in, fade_out, hold, finished_cb]
+        self.speed_target = 0.0
+        self.action = None
+        self.loop = None                  # [slot, weight, target]
+        self.overlay = None               # [slot, weight, target]
         self.dead = False
         self.events = []
-        self._last_action_t = 0.0
+        import random as _r
+        self._rng = _r.Random(seed)
+        self.idle_t = self._rng.random() * 10.0
+        up = np.zeros(self.nb)
+        names = [canon(n) for n in model.bone_names]
+        root_upper = None
+        for i, n in enumerate(names):
+            if n == "spine2":
+                root_upper = i
+        for i, n in enumerate(names):
+            if n == "spine":
+                up[i] = 0.2
+            elif n == "spine1":
+                up[i] = 0.55
+        if root_upper is not None:
+            todo = [root_upper]
+            while todo:
+                j = todo.pop()
+                up[j] = 1.0
+                todo += [k for k in range(self.nb) if model.parents[k] == j]
+        self.mask_upper = up
+        self.mask_full = np.ones(self.nb)
 
-    def set_speed(self, v):
-        self.speed = max(0.0, float(v))
+    # -- control ------------------------------------------------------------
+    def has(self, slot):
+        return bool(self.clips.get(slot))
 
-    def play(self, name, fade=0.12, hold=False, on_done=None, rate=1.0):
-        c = self.clips.get(name)
-        if c is None:
+    def clip(self, slot):
+        c = self.clips.get(slot)
+        return c[0] if c else None
+
+    def set_speed(self, v, snap=False):
+        self.speed_target = max(0.0, float(v))
+        if snap:
+            self.speed = self.speed_target
+
+    def set_overlay(self, slot):
+        if slot and self.has(slot):
+            if self.overlay is None or self.overlay[0] != slot:
+                self.overlay = [slot, 0.0 if self.overlay is None else self.overlay[1], 1.0]
+            else:
+                self.overlay[2] = 1.0
+        elif self.overlay is not None:
+            self.overlay[2] = 0.0
+
+    def set_loop(self, slot):
+        if slot and self.has(slot):
+            if self.loop is None or self.loop[0] != slot:
+                self.loop = [slot, 0.0, 1.0, 0.0]
+            else:
+                self.loop[2] = 1.0
+        elif self.loop is not None:
+            self.loop[2] = 0.0
+
+    def play(self, slot, fade=0.15, hold=False, on_done=None, rate=1.0, upper=None):
+        cl = self.clips.get(slot)
+        if not cl:
             return False
-        self.action = {"clip": c, "t": 0.0, "w": 0.0 if self.action is None else self.action["w"],
-                       "fade": max(1e-3, fade), "hold": hold, "done": on_done, "rate": rate, "fired": set()}
-        if name == "death":
+        c = self._rng.choice(cl)
+        if upper is None:
+            upper = slot in UPPER_SLOTS
+        self.action = {"clip": c, "slot": slot, "t": 0.0, "w": 0.0 if self.action is None else self.action["w"],
+                       "fade": max(1e-3, fade), "hold": hold, "done": on_done, "rate": rate, "fired": set(),
+                       "mask": getattr(c, "mask", None) if getattr(c, "mask", None) is not None
+                       else (self.mask_upper if upper else self.mask_full)}
+        if slot == "death":
             self.dead = True
         return True
 
     def stop_action(self):
         self.action = None
+        self.loop = None
         self.dead = False
 
     @property
     def busy(self):
         return self.action is not None and not self.action["hold"]
 
+    # -- evaluation ------------------------------------------------------
     def _loco(self, dt):
-        walk, run, idle = self.clips.get("walk"), self.clips.get("run"), self.clips.get("idle")
+        idle, walk, run, sprint = (self.clip(s) for s in ("idle", "walk", "run", "sprint"))
         v = self.speed
-        ws = (walk.speed if walk and walk.speed > 0 else 1.3)
-        rs = (run.speed if run and run.speed > 0 else 3.5)
-        if v < 0.05:
+        ws = walk.speed if walk and walk.speed > 0.2 else 1.3
+        rs = run.speed if run and run.speed > ws + 0.2 else max(ws * 2.4, 3.0)
+        ss = sprint.speed if sprint and sprint.speed > rs + 0.2 else rs * 1.6
+        if v < 0.04 or walk is None:
             w = {"idle": 1.0}
         elif v < ws:
-            k = v / ws
+            k = min(1.0, v / (0.6 * ws))
             w = {"idle": 1.0 - k, "walk": k}
-        elif v < rs:
-            k = (v - ws) / (rs - ws)
+        elif v < rs or run is None:
+            k = 0.0 if run is None else (v - ws) / (rs - ws)
             w = {"walk": 1.0 - k, "run": k}
+        elif v < ss and sprint is not None:
+            k = (v - rs) / (ss - rs)
+            w = {"run": 1.0 - k, "sprint": k}
         else:
-            w = {"run": 1.0}
-        # phase-synchronised cycle for walk/run
-        cyc = 0.0
-        tot = 0.0
-        for n in ("walk", "run"):
-            if n in w and self.clips.get(n):
-                c = self.clips[n]
-                cyc += w[n] * c.duration
-                tot += w[n]
-        if tot > 0:
-            cycle = cyc / tot
-            natural = (w.get("walk", 0) * ws + w.get("run", 0) * rs) / tot
-            rate = v / max(natural, 1e-3) if natural > 0 else 1.0
-            self.phase = (self.phase + dt * min(2.0, max(0.5, rate)) / max(cycle, 1e-3)) % 1.0
+            w = {"sprint": 1.0} if sprint is not None else {"run": 1.0}
+        moving = [n for n in ("walk", "run", "sprint") if n in w and self.clip(n) is not None]
+        if moving:
+            cyc = sum(w[n] * self.clip(n).duration for n in moving) / sum(w[n] for n in moving)
+            nat = sum(w[n] * {"walk": ws, "run": rs, "sprint": ss}[n] for n in moving) / sum(w[n] for n in moving)
+            rate = min(1.6, max(0.6, v / max(nat, 1e-3))) if v > 0.04 else 1.0
+            self.phase = (self.phase + dt * rate / max(cyc, 1e-3)) % 1.0
+        self.idle_t += dt
         poses = []
         for n, k in w.items():
-            c = self.clips.get(n)
+            c = self.clip(n)
             if c is None or k <= 1e-4:
                 continue
-            tt = (self.phase * c.duration) if n in ("walk", "run") else self.t
-            poses.append((k, *c.sample(tt)))
+            if n == "idle":
+                tt = self.idle_t
+            else:
+                tt = ((self.phase + getattr(c, "phase0", 0.0)) % 1.0) * c.duration
+            q, h = c.sample(tt)
+            poses.append((k, q, h))
         if not poses:
             return np.tile([1.0, 0, 0, 0], (self.nb, 1)), np.zeros(3)
         return _blend(poses)
@@ -1155,35 +1573,64 @@ class Animator:
     def update(self, dt):
         self.t += dt
         self.events = []
+        a = min(1.0, dt * 6.0)
+        self.speed += (self.speed_target - self.speed) * a
         q, h = self._loco(dt)
-        a = self.action
-        if a is not None:
-            c = a["clip"]
-            a["t"] += dt * a["rate"]
+        if self.loop is not None:
+            lp = self.loop
+            lp[1] += (lp[2] - lp[1]) * min(1.0, dt * 5.0)
+            lp[3] += dt
+            c = self.clip(lp[0])
+            if c is not None and lp[1] > 1e-3:
+                lq, lh = c.sample(lp[3])
+                q, h = _mix(q, h, lq, lh, lp[1])
+            if lp[2] == 0.0 and lp[1] < 0.01:
+                self.loop = None
+        if self.overlay is not None:
+            ov = self.overlay
+            ov[1] += (ov[2] - ov[1]) * min(1.0, dt * 6.0)
+            c = self.clip(ov[0])
+            if c is not None and ov[1] > 1e-3:
+                oq, _oh = c.sample(self.t)
+                q, h = _mix(q, h, oq, h, self.mask_upper * ov[1])
+            if ov[2] == 0.0 and ov[1] < 0.01:
+                self.overlay = None
+        act = self.action
+        if act is not None:
+            c = act["clip"]
+            act["t"] += dt * act["rate"]
             dur = c.duration
-            u = a["t"] / dur
+            u = act["t"] / dur
             for ev, at in c.events.items():
-                if u >= at and ev not in a["fired"]:
-                    a["fired"].add(ev)
+                if u >= at and ev not in act["fired"]:
+                    act["fired"].add(ev)
                     self.events.append(ev)
-            if u >= 1.0 and not c.loop:
-                if a["hold"]:
-                    a["w"] = 1.0
+            if u >= 1.0:
+                if act["hold"]:
                     aq, ah = c.sample(dur)
-                    return aq, ah
-                fade_out = 1.0 - min(1.0, (a["t"] - dur) / a["fade"])
-                if fade_out <= 0.0:
-                    cb = a["done"]
+                    return _mix(q, h, aq, ah, act["mask"])
+                act["w"] = 1.0 - min(1.0, (act["t"] - dur) / act["fade"])
+                if act["w"] <= 0.0:
+                    cb = act["done"]
                     self.action = None
                     if cb:
                         cb()
                     return q, h
-                a["w"] = fade_out
             else:
-                a["w"] = min(1.0, a["w"] + dt / a["fade"])
-            aq, ah = c.sample(min(a["t"], dur) if not c.loop else a["t"])
-            q, h = _blend([(1.0 - a["w"], q, h), (a["w"], aq, ah)])
+                act["w"] = min(1.0, act["w"] + dt / act["fade"])
+            aq, ah = c.sample(min(act["t"], dur))
+            q, h = _mix(q, h, aq, ah, act["mask"] * act["w"])
         return q, h
+
+
+def _mix(qa, ha, qb, hb, w):
+    """Per-bone blend from pose a to pose b; w scalar or (B,)."""
+    w = np.broadcast_to(np.asarray(w, np.float64), (len(qa),))
+    s = np.sign(np.sum(qa * qb, axis=1))
+    s[s == 0] = 1.0
+    q = qnorm(qa * (1.0 - w)[:, None] + qb * (s * w)[:, None])
+    wh = float(w[0])
+    return q, np.asarray(ha) * (1.0 - wh) + np.asarray(hb) * wh
 
 
 def _blend(poses):
@@ -1223,10 +1670,25 @@ class Pose:
         self.ik_pelvis = 0.0
         self.ik_normals = [np.array([0.0, 1.0, 0.0]), np.array([0.0, 1.0, 0.0])]
 
+    def set_arm_clearance(self, angles):
+        """angles: {'left': rad, 'right': rad} -> outward rotation of the upper arms."""
+        self.corr = {}
+        for side, ang in (angles or {}).items():
+            i = self.m.bone("mixamorig:LeftArm" if side == "left" else "mixamorig:RightArm")
+            p = self.parents[i] if i >= 0 else -1
+            if i < 0 or p < 0 or ang <= 0:
+                continue
+            # rotation about the character's front-back axis that swings a hanging arm outward
+            # (+Z turns a downward arm towards +X, so the left arm (at -X) uses -Z)
+            fwd = self.rest_world[p, :3, :3].T @ np.array([0.0, 0.0, -1.0 if side == "left" else 1.0])
+            self.corr[i] = _rot3(fwd / np.linalg.norm(fwd), ang)
+
     def fk(self, q, hips_off):
         R = q_to_m(q)
         L = self.rest_local.copy()
         L[:, :3, :3] = self.rest_local[:, :3, :3] @ R
+        for i, C in getattr(self, "corr", {}).items():
+            L[i, :3, :3] = C @ L[i, :3, :3]
         G = self.G
         for i, p in enumerate(self.parents):
             if p < 0:

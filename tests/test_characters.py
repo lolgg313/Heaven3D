@@ -234,7 +234,7 @@ def phase_editor(project):
           _char(hero).properties["animations"]["walk"] == "animations/Walking.fbx")
     r = mod.rig_of(hero)
     src = anim.load_any(os.path.join(anim_dir, "Walking.fbx"))[0]
-    clip = r.clips["walk"]
+    clip = r.clips["walk"][0]
     check("FBX retargeted onto the character", "walk" in r.user_clips and clip.rot.shape[1] == 52 and len(clip.rot) == 30)
     pose = anim.Pose(r.model)
     li = r.model.bone("mixamorig:LeftLeg")
@@ -317,6 +317,11 @@ def phase_editor(project):
             eng.attach_blueprint(enemy, mod.CLS["MHEnemy"])
             enemy.blueprints[-1].properties.update({"chase_speed": 3.0, "require_los": False, "detect_range": 30.0})
             state["enemy"] = enemy
+            gunner = mod.place_character(eng, core.random_spec(lib, 12, gender="male", style="soldier"),
+                                         pos=glm.vec3(9.0, 0.0, 9.0), name="Gunner", select=False)
+            eng.attach_blueprint(gunner, mod.CLS["MHEnemy"])
+            gunner.blueprints[-1].properties.update({"attack_style": "hitscan", "require_los": False, "detect_range": 4.0})
+            state["gunner"] = gunner
             top = 0.4 + 0.2 / math.cos(math.radians(25.0))          # ramp surface under the centre
             slope = mod.place_character(eng, core.default_spec("female"), pos=glm.vec3(-8.0, top, 6.0), yaw=90.0,
                                         name="SlopeStander", select=False)
@@ -329,13 +334,38 @@ def phase_editor(project):
             eng.toggle_play()
         if f == 30:
             check("waypoints hidden in Play", not any(n.visible for n in eng.scene.root.children if mod._bp(n, "NPCWaypoint")))
+            rn = mod.rig_of(state["npc"])
+            check("built-in CC0 mocap clips (Quaternius UAL) drive the NPC", rn.clips["walk"][0].name in ("Walk_Loop", "Walk_Formal_Loop")
+                  and rn.clips["death"][0].name == "Death01" and rn.clips["walk"][0].speed > 0.8,
+                  f"{rn.clips['walk'][0].name} @ {rn.clips['walk'][0].speed:.2f} m/s")
+            wv = rn.clips.get("wave", [None])[0]
+            ok = wv is not None and getattr(wv, "mask", None) is not None
+            if ok:
+                A_ = sys.modules["h3dpkg_mh_characters_mh_anim"]
+                P_ = A_.Pose(rn.model)
+                G_ = P_.fk(*wv.sample(1.3))
+                bi = {k: rn.model.bone("mixamorig:" + k) for k in ("Hips", "RightArm", "RightHand")}
+                hx, ax_, hd_ = (G_[bi[k], :3, 3] for k in ("Hips", "RightArm", "RightHand"))
+                ok = hd_[1] > ax_[1] + 0.15 and abs(hd_[0] - hx[0]) > abs(ax_[0] - hx[0])
+            check("wave: hand raised above the shoulder and outside the body", ok)
+            rg = mod.rig_of(state["gunner"])
+            check("hitscan enemy carries a pistol (pistol moveset + gun part)", rg.moveset == "pistol" and rg.gun is not None
+                  and rg.animator.overlay is not None)
+            re_ = mod.rig_of(state["enemy"])
+            check("zombie skin -> zombie moveset", re_.moveset == "zombie" and re_.clips["walk"][0].name == "Zombie_Walk_Fwd_Loop")
+            state["path_len"] = 0.0
+            state["last"] = glm.vec3(state["npc"].position)
+        if 30 < f < 200:
+            npc = state["npc"]
+            state["path_len"] += glm.length(npc.position - state["last"])
+            state["last"] = glm.vec3(npc.position)
         if f == 200:
             npc = state["npc"]
-            moved = glm.length(npc.position - state["npc0"])
-            pts = [p for p, _w in mod._path_points(eng, state["path"].name)]
-            near = min(glm.length(glm.vec3(npc.position.x, 0, npc.position.z) - glm.vec3(p.x, 0, p.z)) for p in pts)
-            check("NPC walks its path", moved > 1.5, f"moved {moved:.2f} m")
-            check("NPC walk anim follows its speed", mod.rig_of(npc).animator.speed > 0.2 or mod.rig_of(npc).animator.action is not None)
+            moved = state["path_len"]
+            check("NPC walks its path", moved > 3.0, f"walked {moved:.2f} m")
+            wb = mod._bp(npc, "NPCWalker")
+            an = mod.rig_of(npc).animator
+            check("NPC walk anim follows its smoothed speed", abs(an.speed_target - wb._vel) < 0.05)
             en = state["enemy"]
             pb = eng.first_blueprint("FPSController")
             d = glm.length(en.world_position() - pb.node.world_position())
