@@ -107,7 +107,7 @@ The `moveset` property (Anim tab) picks the built-in clips; `auto` chooses from 
 | Moveset | Used for | Clips |
 | --- | --- | --- |
 | `civilian` | walkers, `auto` default | idle variants, talking, a hello wave, walk / formal walk, jog, sprint |
-| `pistol` | `auto` for hitscan enemies | carries a pistol (a small skinned prop in the right hand), two-handed aim layered over the walk, shoot, reload |
+| `pistol` | `auto` for hitscan enemies | carries a real pistol or revolver (CC0 Quaternius models, picked per character or set with the `gun` property, e.g. `Pistol_2`), two-handed aim layered over the walk, shoot, reload |
 | `brawler` | `auto` for melee enemies | jab, cross, hook |
 | `zombie` | `auto` when the skin is a zombie | zombie idle / shamble / scratch attack |
 | `sword` | | sword idle and slash |
@@ -116,7 +116,9 @@ Animation is layered: locomotion is blended by the speed the character actually 
 natural stride speed is measured from the clip, so feet don't skate), an upper-body layer
 (the pistol aim) runs on top of it, and actions (shoot, hit, talk) play on the masked bones only
 so the legs keep walking. Arms are given extra clearance on wide hips so hands never sink into
-the body. `tools/anim_qa.py` renders contact sheets on male / female / heavy bodies and checks
+the body. Retargeting keeps each character's own shoulder line (only the shoulders' motion
+is transferred, so they never shrug) and takes out most of a clip's constant forward lean of the
+chest and head, so people stand and walk upright; runs keep some lean into the stride. `tools/anim_qa.py` renders contact sheets on male / female / heavy bodies and checks
 hand-body penetration, knee / elbow angles and foot slip for every clip.
 
 The library has no wave, so the `wave` clip is built from the idle: the arm rises out to the

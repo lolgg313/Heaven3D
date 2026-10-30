@@ -277,13 +277,39 @@ def _box(lo, hi):
     return np.array(P, np.float64), np.array(N, np.float64), I
 
 
-# pistol in its own frame: origin = top of the grip (in the palm), barrel along -Z, +Y up
-_PISTOL = [((-0.016, 0.000, -0.170), (0.016, 0.040, 0.035)),     # slide
-           ((-0.013, -0.105, -0.010), (0.013, 0.000, 0.035)),    # grip
-           ((-0.004, -0.032, -0.055), (0.004, -0.004, -0.045)),  # trigger guard front
-           ((-0.004, -0.034, -0.050), (0.004, -0.028, -0.008)),  # trigger guard bottom
-           ((-0.009, 0.006, -0.200), (0.009, 0.026, -0.170))]    # barrel tip
-_MUZZLE = np.array([0.0, 0.016, -0.205, 1.0])
+# Hand guns: Quaternius "Ultimate Gun Pack" (CC0), packed by tools/build_props.py
+# into the grip frame: origin = top of the grip (in the palm), barrel along -Z, +Y up.
+_GUNS = {}
+_MUZZLE_FALLBACK = np.array([0.0, 0.02, -0.18, 1.0])
+
+
+def _guns():
+    if not _GUNS:
+        import json
+        path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "props", "guns.npz")
+        try:
+            z = np.load(path)
+            idx = json.loads(bytes(z["index.json"]).decode("utf-8"))
+            for g, meta in idx["guns"].items():
+                parts = [(pm, z[f"{g}.{i}.P"].astype(np.float64), z[f"{g}.{i}.N"].astype(np.float64))
+                         for i, pm in enumerate(meta["parts"])]
+                _GUNS[g] = {"parts": parts, "muzzle": np.array(list(meta["muzzle"]) + [1.0])}
+        except Exception as ex:
+            _m().Log.warn(f"MakeHuman characters: no gun models ({ex})")
+            _GUNS["_none"] = None
+    return {k: v for k, v in _GUNS.items() if v is not None}
+
+
+def _pick_gun(seed, want="auto"):
+    guns = _guns()
+    if not guns:
+        return None
+    if want in guns:
+        return want
+    names = sorted(guns)
+    pref = [n for n in names if n in ("Pistol_1", "Pistol_2", "Pistol_3", "Pistol_5", "Revolver_2", "Revolver_3")]
+    pool = pref or names
+    return pool[seed % len(pool)]
 
 
 def _gun_grip(model, library):
@@ -319,32 +345,33 @@ def _gun_grip(model, library):
     return g
 
 
-def _gun_geo(engine, model, library):
-    """A pistol as a part skinned 100% to the right hand."""
-    hit = getattr(model, "_gun_geo", None)
-    if hit is not None:
-        return hit
+def _gun_geos(engine, model, library, name):
+    """The gun's parts (one per material), skinned 100% to the right hand."""
+    cache = getattr(model, "_gun_geos", None)
+    if cache is None:
+        cache = model._gun_geos = {}
+    if name in cache:
+        return cache[name]
+    gun = _guns().get(name)
+    if gun is None:
+        return []
     hand = model.bone("mixamorig:RightHand")
     M = model.rest_world[hand] @ _gun_grip(model, library)
-    P, N, I = [], [], []
-    for lo, hi in _PISTOL:
-        p, n, i = _box(lo, hi)
-        I += [k + len(P) for k in i]
-        P += list(p)
-        N += list(n)
-    P = np.array(P)
-    N = np.array(N)
-    Pw = (np.hstack([P, np.ones((len(P), 1))]) @ M.T)[:, :3]
-    Nw = N @ M[:3, :3].T
-    part = CORE.Part("gun/pistol", "weapon", Pw.astype(np.float32), Nw.astype(np.float32),
-                     np.zeros((len(P), 2), np.float32), np.array(I, np.uint32),
-                     np.tile([float(hand), 0, 0, 0], (len(P), 1)).astype(np.float32),
-                     np.tile([1.0, 0, 0, 0], (len(P), 1)).astype(np.float32),
-                     {"diffuse": None, "normal": None, "color": [0.09, 0.09, 0.1, 1.0], "alpha_mode": "OPAQUE",
-                      "double_sided": False, "roughness": 0.35, "cutoff": 0.5})
-    g = _make_geo(engine.ctx, part, model.height)
-    model._gun_geo = g
-    return g
+    out = []
+    for k, (pm, P, N) in enumerate(gun["parts"]):
+        n = len(P)
+        Pw = (np.hstack([P, np.ones((n, 1))]) @ M.T)[:, :3]
+        Nw = N @ M[:3, :3].T
+        part = CORE.Part(f"gun/{name}/{k}", "weapon", Pw.astype(np.float32), Nw.astype(np.float32),
+                         np.zeros((n, 2), np.float32), np.arange(n, dtype=np.uint32),
+                         np.tile([float(hand), 0, 0, 0], (n, 1)).astype(np.float32),
+                         np.tile([1.0, 0, 0, 0], (n, 1)).astype(np.float32),
+                         {"diffuse": None, "normal": None, "color": list(pm["color"]) + [1.0], "alpha_mode": "OPAQUE",
+                          "double_sided": False, "roughness": float(pm["roughness"]), "cutoff": 0.5,
+                          "metallic": float(pm["metallic"])})
+        out.append(_make_geo(engine.ctx, part, model.height))
+    cache[name] = out
+    return out
 
 
 def desired_moveset(node, bp):
@@ -382,7 +409,7 @@ class Rig:
         self.parts = []
         for g in self.geos:
             self.parts.append(self._add_part(g))
-        self.gun = None
+        self.gun, self.gun_name = None, None
         self.moveset = None
         self.set_moveset(desired_moveset(node, bp))
         self.acc = 0.0
@@ -405,7 +432,7 @@ class Rig:
         ch.mesh = mesh
         mat = g.material
         ch.material = m.Material(name=f"MH {g.slot}", base_color=tuple(mat["color"]),
-                                 metallic=0.6 if g.slot == "weapon" else 0.0,
+                                 metallic=float(mat.get("metallic", 0.0)),
                                  roughness=float(mat["roughness"]), base_color_tex=mat["diffuse"],
                                  normal_tex=mat["normal"], double_sided=bool(mat["double_sided"]),
                                  alpha_mode=mat["alpha_mode"], alpha_cutoff=float(mat["cutoff"]))
@@ -434,18 +461,18 @@ class Rig:
                 self.model._arm_clear = {}
         self.pose.set_arm_clearance(self.model._arm_clear)
         want_gun = ms == "pistol" and bool(lib)
-        if want_gun and self.gun is None:
-            self.gun = self._add_part(_gun_geo(self.engine, self.model, lib))
-            self.parts.append(self.gun)
-        elif not want_gun and self.gun is not None:
-            try:
-                self.gun.mesh.release()
-            except Exception:
-                pass
-            if self.gun.parent is not None:
-                self.gun.remove()
-            self.parts.remove(self.gun)
-            self.gun = None
+        name = _pick_gun(self.seed, str(self.bp.properties.get("gun") or "auto")) if want_gun else None
+        if self.gun is not None and (not want_gun or name != self.gun_name):
+            for ch in self.gun:
+                if ch.parent is not None:
+                    ch.remove()
+                if ch in self.parts:
+                    self.parts.remove(ch)
+            self.gun, self.gun_name = None, None
+        if want_gun and name and self.gun is None:
+            self.gun = [self._add_part(g) for g in _gun_geos(self.engine, self.model, lib, name)] or None
+            self.gun_name = name if self.gun else None
+            self.parts += self.gun or []
         if self.animator.has("upper"):
             self.animator.set_overlay("upper")
             if self.animator.overlay:
@@ -456,7 +483,11 @@ class Rig:
         glm = _m().glm
         hand = self.model.bone("mixamorig:RightHand")
         G = self.pose.G
-        loc = G[hand] @ _gun_grip(self.model, _library()) @ _MUZZLE if self.gun is not None else G[hand][:, 3]
+        if self.gun is not None:
+            mz = (_guns().get(self.gun_name) or {}).get("muzzle", _MUZZLE_FALLBACK)
+            loc = G[hand] @ _gun_grip(self.model, _library()) @ mz
+        else:
+            loc = G[hand][:, 3]
         M = self.node.world_matrix() * glm.translate(glm.mat4(1.0), glm.vec3(0.0, -self.half + self.vis_off, 0.0))
         return glm.vec3(M * glm.vec4(float(loc[0]), float(loc[1]), float(loc[2]), 1.0))
 
@@ -704,6 +735,7 @@ def _blueprints():
             self.properties.setdefault("foot_ik", True)
             self.properties.setdefault("preview", "idle")
             self.properties.setdefault("moveset", "auto")
+            self.properties.setdefault("gun", "auto")          # auto or Pistol_1..6 / Revolver_1..5
             self.properties.setdefault("animations", {})
             self.properties.setdefault("character", CORE.default_spec())
             self.properties.setdefault("capsule_height", 0.0)
@@ -2033,7 +2065,9 @@ def _on_update(engine, dt):
         r = rig_of(node)
         if r is not None and not playing:
             want = desired_moveset(node, bp)
-            if want != r.moveset:
+            gun_now = r.gun_name if r.gun is not None else None
+            gun_want = (_pick_gun(r.seed, str(bp.properties.get("gun") or "auto")) if want == "pistol" else None)
+            if want != r.moveset or (want == "pistol" and gun_want != gun_now):
                 r.set_moveset(want)
                 _apply_preview(r, bp)
         if r is None or not r.parts or r.parts[0].parent is not node:

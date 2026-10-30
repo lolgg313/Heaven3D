@@ -847,8 +847,9 @@ def world_to_local(model, Wq, hips_pos):
     return qnorm(P), hips_pos
 
 
-def retarget(src, model, name=None, loop=True, in_place=True):
-    """SourceAnim -> Clip for this character's skeleton."""
+def retarget(src, model, name=None, loop=True, in_place=True, posture=True):
+    """SourceAnim -> Clip for this character's skeleton.  `posture` takes out most of a
+    clip's constant forward lean of the chest and head (stylized 'chicken' posture)."""
     nb = len(model.bone_names)
     tmap = {}
     s_index = {}
@@ -905,7 +906,12 @@ def retarget(src, model, name=None, loop=True, in_place=True):
             ang = math.degrees(2 * math.acos(min(1.0, abs(float(q[0])))))
             cn = canon(model.bone_names[i])
             torso = cn.startswith("spine") or cn in ("neck", "head")
-            if not (torso and ang > 50.0):       # odd torso layouts: trust the parent instead
+            if cn in ("leftshoulder", "rightshoulder"):
+                # clavicles: rigs place the neck / shoulder joints very differently, and copying
+                # the source's clavicle DIRECTION shrugs the shoulders.  Keep the character's
+                # own shoulder line and transfer only the motion (delta from rest).
+                C[i] = C[p]
+            elif not (torso and ang > 50.0):     # odd torso layouts: trust the parent instead
                 C[i] = q
     nf = len(src.frames)
     W = np.zeros((nf, nb, 4))
@@ -934,11 +940,62 @@ def retarget(src, model, name=None, loop=True, in_place=True):
         d = np.abs(np.sum(W[0] * W[-1], axis=1))
         if float(d.min()) > 0.9999 and np.linalg.norm(hp[0] - hp[-1]) < 0.01:
             W, hp, nf = W[:-1], hp[:-1], nf - 1
+    if posture:
+        W = _posture_fix(model, W, hp)
     P, _ = world_to_local(model, W, hp)
     for f in range(1, nf):                     # keep quaternions continuous
         s = np.sign(np.sum(P[f] * P[f - 1], axis=1))
         P[f][s < 0] *= -1
     return Clip(name or src.name, P, hp, fps=src.fps, loop=loop, speed=speed)
+
+
+def _posture_fix(model, W, hp, keep_lean=0.35, keep_head=0.25):
+    """Upright posture: removes most of the clip's AVERAGE forward lean of the spine and
+    the head's average forward thrust beyond the character's own rest posture.  A
+    constant per-clip offset, so all motion (bob, sway, breathing) is kept; a little
+    lean is kept so runs still lean into the stride."""
+    names = [canon(n) for n in model.bone_names]
+    ids = {n: names.index(n) for n in ("hips", "spine", "spine1", "spine2", "neck", "head") if n in names}
+    if not all(k in ids for k in ("hips", "neck", "head")):
+        return W
+    spine = [ids[k] for k in ("spine", "spine1", "spine2") if k in ids]
+    P, _ = world_to_local(model, W, hp)
+    pose = Pose(model)
+    nf = len(W)
+    leans, heads = [], []
+    for f in range(0, nf, max(1, nf // 12)):
+        G = pose.fk(P[f], hp[f])
+        sp = G[ids["neck"], :3, 3] - G[ids["hips"], :3, 3]
+        hd = G[ids["head"], :3, 3] - G[ids["neck"], :3, 3]
+        leans.append(math.atan2(-sp[2], sp[1]))           # + = forward (characters face -Z)
+        heads.append(math.atan2(-hd[2], hd[1]))
+    R0 = model.rest_world
+    sp0 = R0[ids["neck"], :3, 3] - R0[ids["hips"], :3, 3]
+    hd0 = R0[ids["head"], :3, 3] - R0[ids["neck"], :3, 3]
+    lean0 = math.atan2(-sp0[2], sp0[1])
+    head0 = math.atan2(-hd0[2], hd0[1])
+    lean = float(np.mean(leans)) - max(0.0, lean0)
+    corr_spine = max(0.0, lean) * (1.0 - keep_lean)
+    # head: relative to the corrected chest, back toward the rest head carriage
+    head_excess = (float(np.mean(heads)) - corr_spine) - head0
+    corr_head = max(0.0, head_excess) * (1.0 - keep_head)
+    if corr_spine < 1e-3 and corr_head < 1e-3:
+        return W
+    W = W.copy()
+    acc = 0.0
+    per = corr_spine / max(1, len(spine))
+    order = spine + [ids["neck"], ids["head"]]
+    for i in order:
+        if i in spine:
+            acc += per
+        elif i == ids["neck"]:
+            acc += corr_head * 0.6
+        else:
+            acc += corr_head * 0.4
+        R = qaxis([1.0, 0.0, 0.0], acc)                   # tilt back about the lateral axis
+        W[:, i] = qmul(np.broadcast_to(R, (len(W), 4)), W[:, i])
+    # bones that follow these (unmapped helpers / face) inherit through world_to_local
+    return W
 
 
 # =========================================================================== procedural clips
