@@ -13,8 +13,8 @@ BEGIN
       VALUE "CompanyName", "Heaven3D"
       VALUE "FileDescription", H3D_DESC
       VALUE "ProductName", "Heaven3D"
-      VALUE "ProductVersion", "2.7.1"
-      VALUE "FileVersion", "2.7.1"
+      VALUE "ProductVersion", "2.7.3"
+      VALUE "FileVersion", "2.7.3"
       VALUE "LegalCopyright", "Apache License 2.0"
     END
   END

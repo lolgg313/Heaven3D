@@ -10,7 +10,7 @@
 
 Deferred PBR rendering · CPU physics · Built-in editor · Standalone runtime
 
-![Version](https://img.shields.io/badge/version-2.7.1-blue)
+![Version](https://img.shields.io/badge/version-2.7.3-blue)
 ![Python](https://img.shields.io/badge/python-3.10%2B-yellow)
 ![OpenGL](https://img.shields.io/badge/OpenGL-3.3%2B%20Core-green)
 ![License](https://img.shields.io/badge/license-Apache%202.0-orange)
@@ -25,7 +25,21 @@ Heaven3D is a from-scratch 3D game engine written in Python on top of [ModernGL]
 
 The whole engine ships as a single file, `Heaven3D.py`, so it is easy to read, hack on, and bundle into your own projects.
 
-## 🆕 What's new in 2.7.1
+## 🆕 What's new in 2.7.3
+
+**MakeHuman Characters 1.2: lifelike animation.**
+
+- **Motion-captured animations built in**: 38 CC0 clips from Quaternius' *Universal Animation Library* replace the old procedural ones: natural idles, talking, walk, jog, sprint, punches, hit reactions, death, zombie moves, pistol aim / shoot / reload. They're retargeted onto every body (male, female, heavy, any proportions), with no hands sinking into the body and no foot sliding.
+- **Natural posture**: shoulders stay relaxed (no shrug), and the chest and head stand upright instead of pushing forward.
+- **Movesets**: *civilian*, *pistol*, *brawler*, *zombie* and *sword*, picked automatically (zombie skins shamble, ranged enemies carry a gun, melee enemies punch) or chosen per character.
+- **Real guns**: pistol enemies hold one of 10 CC0 pistols and revolvers (Quaternius *Ultimate Gun Pack*) in a two-handed aim, and shots leave the barrel. Pick one with the new `gun` property.
+- **Layered animation**: walk speed blends with the feet in phase, the gun aim plays over the walk, and hits, shots and talking play on the upper body only, so legs keep walking.
+- **A proper hello wave**: the arm swings out and away from the body; NPCs wave, then chat.
+- **Crowds that flow**: walkers keep personal space, follow instead of bumping, step aside for oncoming people and walk in their own lanes, with no jittery turning.
+- **Smooth stairs**: the body glides up and down steps with foot IK, no stutter.
+- **Packages update themselves**: when Heaven3D ships a newer version of a package, older copies in your library and in your projects are replaced automatically when the Hub or editor opens (your package settings are kept).
+
+## What's new in 2.7.1
 
 - **macOS support**: standalone editions for **Apple Silicon** and **Intel** Macs (`Heaven3D Hub.app`, `Heaven3D Editor.app`), and **macOS `.app` export** for your games (with your game icon). The editor runs on Apple's OpenGL 4.1 core profile; dialogs and the Library open the Mac way.
 - **Wireframe view**: a **View** menu in the top-left corner of the viewport (not in the crowded toolbar) switches between *Lit*, *Lit + Wireframe* and *Wireframe* (x-ray), and shows or hides the grid. The selected object is drawn in orange.
@@ -34,7 +48,7 @@ The whole engine ships as a single file, `Heaven3D.py`, so it is easy to read, h
 ## 🧍 New package: MakeHuman Characters
 
 - **Realistic people, built in the engine**: the MPFB 2 / MakeHuman body with gender, age, muscle, weight, height, proportion and ethnicity morphs plus 186 detail sliders, **175 clothes**, 34 hair styles, 66 skins, eyes and brows, all edited live in a new **Character Creator** panel.
-- **Mixamo-ready**: every character gets MPFB's Mixamo skeleton and GPU skinning. Load Mixamo `.fbx` (or `.glb` / `.bvh`) animations per slot and they're retargeted automatically; idle, walk, run, attack, shoot, hit, death and wave are built in.
+- **Mixamo-ready**: every character gets MPFB's Mixamo skeleton and GPU skinning. Load Mixamo `.fbx` (or `.glb` / `.bvh`) animations per slot and they're retargeted automatically; CC0 motion-captured idle, walk, run, attack, shoot, hit, death and wave clips are built in (see 2.7.3).
 - **NPCs and enemies**: NPCs walk paths (loop, ping-pong, random), wait and wave at you; enemies patrol, see and hear you, chase, attack (melee or hitscan), react to hits and die. **Foot IK** keeps feet planted on stairs and slopes.
 - **100% CC0 assets**: free for commercial games, no credit, no royalties. New *Character Town* template. Guide: [docs/CHARACTERS.md](docs/CHARACTERS.md).
 
@@ -101,12 +115,12 @@ The whole engine ships as a single file, `Heaven3D.py`, so it is easy to read, h
 
 | Download | Contents | Start |
 | --- | --- | --- |
-| `Heaven3D-2.7.1-Windows.zip` | Hub, editor and a bundled Windows Python | double-click **Heaven3D Hub.exe** |
-| `Heaven3D-2.7.1-Linux.zip` | Hub, editor and a bundled Linux Python (glibc 2.17+) | run **./Heaven3D-Hub** (`./install-desktop-shortcuts.sh` adds menu entries) |
-| `Heaven3D-2.7.1-macOS-AppleSilicon.zip` | Hub, editor and a bundled macOS Python for M1/M2/M3/M4 Macs (macOS 11+) | unlock once (below), then double-click **Heaven3D Hub.app** |
-| `Heaven3D-2.7.1-macOS-Intel.zip` | the same for Intel Macs | the same |
+| `Heaven3D-2.7.3-Windows.zip` | Hub, editor and a bundled Windows Python | double-click **Heaven3D Hub.exe** |
+| `Heaven3D-2.7.3-Linux.zip` | Hub, editor and a bundled Linux Python (glibc 2.17+) | run **./Heaven3D-Hub** (`./install-desktop-shortcuts.sh` adds menu entries) |
+| `Heaven3D-2.7.3-macOS-AppleSilicon.zip` | Hub, editor and a bundled macOS Python for M1/M2/M3/M4 Macs (macOS 11+) | unlock once (below), then double-click **Heaven3D Hub.app** |
+| `Heaven3D-2.7.3-macOS-Intel.zip` | the same for Intel Macs | the same |
 
-| `Heaven3D-2.7.1-Export-Players.zip` | add-on for the macOS editions: the Windows and Linux game players | move its `windows` and `linux` folders into `runtime/players` |
+| `Heaven3D-2.7.3-Export-Players.zip` | add-on for the macOS editions: the Windows and Linux game players | move its `windows` and `linux` folders into `runtime/players` |
 
 Unzip anywhere, even a USB stick. The Windows and Linux editions each contain both game players, so you can export Windows **and** Linux games from either one. The macOS editions export macOS games; add the Export-Players download to export Windows and Linux games from a Mac too (it's separate to keep the Mac downloads small). The editions are built by `tools/standalone/build_standalone.py`.
 

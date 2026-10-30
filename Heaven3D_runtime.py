@@ -180,7 +180,7 @@ class Log:
 # --------------------------------------------------------------------------- #
 #  Constants
 # --------------------------------------------------------------------------- #
-HEAVEN_VERSION = "2.7.1"
+HEAVEN_VERSION = "2.7.3"
 PROJECT_EXT = ".heaven3d"
 
 
@@ -38619,7 +38619,7 @@ if not globals().get("_H3D27_IMPORTERS_INSTALLED"):
     # =================================================================
     #  Engine integration (runs at import time, before any shader compiles)
     # =================================================================
-    HEAVEN_VERSION = "2.7.1"
+    HEAVEN_VERSION = "2.7.3"
 
     class _H3D27Log:
         @staticmethod

@@ -585,7 +585,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--work", default="/tmp/heaven3d-standalone")
     ap.add_argument("--out", default=os.path.join(REPO, "dist"))
-    ap.add_argument("--version", default="2.7.1")
+    ap.add_argument("--version", default="2.7.3")
     ap.add_argument("--python312", default=shutil.which("python3.12") or sys.executable)
     ap.add_argument("--platforms", default="windows,linux,macos-arm64,macos-x86_64")
     ap.add_argument("--no-zip", action="store_true")
