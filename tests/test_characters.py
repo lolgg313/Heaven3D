@@ -417,6 +417,7 @@ def _char(node):
 def phase_reload(project, mode):
     H, eng = boot(project, mode)
     import pygame
+    import glm
     mod = sys.modules["h3dpkg_mh_characters"]
     state = {"f": 0}
 
@@ -431,10 +432,23 @@ def phase_reload(project, mode):
             check(f"{mode}: imported Mixamo walk still assigned", r is not None and "walk" in r.user_clips)
             check(f"{mode}: no duplicated parts", all(sum(1 for c in n.children if getattr(c, '_heaven3d_imported_part', None) == 'mh')
                                                       == len(mod.rig_of(n).parts) for n, _b in chars))
+        if mode == "runtime" and 5 <= f < 40:
+            for n, _b in mod.characters(eng):
+                wb = mod._bp(n, "NPCWalker")
+                if wb is not None:
+                    state.setdefault("p0", {}).setdefault(n.name, glm.vec3(n.position))
+                    r = mod.rig_of(n)
+                    state["same"] = state.get("same", True) and (wb.rig is r)
+                    if r is not None:
+                        state["vmax"] = max(state.get("vmax", 0.0), r.animator.speed)
+                        state["moved"] = max(state.get("moved", 0.0), glm.length(n.position - state["p0"][n.name]))
         if f == 40:
             if mode == "runtime":
                 en = next(n for n, _b in mod.characters(eng) if n.name == "Enemy")
                 check("runtime: enemy AI is live in the exported game", mod._bp(en, "MHEnemy").alive)
+                check("runtime: walking NPCs play their walk animation (not sliding in idle)",
+                      state.get("same", False) and state.get("moved", 0.0) > 0.3 and state.get("vmax", 0.0) > 0.3,
+                      f"moved {state.get('moved', 0.0):.2f} m, anim speed {state.get('vmax', 0.0):.2f}")
             shot(f"reload_{mode}")
             print(f"\n{sum(res)}/{len(res)} passed ({mode})")
             os._exit(0 if all(res) else 1)

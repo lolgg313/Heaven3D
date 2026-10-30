@@ -761,6 +761,18 @@ def _blueprints():
         def p(self, k):
             return self.properties.get(k, self.DEFAULTS.get(k))
 
+        # Always the node's CURRENT rig: a character can be rebuilt after the
+        # game starts (project load in Play / exported games), and a cached rig
+        # would keep animating an orphan while the visible body slid in idle.
+        @property
+        def rig(self):
+            n = getattr(self, "node", None)
+            return rig_of(n) if n is not None else None
+
+        @rig.setter
+        def rig(self, value):
+            pass
+
         def _setup(self):
             e = self.engine
             n = self.node

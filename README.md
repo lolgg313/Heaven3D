@@ -37,6 +37,7 @@ The whole engine ships as a single file, `Heaven3D.py`, so it is easy to read, h
 - **A proper hello wave**: the arm swings out and away from the body; NPCs wave, then chat.
 - **Crowds that flow**: walkers keep personal space, follow instead of bumping, step aside for oncoming people and walk in their own lanes, with no jittery turning.
 - **Smooth stairs**: the body glides up and down steps with foot IK, no stutter.
+- **Animations work everywhere**: characters animate in Play from the Hub and in exported games, not only in the editor.
 - **Packages update themselves**: when Heaven3D ships a newer version of a package, older copies in your library and in your projects are replaced automatically when the Hub or editor opens (your package settings are kept).
 
 ## What's new in 2.7.1
