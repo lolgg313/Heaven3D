@@ -476,6 +476,37 @@ def install_package(source, enable=True):
             shutil.rmtree(tmp, ignore_errors=True)
 
 
+def update_library_from_bundled():
+    """Replace library copies that are OLDER than the package shipped with this
+    Heaven3D (settings kept).  Returns [(id, old, new)]."""
+    out = []
+    lib = {m["id"]: m for m in library_packages()}
+    for b in bundled_packages():
+        m = lib.get(b["id"])
+        if m and _version_tuple(m["version"]) < _version_tuple(b["version"]):
+            try:
+                install_package(b["dir"], enable=is_enabled(b["id"]))
+                out.append((b["id"], m["version"], b["version"]))
+            except Exception:
+                pass
+    return out
+
+
+def update_project_packages(project_dir):
+    """Refresh a project's package copies that are older than the installed /
+    bundled ones.  Returns [(id, old, new)]."""
+    out = []
+    for m in project_packages(project_dir):
+        src = find_package(m["id"])
+        if src and _version_tuple(m["version"]) < _version_tuple(src["version"]):
+            try:
+                add_package_to_project(project_dir, m["id"])
+                out.append((m["id"], m["version"], src["version"]))
+            except Exception:
+                pass
+    return out
+
+
 def uninstall_package(pid):
     d = os.path.join(PKG_LIB_DIR, pid)
     if os.path.isdir(d):
@@ -732,6 +763,11 @@ class Launcher:
         if cur and cur[0].poll() is None:
             raise RuntimeError("This project is already open. Close the engine "
                                "window first (or press Stop in the Hub).")
+        try:                                             # newer Heaven3D -> newer packages
+            update_library_from_bundled()
+            update_project_packages(path)
+        except Exception:
+            pass
         cmd = self._cmd(path, mode)
         logd = os.path.join(path, LOG_DIR)
         os.makedirs(logd, exist_ok=True)
@@ -950,6 +986,10 @@ def run_gui():
 
     cfg = Config()
     launcher = Launcher(cfg)
+    try:
+        update_library_from_bundled()                     # newer Heaven3D -> newer packages
+    except Exception:
+        pass
 
     # ------------------------------------------------------------ packages (Hub side)
     # Enabled library packages with the "hub" target are loaded BEFORE the

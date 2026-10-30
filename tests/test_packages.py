@@ -26,6 +26,18 @@ check("spline_roads loads before car_race_kit (requires)", [a.id for a in H.H3DP
 tools = {t["label"]: t for t in H._H3D27_PKG_STATE["tools"]}
 check("package tools registered", "Spline road: new road" in tools and "Race kit: add car" in tools, list(tools))
 check("physics_plus applied High quality", abs(H.PhysicsWorld.FIXED_DT - 1/120) < 1e-9 and H.PhysicsWorld.SOLVER_ITERATIONS == 8)
+# an OLDER copy of a bundled package in a project is replaced on open (settings kept)
+import json as _json
+stale = tempfile.mkdtemp(prefix='h3dstale_')
+sd = os.path.join(stale, 'packages', 'spline_roads')
+shutil.copytree(os.path.join(PK, 'spline_roads'), sd)
+_m = _json.load(open(os.path.join(sd, 'package.json'))); _bv = _m['version']; _m['version'] = '0.0.1'
+_json.dump(_m, open(os.path.join(sd, 'package.json'), 'w'))
+open(os.path.join(sd, 'OLD_MARKER'), 'w').write('x'); open(os.path.join(sd, 'settings.json'), 'w').write('{"k": 1}')
+H._h3d27_sync_bundled(stale)
+_nm = _json.load(open(os.path.join(sd, 'package.json')))
+check("older project package copy auto-updated from the bundled one", _nm['version'] == _bv and not os.path.exists(os.path.join(sd, 'OLD_MARKER'))
+      and open(os.path.join(sd, 'settings.json')).read() == '{"k": 1}', _nm['version'])
 eng.camera.position = glm.vec3(0, 30, 60); eng.camera.yaw = 0; eng.camera.pitch = -25
 tools["Spline road: new road"]["fn"](eng)
 road = next(n for n in eng.scene.root.children if n.name.startswith("Road"))

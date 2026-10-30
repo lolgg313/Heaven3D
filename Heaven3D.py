@@ -42868,9 +42868,65 @@ vec2 h3d_uv(int s){
         except (OSError, ValueError):
             return set()
 
+    def _h3d27_ver(v):
+        out = []
+        for part in str(v).split("."):
+            digits = "".join(ch for ch in part if ch.isdigit())
+            out.append(int(digits) if digits else 0)
+        return tuple(out + [0] * (3 - len(out)))
+
+    def _h3d27_sync_bundled(project_dir):
+        """A newer Heaven3D ships newer packages next to Heaven3D.py.  Replace
+        OLDER copies in the user's library and in the project with them (their
+        settings.json is kept), so updating Heaven3D really updates packages."""
+        bundled = os.path.join(os.path.dirname(os.path.abspath(__file__)), "packages")
+        if not os.path.isdir(bundled):
+            return []
+        roots = [_h3d27_lib_root()]
+        if project_dir:
+            roots.append(os.path.join(project_dir, "packages"))
+        updated = []
+        for d in sorted(os.listdir(bundled)):
+            src = os.path.join(bundled, d)
+            mb = _h3d27_read_manifest(src)
+            if not mb:
+                continue
+            for root in roots:
+                dest = os.path.join(root, d)
+                if os.path.normcase(os.path.abspath(dest)) == os.path.normcase(os.path.abspath(src)):
+                    continue
+                mo = _h3d27_read_manifest(dest)
+                if not mo or mo.get("id") != mb["id"] or _h3d27_ver(mo["version"]) >= _h3d27_ver(mb["version"]):
+                    continue
+                try:
+                    keep = None
+                    sf = os.path.join(dest, "settings.json")
+                    if os.path.isfile(sf):
+                        with open(sf, "rb") as fh:
+                            keep = fh.read()
+                    tmp = dest + ".h3dnew"
+                    if os.path.isdir(tmp):
+                        shutil.rmtree(tmp)
+                    shutil.copytree(src, tmp, ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "settings.json"))
+                    if keep:
+                        with open(os.path.join(tmp, "settings.json"), "wb") as fh:
+                            fh.write(keep)
+                    shutil.rmtree(dest)
+                    os.replace(tmp, dest)
+                    updated.append((mb["id"], mo["version"], mb["version"], dest))
+                    Log.info(f"Package {mb['id']} updated {mo['version']} -> {mb['version']} ({dest})")
+                except Exception as ex:
+                    Log.warn(f"Couldn't update package {mb['id']} in {root}: {ex}")
+        return updated
+
     def _h3d27_discover(mode, project_dir):
         wanted = {"editor", "game"} if mode == "editor" else {"game"}
         found = {}
+        if mode == "editor" and not _H3D27_STATE.get("game"):
+            try:
+                _h3d27_sync_bundled(project_dir)
+            except Exception as ex:
+                Log.warn(f"package update check failed: {ex}")
         if mode == "editor" and not _H3D27_STATE.get("game"):
             enabled = _h3d27_enabled_ids()
             lib = _h3d27_lib_root()

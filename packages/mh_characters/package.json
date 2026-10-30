@@ -1,11 +1,14 @@
 {
   "id": "mh_characters",
   "name": "MakeHuman Characters",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "author": "Heaven3D (assets: MakeHuman / MPFB 2 community, CC0)",
   "category": "Gameplay",
-  "description": "Create realistic humans in the editor (MPFB2 / MakeHuman body morphs, 66 skins, 175 CC0 clothes, 34 hair styles, eyes, brows), rigged with the Mixamo skeleton and GPU-skinned. Drop in Mixamo animations or use the built-in ones. NPCs that walk paths, enemies that patrol, chase and attack, with foot IK. Everything is CC0: free for commercial games, no credit needed.",
+  "description": "Create realistic humans in the editor (MPFB2 / MakeHuman body morphs, 66 skins, 175 CC0 clothes, 34 hair styles, eyes, brows), rigged with the Mixamo skeleton and GPU-skinned. 38 built-in CC0 motion-captured animations (Quaternius) with movesets (civilian, pistol, brawler, zombie, sword), or drop in Mixamo files. NPCs that walk paths, enemies that patrol, chase and attack, with foot IK, crowd steering and smooth stair climbing. Everything is CC0: free for commercial games, no credit needed.",
   "heaven3d": ">=2.7.0",
-  "targets": ["editor", "game"],
+  "targets": [
+    "editor",
+    "game"
+  ],
   "engine": "engine.py"
 }
