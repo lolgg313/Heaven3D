@@ -195,5 +195,6 @@ python Heaven3D_Hub.py --safe-mode
 | **Physics Plus** | Editor, Game | physics quality presets (120 Hz, more solver iterations), gravity presets |
 | **Spline Roads** | Editor, Game | roads drawn with control points that follow the terrain, with markings and a collider |
 | **Car Race Kit** | Editor, Game | arcade car, checkpoints, race manager (laps, countdown, best lap), *Race Track* template |
+| **MakeHuman Characters** | Editor, Game | MPFB2 / MakeHuman people (morphs, 175 CC0 clothes, hair, skins) with a Character Creator, Mixamo / glTF / BVH animation retargeting, path-walking NPCs, enemies, foot IK, *Character Town* template. See [CHARACTERS.md](CHARACTERS.md) |
 
 Their source in `packages/` is a good place to learn from.

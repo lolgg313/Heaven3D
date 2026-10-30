@@ -1,0 +1,6280 @@
+{
+  "version": "2.7.1",
+  "type": "heaven3d_project",
+  "scene": {
+    "name": "__root__",
+    "position": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "rotation_euler": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "scale": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "source_path": null,
+    "mesh_type": null,
+    "mesh_params": null,
+    "material": null,
+    "blueprint": null,
+    "blueprints": [],
+    "visible": true,
+    "tag": "",
+    "collider": null,
+    "rigidbody": null,
+    "spawn_kind": null,
+    "spawn_config": null,
+    "is_sun": false,
+    "sun_light": null,
+    "is_point_light": false,
+    "point_light": null,
+    "is_spot_light": false,
+    "spot_light": null,
+    "is_clouds": false,
+    "cloud_settings": null,
+    "is_ocean": false,
+    "ocean_settings": null,
+    "is_terrain": false,
+    "terrain_config": null,
+    "children": [
+      {
+        "name": "Sun",
+        "position": [
+          0.0,
+          50.0,
+          0.0
+        ],
+        "rotation_euler": [
+          -50.0,
+          -30.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "source_path": null,
+        "mesh_type": null,
+        "mesh_params": null,
+        "material": null,
+        "blueprint": null,
+        "blueprints": [],
+        "visible": true,
+        "tag": "",
+        "collider": null,
+        "rigidbody": null,
+        "spawn_kind": null,
+        "spawn_config": null,
+        "is_sun": true,
+        "sun_light": {
+          "direction": [
+            0.32139381766319275,
+            -0.7660444378852844,
+            -0.5566704273223877
+          ],
+          "color": [
+            1.0,
+            0.9599999785423279,
+            0.8999999761581421
+          ],
+          "intensity": 3.0,
+          "shadow_map_size": 2048,
+          "shadow_bias": 0.001
+        },
+        "is_point_light": false,
+        "point_light": null,
+        "is_spot_light": false,
+        "spot_light": null,
+        "is_clouds": false,
+        "cloud_settings": null,
+        "is_ocean": false,
+        "ocean_settings": null,
+        "is_terrain": false,
+        "terrain_config": null,
+        "children": []
+      },
+      {
+        "name": "Clouds",
+        "position": [
+          0.0,
+          80.0,
+          0.0
+        ],
+        "rotation_euler": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "source_path": null,
+        "mesh_type": null,
+        "mesh_params": null,
+        "material": null,
+        "blueprint": null,
+        "blueprints": [],
+        "visible": true,
+        "tag": "",
+        "collider": null,
+        "rigidbody": null,
+        "spawn_kind": null,
+        "spawn_config": null,
+        "is_sun": false,
+        "sun_light": null,
+        "is_point_light": false,
+        "point_light": null,
+        "is_spot_light": false,
+        "spot_light": null,
+        "is_clouds": true,
+        "cloud_settings": {
+          "enabled": true,
+          "coverage": 0.45,
+          "density": 0.85,
+          "scale": 1.0,
+          "altitude": 800.0,
+          "speed": 0.012,
+          "tint": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "wind_dir": [
+            0.8,
+            0.6
+          ]
+        },
+        "is_ocean": false,
+        "ocean_settings": null,
+        "is_terrain": false,
+        "terrain_config": null,
+        "children": []
+      },
+      {
+        "name": "Ocean",
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation_euler": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "source_path": null,
+        "mesh_type": null,
+        "mesh_params": null,
+        "material": null,
+        "blueprint": null,
+        "blueprints": [],
+        "visible": true,
+        "tag": "",
+        "collider": null,
+        "rigidbody": null,
+        "spawn_kind": null,
+        "spawn_config": null,
+        "is_sun": false,
+        "sun_light": null,
+        "is_point_light": false,
+        "point_light": null,
+        "is_spot_light": false,
+        "spot_light": null,
+        "is_clouds": false,
+        "cloud_settings": null,
+        "is_ocean": true,
+        "ocean_settings": {
+          "enabled": false,
+          "sea_level": 0.0,
+          "water_shallow": [
+            0.1599999964237213,
+            0.4399999976158142,
+            0.46000000834465027
+          ],
+          "water_deep": [
+            0.012000000104308128,
+            0.08500000089406967,
+            0.17000000178813934
+          ],
+          "wave_height": 0.45,
+          "wave_speed": 1.0,
+          "wind_dir": [
+            1.0,
+            0.35
+          ],
+          "wind_strength": 1.0,
+          "choppiness": 0.7,
+          "foam_amount": 1.0,
+          "buoyancy_enabled": true,
+          "buoyancy_strength": 1.0
+        },
+        "is_terrain": false,
+        "terrain_config": null,
+        "children": []
+      },
+      {
+        "name": "Ground",
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation_euler": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "source_path": null,
+        "mesh_type": "plane",
+        "mesh_params": {
+          "size": 160.0
+        },
+        "material": {
+          "name": "Ground_mat",
+          "base_color": [
+            0.42,
+            0.44,
+            0.4,
+            1.0
+          ],
+          "metallic": 0.0,
+          "roughness": 0.95,
+          "emissive": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "emissive_intensity": 1.0,
+          "alpha_cutoff": 0.5,
+          "base_color_tex": null,
+          "metallic_roughness_tex": null,
+          "normal_tex": null,
+          "emissive_tex": null,
+          "occlusion_tex": null,
+          "double_sided": false,
+          "alpha_mode": "OPAQUE"
+        },
+        "blueprint": null,
+        "blueprints": [],
+        "visible": true,
+        "tag": "",
+        "collider": {
+          "center": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "is_trigger": false,
+          "friction": 0.6,
+          "restitution": 0.0,
+          "type": "plane",
+          "size": 160.0
+        },
+        "rigidbody": null,
+        "spawn_kind": null,
+        "spawn_config": null,
+        "is_sun": false,
+        "sun_light": null,
+        "is_point_light": false,
+        "point_light": null,
+        "is_spot_light": false,
+        "spot_light": null,
+        "is_clouds": false,
+        "cloud_settings": null,
+        "is_ocean": false,
+        "ocean_settings": null,
+        "is_terrain": false,
+        "terrain_config": null,
+        "children": []
+      },
+      {
+        "name": "Plaza",
+        "position": [
+          0.0,
+          0.01,
+          0.0
+        ],
+        "rotation_euler": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "source_path": null,
+        "mesh_type": "plane",
+        "mesh_params": {
+          "size": 26.0
+        },
+        "material": {
+          "name": "Plaza_mat",
+          "base_color": [
+            0.62,
+            0.58,
+            0.52,
+            1.0
+          ],
+          "metallic": 0.0,
+          "roughness": 0.9,
+          "emissive": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "emissive_intensity": 1.0,
+          "alpha_cutoff": 0.5,
+          "base_color_tex": null,
+          "metallic_roughness_tex": null,
+          "normal_tex": null,
+          "emissive_tex": null,
+          "occlusion_tex": null,
+          "double_sided": false,
+          "alpha_mode": "OPAQUE"
+        },
+        "blueprint": null,
+        "blueprints": [],
+        "visible": true,
+        "tag": "",
+        "collider": {
+          "center": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "is_trigger": false,
+          "friction": 0.6,
+          "restitution": 0.0,
+          "type": "plane",
+          "size": 26.0
+        },
+        "rigidbody": null,
+        "spawn_kind": null,
+        "spawn_config": null,
+        "is_sun": false,
+        "sun_light": null,
+        "is_point_light": false,
+        "point_light": null,
+        "is_spot_light": false,
+        "spot_light": null,
+        "is_clouds": false,
+        "cloud_settings": null,
+        "is_ocean": false,
+        "ocean_settings": null,
+        "is_terrain": false,
+        "terrain_config": null,
+        "children": []
+      },
+      {
+        "name": "House 1",
+        "position": [
+          -17.0,
+          3.5,
+          -8.0
+        ],
+        "rotation_euler": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          7.0,
+          7.0,
+          9.0
+        ],
+        "source_path": null,
+        "mesh_type": "cube",
+        "mesh_params": {
+          "size": 1.0
+        },
+        "material": {
+          "name": "House 1_mat",
+          "base_color": [
+            0.78,
+            0.7,
+            0.58,
+            1
+          ],
+          "metallic": 0.1,
+          "roughness": 0.85,
+          "emissive": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "emissive_intensity": 1.0,
+          "alpha_cutoff": 0.5,
+          "base_color_tex": null,
+          "metallic_roughness_tex": null,
+          "normal_tex": null,
+          "emissive_tex": null,
+          "occlusion_tex": null,
+          "double_sided": false,
+          "alpha_mode": "OPAQUE"
+        },
+        "blueprint": null,
+        "blueprints": [],
+        "visible": true,
+        "tag": "",
+        "collider": {
+          "center": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "is_trigger": false,
+          "friction": 0.6,
+          "restitution": 0.0,
+          "type": "box",
+          "size": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "rigidbody": null,
+        "spawn_kind": null,
+        "spawn_config": null,
+        "is_sun": false,
+        "sun_light": null,
+        "is_point_light": false,
+        "point_light": null,
+        "is_spot_light": false,
+        "spot_light": null,
+        "is_clouds": false,
+        "cloud_settings": null,
+        "is_ocean": false,
+        "ocean_settings": null,
+        "is_terrain": false,
+        "terrain_config": null,
+        "children": []
+      },
+      {
+        "name": "House 2",
+        "position": [
+          -17.0,
+          4.5,
+          6.0
+        ],
+        "rotation_euler": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          7.0,
+          9.0,
+          8.0
+        ],
+        "source_path": null,
+        "mesh_type": "cube",
+        "mesh_params": {
+          "size": 1.0
+        },
+        "material": {
+          "name": "House 2_mat",
+          "base_color": [
+            0.66,
+            0.42,
+            0.36,
+            1
+          ],
+          "metallic": 0.1,
+          "roughness": 0.85,
+          "emissive": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "emissive_intensity": 1.0,
+          "alpha_cutoff": 0.5,
+          "base_color_tex": null,
+          "metallic_roughness_tex": null,
+          "normal_tex": null,
+          "emissive_tex": null,
+          "occlusion_tex": null,
+          "double_sided": false,
+          "alpha_mode": "OPAQUE"
+        },
+        "blueprint": null,
+        "blueprints": [],
+        "visible": true,
+        "tag": "",
+        "collider": {
+          "center": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "is_trigger": false,
+          "friction": 0.6,
+          "restitution": 0.0,
+          "type": "box",
+          "size": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "rigidbody": null,
+        "spawn_kind": null,
+        "spawn_config": null,
+        "is_sun": false,
+        "sun_light": null,
+        "is_point_light": false,
+        "point_light": null,
+        "is_spot_light": false,
+        "spot_light": null,
+        "is_clouds": false,
+        "cloud_settings": null,
+        "is_ocean": false,
+        "ocean_settings": null,
+        "is_terrain": false,
+        "terrain_config": null,
+        "children": []
+      },
+      {
+        "name": "House 3",
+        "position": [
+          17.0,
+          4.0,
+          -6.0
+        ],
+        "rotation_euler": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          7.0,
+          8.0,
+          10.0
+        ],
+        "source_path": null,
+        "mesh_type": "cube",
+        "mesh_params": {
+          "size": 1.0
+        },
+        "material": {
+          "name": "House 3_mat",
+          "base_color": [
+            0.55,
+            0.6,
+            0.66,
+            1
+          ],
+          "metallic": 0.1,
+          "roughness": 0.85,
+          "emissive": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "emissive_intensity": 1.0,
+          "alpha_cutoff": 0.5,
+          "base_color_tex": null,
+          "metallic_roughness_tex": null,
+          "normal_tex": null,
+          "emissive_tex": null,
+          "occlusion_tex": null,
+          "double_sided": false,
+          "alpha_mode": "OPAQUE"
+        },
+        "blueprint": null,
+        "blueprints": [],
+        "visible": true,
+        "tag": "",
+        "collider": {
+          "center": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "is_trigger": false,
+          "friction": 0.6,
+          "restitution": 0.0,
+          "type": "box",
+          "size": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "rigidbody": null,
+        "spawn_kind": null,
+        "spawn_config": null,
+        "is_sun": false,
+        "sun_light": null,
+        "is_point_light": false,
+        "point_light": null,
+        "is_spot_light": false,
+        "spot_light": null,
+        "is_clouds": false,
+        "cloud_settings": null,
+        "is_ocean": false,
+        "ocean_settings": null,
+        "is_terrain": false,
+        "terrain_config": null,
+        "children": []
+      },
+      {
+        "name": "House 4",
+        "position": [
+          17.0,
+          3.0,
+          8.0
+        ],
+        "rotation_euler": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          7.0,
+          6.0,
+          7.0
+        ],
+        "source_path": null,
+        "mesh_type": "cube",
+        "mesh_params": {
+          "size": 1.0
+        },
+        "material": {
+          "name": "House 4_mat",
+          "base_color": [
+            0.82,
+            0.78,
+            0.68,
+            1
+          ],
+          "metallic": 0.1,
+          "roughness": 0.85,
+          "emissive": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "emissive_intensity": 1.0,
+          "alpha_cutoff": 0.5,
+          "base_color_tex": null,
+          "metallic_roughness_tex": null,
+          "normal_tex": null,
+          "emissive_tex": null,
+          "occlusion_tex": null,
+          "double_sided": false,
+          "alpha_mode": "OPAQUE"
+        },
+        "blueprint": null,
+        "blueprints": [],
+        "visible": true,
+        "tag": "",
+        "collider": {
+          "center": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "is_trigger": false,
+          "friction": 0.6,
+          "restitution": 0.0,
+          "type": "box",
+          "size": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "rigidbody": null,
+        "spawn_kind": null,
+        "spawn_config": null,
+        "is_sun": false,
+        "sun_light": null,
+        "is_point_light": false,
+        "point_light": null,
+        "is_spot_light": false,
+        "spot_light": null,
+        "is_clouds": false,
+        "cloud_settings": null,
+        "is_ocean": false,
+        "ocean_settings": null,
+        "is_terrain": false,
+        "terrain_config": null,
+        "children": []
+      },
+      {
+        "name": "House 5",
+        "position": [
+          -4.0,
+          5.0,
+          -19.0
+        ],
+        "rotation_euler": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          10.0,
+          10.0,
+          6.0
+        ],
+        "source_path": null,
+        "mesh_type": "cube",
+        "mesh_params": {
+          "size": 1.0
+        },
+        "material": {
+          "name": "House 5_mat",
+          "base_color": [
+            0.78,
+            0.7,
+            0.58,
+            1
+          ],
+          "metallic": 0.1,
+          "roughness": 0.85,
+          "emissive": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "emissive_intensity": 1.0,
+          "alpha_cutoff": 0.5,
+          "base_color_tex": null,
+          "metallic_roughness_tex": null,
+          "normal_tex": null,
+          "emissive_tex": null,
+          "occlusion_tex": null,
+          "double_sided": false,
+          "alpha_mode": "OPAQUE"
+        },
+        "blueprint": null,
+        "blueprints": [],
+        "visible": true,
+        "tag": "",
+        "collider": {
+          "center": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "is_trigger": false,
+          "friction": 0.6,
+          "restitution": 0.0,
+          "type": "box",
+          "size": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "rigidbody": null,
+        "spawn_kind": null,
+        "spawn_config": null,
+        "is_sun": false,
+        "sun_light": null,
+        "is_point_light": false,
+        "point_light": null,
+        "is_spot_light": false,
+        "spot_light": null,
+        "is_clouds": false,
+        "cloud_settings": null,
+        "is_ocean": false,
+        "ocean_settings": null,
+        "is_terrain": false,
+        "terrain_config": null,
+        "children": []
+      },
+      {
+        "name": "House 6",
+        "position": [
+          8.0,
+          3.5,
+          -19.0
+        ],
+        "rotation_euler": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          8.0,
+          7.0,
+          6.0
+        ],
+        "source_path": null,
+        "mesh_type": "cube",
+        "mesh_params": {
+          "size": 1.0
+        },
+        "material": {
+          "name": "House 6_mat",
+          "base_color": [
+            0.66,
+            0.42,
+            0.36,
+            1
+          ],
+          "metallic": 0.1,
+          "roughness": 0.85,
+          "emissive": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "emissive_intensity": 1.0,
+          "alpha_cutoff": 0.5,
+          "base_color_tex": null,
+          "metallic_roughness_tex": null,
+          "normal_tex": null,
+          "emissive_tex": null,
+          "occlusion_tex": null,
+          "double_sided": false,
+          "alpha_mode": "OPAQUE"
+        },
+        "blueprint": null,
+        "blueprints": [],
+        "visible": true,
+        "tag": "",
+        "collider": {
+          "center": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "is_trigger": false,
+          "friction": 0.6,
+          "restitution": 0.0,
+          "type": "box",
+          "size": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "rigidbody": null,
+        "spawn_kind": null,
+        "spawn_config": null,
+        "is_sun": false,
+        "sun_light": null,
+        "is_point_light": false,
+        "point_light": null,
+        "is_spot_light": false,
+        "spot_light": null,
+        "is_clouds": false,
+        "cloud_settings": null,
+        "is_ocean": false,
+        "ocean_settings": null,
+        "is_terrain": false,
+        "terrain_config": null,
+        "children": []
+      },
+      {
+        "name": "Fountain",
+        "position": [
+          0.0,
+          0.4,
+          0.0
+        ],
+        "rotation_euler": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          3.0,
+          0.8,
+          3.0
+        ],
+        "source_path": null,
+        "mesh_type": "cube",
+        "mesh_params": {
+          "size": 1.0
+        },
+        "material": {
+          "name": "Fountain_mat",
+          "base_color": [
+            0.6,
+            0.62,
+            0.66,
+            1
+          ],
+          "metallic": 0.1,
+          "roughness": 0.85,
+          "emissive": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "emissive_intensity": 1.0,
+          "alpha_cutoff": 0.5,
+          "base_color_tex": null,
+          "metallic_roughness_tex": null,
+          "normal_tex": null,
+          "emissive_tex": null,
+          "occlusion_tex": null,
+          "double_sided": false,
+          "alpha_mode": "OPAQUE"
+        },
+        "blueprint": null,
+        "blueprints": [],
+        "visible": true,
+        "tag": "",
+        "collider": {
+          "center": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "is_trigger": false,
+          "friction": 0.6,
+          "restitution": 0.0,
+          "type": "box",
+          "size": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "rigidbody": null,
+        "spawn_kind": null,
+        "spawn_config": null,
+        "is_sun": false,
+        "sun_light": null,
+        "is_point_light": false,
+        "point_light": null,
+        "is_spot_light": false,
+        "spot_light": null,
+        "is_clouds": false,
+        "cloud_settings": null,
+        "is_ocean": false,
+        "ocean_settings": null,
+        "is_terrain": false,
+        "terrain_config": null,
+        "children": []
+      },
+      {
+        "name": "Ramp",
+        "position": [
+          6.0,
+          0.75,
+          16.0
+        ],
+        "rotation_euler": [
+          14.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          6.0,
+          0.5,
+          8.0
+        ],
+        "source_path": null,
+        "mesh_type": "cube",
+        "mesh_params": {
+          "size": 1.0
+        },
+        "material": {
+          "name": "Ramp_mat",
+          "base_color": [
+            0.5,
+            0.48,
+            0.45,
+            1
+          ],
+          "metallic": 0.1,
+          "roughness": 0.85,
+          "emissive": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "emissive_intensity": 1.0,
+          "alpha_cutoff": 0.5,
+          "base_color_tex": null,
+          "metallic_roughness_tex": null,
+          "normal_tex": null,
+          "emissive_tex": null,
+          "occlusion_tex": null,
+          "double_sided": false,
+          "alpha_mode": "OPAQUE"
+        },
+        "blueprint": null,
+        "blueprints": [],
+        "visible": true,
+        "tag": "",
+        "collider": {
+          "center": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "is_trigger": false,
+          "friction": 0.6,
+          "restitution": 0.0,
+          "type": "box",
+          "size": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "rigidbody": null,
+        "spawn_kind": null,
+        "spawn_config": null,
+        "is_sun": false,
+        "sun_light": null,
+        "is_point_light": false,
+        "point_light": null,
+        "is_spot_light": false,
+        "spot_light": null,
+        "is_clouds": false,
+        "cloud_settings": null,
+        "is_ocean": false,
+        "ocean_settings": null,
+        "is_terrain": false,
+        "terrain_config": null,
+        "children": []
+      },
+      {
+        "name": "Step 1",
+        "position": [
+          -7.0,
+          0.09,
+          14.0
+        ],
+        "rotation_euler": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          5.0,
+          0.18,
+          0.45
+        ],
+        "source_path": null,
+        "mesh_type": "cube",
+        "mesh_params": {
+          "size": 1.0
+        },
+        "material": {
+          "name": "Step 1_mat",
+          "base_color": [
+            0.58,
+            0.55,
+            0.5,
+            1
+          ],
+          "metallic": 0.1,
+          "roughness": 0.85,
+          "emissive": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "emissive_intensity": 1.0,
+          "alpha_cutoff": 0.5,
+          "base_color_tex": null,
+          "metallic_roughness_tex": null,
+          "normal_tex": null,
+          "emissive_tex": null,
+          "occlusion_tex": null,
+          "double_sided": false,
+          "alpha_mode": "OPAQUE"
+        },
+        "blueprint": null,
+        "blueprints": [],
+        "visible": true,
+        "tag": "",
+        "collider": {
+          "center": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "is_trigger": false,
+          "friction": 0.6,
+          "restitution": 0.0,
+          "type": "box",
+          "size": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "rigidbody": null,
+        "spawn_kind": null,
+        "spawn_config": null,
+        "is_sun": false,
+        "sun_light": null,
+        "is_point_light": false,
+        "point_light": null,
+        "is_spot_light": false,
+        "spot_light": null,
+        "is_clouds": false,
+        "cloud_settings": null,
+        "is_ocean": false,
+        "ocean_settings": null,
+        "is_terrain": false,
+        "terrain_config": null,
+        "children": []
+      },
+      {
+        "name": "Step 2",
+        "position": [
+          -7.0,
+          0.18,
+          13.55
+        ],
+        "rotation_euler": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          5.0,
+          0.36,
+          0.45
+        ],
+        "source_path": null,
+        "mesh_type": "cube",
+        "mesh_params": {
+          "size": 1.0
+        },
+        "material": {
+          "name": "Step 2_mat",
+          "base_color": [
+            0.58,
+            0.55,
+            0.5,
+            1
+          ],
+          "metallic": 0.1,
+          "roughness": 0.85,
+          "emissive": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "emissive_intensity": 1.0,
+          "alpha_cutoff": 0.5,
+          "base_color_tex": null,
+          "metallic_roughness_tex": null,
+          "normal_tex": null,
+          "emissive_tex": null,
+          "occlusion_tex": null,
+          "double_sided": false,
+          "alpha_mode": "OPAQUE"
+        },
+        "blueprint": null,
+        "blueprints": [],
+        "visible": true,
+        "tag": "",
+        "collider": {
+          "center": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "is_trigger": false,
+          "friction": 0.6,
+          "restitution": 0.0,
+          "type": "box",
+          "size": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "rigidbody": null,
+        "spawn_kind": null,
+        "spawn_config": null,
+        "is_sun": false,
+        "sun_light": null,
+        "is_point_light": false,
+        "point_light": null,
+        "is_spot_light": false,
+        "spot_light": null,
+        "is_clouds": false,
+        "cloud_settings": null,
+        "is_ocean": false,
+        "ocean_settings": null,
+        "is_terrain": false,
+        "terrain_config": null,
+        "children": []
+      },
+      {
+        "name": "Step 3",
+        "position": [
+          -7.0,
+          0.27,
+          13.1
+        ],
+        "rotation_euler": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          5.0,
+          0.54,
+          0.45
+        ],
+        "source_path": null,
+        "mesh_type": "cube",
+        "mesh_params": {
+          "size": 1.0
+        },
+        "material": {
+          "name": "Step 3_mat",
+          "base_color": [
+            0.58,
+            0.55,
+            0.5,
+            1
+          ],
+          "metallic": 0.1,
+          "roughness": 0.85,
+          "emissive": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "emissive_intensity": 1.0,
+          "alpha_cutoff": 0.5,
+          "base_color_tex": null,
+          "metallic_roughness_tex": null,
+          "normal_tex": null,
+          "emissive_tex": null,
+          "occlusion_tex": null,
+          "double_sided": false,
+          "alpha_mode": "OPAQUE"
+        },
+        "blueprint": null,
+        "blueprints": [],
+        "visible": true,
+        "tag": "",
+        "collider": {
+          "center": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "is_trigger": false,
+          "friction": 0.6,
+          "restitution": 0.0,
+          "type": "box",
+          "size": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "rigidbody": null,
+        "spawn_kind": null,
+        "spawn_config": null,
+        "is_sun": false,
+        "sun_light": null,
+        "is_point_light": false,
+        "point_light": null,
+        "is_spot_light": false,
+        "spot_light": null,
+        "is_clouds": false,
+        "cloud_settings": null,
+        "is_ocean": false,
+        "ocean_settings": null,
+        "is_terrain": false,
+        "terrain_config": null,
+        "children": []
+      },
+      {
+        "name": "Step 4",
+        "position": [
+          -7.0,
+          0.36,
+          12.65
+        ],
+        "rotation_euler": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          5.0,
+          0.72,
+          0.45
+        ],
+        "source_path": null,
+        "mesh_type": "cube",
+        "mesh_params": {
+          "size": 1.0
+        },
+        "material": {
+          "name": "Step 4_mat",
+          "base_color": [
+            0.58,
+            0.55,
+            0.5,
+            1
+          ],
+          "metallic": 0.1,
+          "roughness": 0.85,
+          "emissive": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "emissive_intensity": 1.0,
+          "alpha_cutoff": 0.5,
+          "base_color_tex": null,
+          "metallic_roughness_tex": null,
+          "normal_tex": null,
+          "emissive_tex": null,
+          "occlusion_tex": null,
+          "double_sided": false,
+          "alpha_mode": "OPAQUE"
+        },
+        "blueprint": null,
+        "blueprints": [],
+        "visible": true,
+        "tag": "",
+        "collider": {
+          "center": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "is_trigger": false,
+          "friction": 0.6,
+          "restitution": 0.0,
+          "type": "box",
+          "size": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "rigidbody": null,
+        "spawn_kind": null,
+        "spawn_config": null,
+        "is_sun": false,
+        "sun_light": null,
+        "is_point_light": false,
+        "point_light": null,
+        "is_spot_light": false,
+        "spot_light": null,
+        "is_clouds": false,
+        "cloud_settings": null,
+        "is_ocean": false,
+        "ocean_settings": null,
+        "is_terrain": false,
+        "terrain_config": null,
+        "children": []
+      },
+      {
+        "name": "Step 5",
+        "position": [
+          -7.0,
+          0.45,
+          12.2
+        ],
+        "rotation_euler": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          5.0,
+          0.9,
+          0.45
+        ],
+        "source_path": null,
+        "mesh_type": "cube",
+        "mesh_params": {
+          "size": 1.0
+        },
+        "material": {
+          "name": "Step 5_mat",
+          "base_color": [
+            0.58,
+            0.55,
+            0.5,
+            1
+          ],
+          "metallic": 0.1,
+          "roughness": 0.85,
+          "emissive": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "emissive_intensity": 1.0,
+          "alpha_cutoff": 0.5,
+          "base_color_tex": null,
+          "metallic_roughness_tex": null,
+          "normal_tex": null,
+          "emissive_tex": null,
+          "occlusion_tex": null,
+          "double_sided": false,
+          "alpha_mode": "OPAQUE"
+        },
+        "blueprint": null,
+        "blueprints": [],
+        "visible": true,
+        "tag": "",
+        "collider": {
+          "center": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "is_trigger": false,
+          "friction": 0.6,
+          "restitution": 0.0,
+          "type": "box",
+          "size": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "rigidbody": null,
+        "spawn_kind": null,
+        "spawn_config": null,
+        "is_sun": false,
+        "sun_light": null,
+        "is_point_light": false,
+        "point_light": null,
+        "is_spot_light": false,
+        "spot_light": null,
+        "is_clouds": false,
+        "cloud_settings": null,
+        "is_ocean": false,
+        "ocean_settings": null,
+        "is_terrain": false,
+        "terrain_config": null,
+        "children": []
+      },
+      {
+        "name": "Step 6",
+        "position": [
+          -7.0,
+          0.54,
+          11.75
+        ],
+        "rotation_euler": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          5.0,
+          1.08,
+          0.45
+        ],
+        "source_path": null,
+        "mesh_type": "cube",
+        "mesh_params": {
+          "size": 1.0
+        },
+        "material": {
+          "name": "Step 6_mat",
+          "base_color": [
+            0.58,
+            0.55,
+            0.5,
+            1
+          ],
+          "metallic": 0.1,
+          "roughness": 0.85,
+          "emissive": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "emissive_intensity": 1.0,
+          "alpha_cutoff": 0.5,
+          "base_color_tex": null,
+          "metallic_roughness_tex": null,
+          "normal_tex": null,
+          "emissive_tex": null,
+          "occlusion_tex": null,
+          "double_sided": false,
+          "alpha_mode": "OPAQUE"
+        },
+        "blueprint": null,
+        "blueprints": [],
+        "visible": true,
+        "tag": "",
+        "collider": {
+          "center": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "is_trigger": false,
+          "friction": 0.6,
+          "restitution": 0.0,
+          "type": "box",
+          "size": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "rigidbody": null,
+        "spawn_kind": null,
+        "spawn_config": null,
+        "is_sun": false,
+        "sun_light": null,
+        "is_point_light": false,
+        "point_light": null,
+        "is_spot_light": false,
+        "spot_light": null,
+        "is_clouds": false,
+        "cloud_settings": null,
+        "is_ocean": false,
+        "ocean_settings": null,
+        "is_terrain": false,
+        "terrain_config": null,
+        "children": []
+      },
+      {
+        "name": "Player Spawn",
+        "position": [
+          0.0,
+          1.0,
+          20.0
+        ],
+        "rotation_euler": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "source_path": null,
+        "mesh_type": "capsule",
+        "mesh_params": {
+          "radius": 0.35,
+          "height": 1.8
+        },
+        "material": {
+          "name": "player_spawn_mat",
+          "base_color": [
+            0.2,
+            0.9,
+            0.6,
+            0.35
+          ],
+          "metallic": 0.0,
+          "roughness": 0.6,
+          "emissive": [
+            0.1,
+            0.55,
+            0.3
+          ],
+          "emissive_intensity": 0.6,
+          "alpha_cutoff": 0.5,
+          "base_color_tex": null,
+          "metallic_roughness_tex": null,
+          "normal_tex": null,
+          "emissive_tex": null,
+          "occlusion_tex": null,
+          "double_sided": true,
+          "alpha_mode": "BLEND"
+        },
+        "blueprint": null,
+        "blueprints": [],
+        "visible": true,
+        "tag": "",
+        "collider": null,
+        "rigidbody": null,
+        "spawn_kind": "player",
+        "spawn_config": {
+          "health": 100.0,
+          "bullets": 120,
+          "walk_speed": 6.0,
+          "run_speed": 10.0,
+          "cam_rot_speed": 0.13
+        },
+        "is_sun": false,
+        "sun_light": null,
+        "is_point_light": false,
+        "point_light": null,
+        "is_spot_light": false,
+        "spot_light": null,
+        "is_clouds": false,
+        "cloud_settings": null,
+        "is_ocean": false,
+        "ocean_settings": null,
+        "is_terrain": false,
+        "terrain_config": null,
+        "children": []
+      },
+      {
+        "name": "NPC Path",
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation_euler": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "source_path": null,
+        "mesh_type": null,
+        "mesh_params": null,
+        "material": null,
+        "blueprint": {
+          "class": "NPCPath",
+          "properties": {
+            "closed": true
+          }
+        },
+        "blueprints": [
+          {
+            "class": "NPCPath",
+            "properties": {
+              "closed": true
+            }
+          }
+        ],
+        "visible": true,
+        "tag": "",
+        "collider": null,
+        "rigidbody": null,
+        "spawn_kind": null,
+        "spawn_config": null,
+        "is_sun": false,
+        "sun_light": null,
+        "is_point_light": false,
+        "point_light": null,
+        "is_spot_light": false,
+        "spot_light": null,
+        "is_clouds": false,
+        "cloud_settings": null,
+        "is_ocean": false,
+        "ocean_settings": null,
+        "is_terrain": false,
+        "terrain_config": null,
+        "children": []
+      },
+      {
+        "name": "NPC Path P1",
+        "position": [
+          7.0,
+          0.0,
+          0.0
+        ],
+        "rotation_euler": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "source_path": null,
+        "mesh_type": "sphere",
+        "mesh_params": {
+          "radius": 0.22
+        },
+        "material": {
+          "name": "NPC Path P1_mat",
+          "base_color": [
+            0.25,
+            0.85,
+            1.0,
+            1.0
+          ],
+          "metallic": 0.0,
+          "roughness": 0.4,
+          "emissive": [
+            0.05,
+            0.35,
+            0.5
+          ],
+          "emissive_intensity": 1.0,
+          "alpha_cutoff": 0.5,
+          "base_color_tex": null,
+          "metallic_roughness_tex": null,
+          "normal_tex": null,
+          "emissive_tex": null,
+          "occlusion_tex": null,
+          "double_sided": false,
+          "alpha_mode": "OPAQUE"
+        },
+        "blueprint": {
+          "class": "NPCWaypoint",
+          "properties": {
+            "path": "NPC Path",
+            "order": 0,
+            "wait": -1.0
+          }
+        },
+        "blueprints": [
+          {
+            "class": "NPCWaypoint",
+            "properties": {
+              "path": "NPC Path",
+              "order": 0,
+              "wait": -1.0
+            }
+          }
+        ],
+        "visible": true,
+        "tag": "",
+        "collider": null,
+        "rigidbody": null,
+        "spawn_kind": null,
+        "spawn_config": null,
+        "is_sun": false,
+        "sun_light": null,
+        "is_point_light": false,
+        "point_light": null,
+        "is_spot_light": false,
+        "spot_light": null,
+        "is_clouds": false,
+        "cloud_settings": null,
+        "is_ocean": false,
+        "ocean_settings": null,
+        "is_terrain": false,
+        "terrain_config": null,
+        "children": []
+      },
+      {
+        "name": "NPC Path P2",
+        "position": [
+          4.949748,
+          0.0,
+          4.949748
+        ],
+        "rotation_euler": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "source_path": null,
+        "mesh_type": "sphere",
+        "mesh_params": {
+          "radius": 0.22
+        },
+        "material": {
+          "name": "NPC Path P2_mat",
+          "base_color": [
+            0.25,
+            0.85,
+            1.0,
+            1.0
+          ],
+          "metallic": 0.0,
+          "roughness": 0.4,
+          "emissive": [
+            0.05,
+            0.35,
+            0.5
+          ],
+          "emissive_intensity": 1.0,
+          "alpha_cutoff": 0.5,
+          "base_color_tex": null,
+          "metallic_roughness_tex": null,
+          "normal_tex": null,
+          "emissive_tex": null,
+          "occlusion_tex": null,
+          "double_sided": false,
+          "alpha_mode": "OPAQUE"
+        },
+        "blueprint": {
+          "class": "NPCWaypoint",
+          "properties": {
+            "path": "NPC Path",
+            "order": 1,
+            "wait": -1.0
+          }
+        },
+        "blueprints": [
+          {
+            "class": "NPCWaypoint",
+            "properties": {
+              "path": "NPC Path",
+              "order": 1,
+              "wait": -1.0
+            }
+          }
+        ],
+        "visible": true,
+        "tag": "",
+        "collider": null,
+        "rigidbody": null,
+        "spawn_kind": null,
+        "spawn_config": null,
+        "is_sun": false,
+        "sun_light": null,
+        "is_point_light": false,
+        "point_light": null,
+        "is_spot_light": false,
+        "spot_light": null,
+        "is_clouds": false,
+        "cloud_settings": null,
+        "is_ocean": false,
+        "ocean_settings": null,
+        "is_terrain": false,
+        "terrain_config": null,
+        "children": []
+      },
+      {
+        "name": "NPC Path P3",
+        "position": [
+          0.0,
+          0.0,
+          7.0
+        ],
+        "rotation_euler": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "source_path": null,
+        "mesh_type": "sphere",
+        "mesh_params": {
+          "radius": 0.22
+        },
+        "material": {
+          "name": "NPC Path P3_mat",
+          "base_color": [
+            0.25,
+            0.85,
+            1.0,
+            1.0
+          ],
+          "metallic": 0.0,
+          "roughness": 0.4,
+          "emissive": [
+            0.05,
+            0.35,
+            0.5
+          ],
+          "emissive_intensity": 1.0,
+          "alpha_cutoff": 0.5,
+          "base_color_tex": null,
+          "metallic_roughness_tex": null,
+          "normal_tex": null,
+          "emissive_tex": null,
+          "occlusion_tex": null,
+          "double_sided": false,
+          "alpha_mode": "OPAQUE"
+        },
+        "blueprint": {
+          "class": "NPCWaypoint",
+          "properties": {
+            "path": "NPC Path",
+            "order": 2,
+            "wait": -1.0
+          }
+        },
+        "blueprints": [
+          {
+            "class": "NPCWaypoint",
+            "properties": {
+              "path": "NPC Path",
+              "order": 2,
+              "wait": -1.0
+            }
+          }
+        ],
+        "visible": true,
+        "tag": "",
+        "collider": null,
+        "rigidbody": null,
+        "spawn_kind": null,
+        "spawn_config": null,
+        "is_sun": false,
+        "sun_light": null,
+        "is_point_light": false,
+        "point_light": null,
+        "is_spot_light": false,
+        "spot_light": null,
+        "is_clouds": false,
+        "cloud_settings": null,
+        "is_ocean": false,
+        "ocean_settings": null,
+        "is_terrain": false,
+        "terrain_config": null,
+        "children": []
+      },
+      {
+        "name": "NPC Path P4",
+        "position": [
+          -4.949748,
+          0.0,
+          4.949748
+        ],
+        "rotation_euler": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "source_path": null,
+        "mesh_type": "sphere",
+        "mesh_params": {
+          "radius": 0.22
+        },
+        "material": {
+          "name": "NPC Path P4_mat",
+          "base_color": [
+            0.25,
+            0.85,
+            1.0,
+            1.0
+          ],
+          "metallic": 0.0,
+          "roughness": 0.4,
+          "emissive": [
+            0.05,
+            0.35,
+            0.5
+          ],
+          "emissive_intensity": 1.0,
+          "alpha_cutoff": 0.5,
+          "base_color_tex": null,
+          "metallic_roughness_tex": null,
+          "normal_tex": null,
+          "emissive_tex": null,
+          "occlusion_tex": null,
+          "double_sided": false,
+          "alpha_mode": "OPAQUE"
+        },
+        "blueprint": {
+          "class": "NPCWaypoint",
+          "properties": {
+            "path": "NPC Path",
+            "order": 3,
+            "wait": -1.0
+          }
+        },
+        "blueprints": [
+          {
+            "class": "NPCWaypoint",
+            "properties": {
+              "path": "NPC Path",
+              "order": 3,
+              "wait": -1.0
+            }
+          }
+        ],
+        "visible": true,
+        "tag": "",
+        "collider": null,
+        "rigidbody": null,
+        "spawn_kind": null,
+        "spawn_config": null,
+        "is_sun": false,
+        "sun_light": null,
+        "is_point_light": false,
+        "point_light": null,
+        "is_spot_light": false,
+        "spot_light": null,
+        "is_clouds": false,
+        "cloud_settings": null,
+        "is_ocean": false,
+        "ocean_settings": null,
+        "is_terrain": false,
+        "terrain_config": null,
+        "children": []
+      },
+      {
+        "name": "NPC Path P5",
+        "position": [
+          -7.0,
+          0.0,
+          0.0
+        ],
+        "rotation_euler": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "source_path": null,
+        "mesh_type": "sphere",
+        "mesh_params": {
+          "radius": 0.22
+        },
+        "material": {
+          "name": "NPC Path P5_mat",
+          "base_color": [
+            0.25,
+            0.85,
+            1.0,
+            1.0
+          ],
+          "metallic": 0.0,
+          "roughness": 0.4,
+          "emissive": [
+            0.05,
+            0.35,
+            0.5
+          ],
+          "emissive_intensity": 1.0,
+          "alpha_cutoff": 0.5,
+          "base_color_tex": null,
+          "metallic_roughness_tex": null,
+          "normal_tex": null,
+          "emissive_tex": null,
+          "occlusion_tex": null,
+          "double_sided": false,
+          "alpha_mode": "OPAQUE"
+        },
+        "blueprint": {
+          "class": "NPCWaypoint",
+          "properties": {
+            "path": "NPC Path",
+            "order": 4,
+            "wait": -1.0
+          }
+        },
+        "blueprints": [
+          {
+            "class": "NPCWaypoint",
+            "properties": {
+              "path": "NPC Path",
+              "order": 4,
+              "wait": -1.0
+            }
+          }
+        ],
+        "visible": true,
+        "tag": "",
+        "collider": null,
+        "rigidbody": null,
+        "spawn_kind": null,
+        "spawn_config": null,
+        "is_sun": false,
+        "sun_light": null,
+        "is_point_light": false,
+        "point_light": null,
+        "is_spot_light": false,
+        "spot_light": null,
+        "is_clouds": false,
+        "cloud_settings": null,
+        "is_ocean": false,
+        "ocean_settings": null,
+        "is_terrain": false,
+        "terrain_config": null,
+        "children": []
+      },
+      {
+        "name": "NPC Path P6",
+        "position": [
+          -4.949748,
+          0.0,
+          -4.949748
+        ],
+        "rotation_euler": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "source_path": null,
+        "mesh_type": "sphere",
+        "mesh_params": {
+          "radius": 0.22
+        },
+        "material": {
+          "name": "NPC Path P6_mat",
+          "base_color": [
+            0.25,
+            0.85,
+            1.0,
+            1.0
+          ],
+          "metallic": 0.0,
+          "roughness": 0.4,
+          "emissive": [
+            0.05,
+            0.35,
+            0.5
+          ],
+          "emissive_intensity": 1.0,
+          "alpha_cutoff": 0.5,
+          "base_color_tex": null,
+          "metallic_roughness_tex": null,
+          "normal_tex": null,
+          "emissive_tex": null,
+          "occlusion_tex": null,
+          "double_sided": false,
+          "alpha_mode": "OPAQUE"
+        },
+        "blueprint": {
+          "class": "NPCWaypoint",
+          "properties": {
+            "path": "NPC Path",
+            "order": 5,
+            "wait": -1.0
+          }
+        },
+        "blueprints": [
+          {
+            "class": "NPCWaypoint",
+            "properties": {
+              "path": "NPC Path",
+              "order": 5,
+              "wait": -1.0
+            }
+          }
+        ],
+        "visible": true,
+        "tag": "",
+        "collider": null,
+        "rigidbody": null,
+        "spawn_kind": null,
+        "spawn_config": null,
+        "is_sun": false,
+        "sun_light": null,
+        "is_point_light": false,
+        "point_light": null,
+        "is_spot_light": false,
+        "spot_light": null,
+        "is_clouds": false,
+        "cloud_settings": null,
+        "is_ocean": false,
+        "ocean_settings": null,
+        "is_terrain": false,
+        "terrain_config": null,
+        "children": []
+      },
+      {
+        "name": "NPC Path P7",
+        "position": [
+          -0.0,
+          0.0,
+          -7.0
+        ],
+        "rotation_euler": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "source_path": null,
+        "mesh_type": "sphere",
+        "mesh_params": {
+          "radius": 0.22
+        },
+        "material": {
+          "name": "NPC Path P7_mat",
+          "base_color": [
+            0.25,
+            0.85,
+            1.0,
+            1.0
+          ],
+          "metallic": 0.0,
+          "roughness": 0.4,
+          "emissive": [
+            0.05,
+            0.35,
+            0.5
+          ],
+          "emissive_intensity": 1.0,
+          "alpha_cutoff": 0.5,
+          "base_color_tex": null,
+          "metallic_roughness_tex": null,
+          "normal_tex": null,
+          "emissive_tex": null,
+          "occlusion_tex": null,
+          "double_sided": false,
+          "alpha_mode": "OPAQUE"
+        },
+        "blueprint": {
+          "class": "NPCWaypoint",
+          "properties": {
+            "path": "NPC Path",
+            "order": 6,
+            "wait": -1.0
+          }
+        },
+        "blueprints": [
+          {
+            "class": "NPCWaypoint",
+            "properties": {
+              "path": "NPC Path",
+              "order": 6,
+              "wait": -1.0
+            }
+          }
+        ],
+        "visible": true,
+        "tag": "",
+        "collider": null,
+        "rigidbody": null,
+        "spawn_kind": null,
+        "spawn_config": null,
+        "is_sun": false,
+        "sun_light": null,
+        "is_point_light": false,
+        "point_light": null,
+        "is_spot_light": false,
+        "spot_light": null,
+        "is_clouds": false,
+        "cloud_settings": null,
+        "is_ocean": false,
+        "ocean_settings": null,
+        "is_terrain": false,
+        "terrain_config": null,
+        "children": []
+      },
+      {
+        "name": "NPC Path P8",
+        "position": [
+          4.949748,
+          0.0,
+          -4.949748
+        ],
+        "rotation_euler": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "source_path": null,
+        "mesh_type": "sphere",
+        "mesh_params": {
+          "radius": 0.22
+        },
+        "material": {
+          "name": "NPC Path P8_mat",
+          "base_color": [
+            0.25,
+            0.85,
+            1.0,
+            1.0
+          ],
+          "metallic": 0.0,
+          "roughness": 0.4,
+          "emissive": [
+            0.05,
+            0.35,
+            0.5
+          ],
+          "emissive_intensity": 1.0,
+          "alpha_cutoff": 0.5,
+          "base_color_tex": null,
+          "metallic_roughness_tex": null,
+          "normal_tex": null,
+          "emissive_tex": null,
+          "occlusion_tex": null,
+          "double_sided": false,
+          "alpha_mode": "OPAQUE"
+        },
+        "blueprint": {
+          "class": "NPCWaypoint",
+          "properties": {
+            "path": "NPC Path",
+            "order": 7,
+            "wait": -1.0
+          }
+        },
+        "blueprints": [
+          {
+            "class": "NPCWaypoint",
+            "properties": {
+              "path": "NPC Path",
+              "order": 7,
+              "wait": -1.0
+            }
+          }
+        ],
+        "visible": true,
+        "tag": "",
+        "collider": null,
+        "rigidbody": null,
+        "spawn_kind": null,
+        "spawn_config": null,
+        "is_sun": false,
+        "sun_light": null,
+        "is_point_light": false,
+        "point_light": null,
+        "is_spot_light": false,
+        "spot_light": null,
+        "is_clouds": false,
+        "cloud_settings": null,
+        "is_ocean": false,
+        "ocean_settings": null,
+        "is_terrain": false,
+        "terrain_config": null,
+        "children": []
+      },
+      {
+        "name": "Townsperson",
+        "position": [
+          6.191586,
+          0.887449,
+          1.951684
+        ],
+        "rotation_euler": [
+          0.0,
+          -169.797592,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "source_path": null,
+        "mesh_type": null,
+        "mesh_params": null,
+        "material": null,
+        "blueprint": {
+          "class": "MHCharacter",
+          "properties": {
+            "foot_ik": true,
+            "preview": "idle",
+            "animations": {},
+            "character": {
+              "macro": {
+                "gender": 0.8762121253149732,
+                "age": 0.6493527875702412,
+                "muscle": 0.40237232861487837,
+                "weight": 0.6541042493366792,
+                "height": 0.5274348329974962,
+                "proportions": 0.7446845127819355,
+                "cupsize": 0.558338977475561,
+                "firmness": 0.48147844915801347,
+                "african": 0.75,
+                "asian": 0.2379294257066842,
+                "caucasian": 0.012070574293315789
+              },
+              "modifiers": {
+                "nose-base-down-up": -0.091,
+                "eye-height1-decr-incr": -0.063,
+                "mouth-lowerlip-height-decr-incr": 0.234,
+                "eye-eyefold-down-up": -0.068,
+                "eye-corner2-down-up": -0.027,
+                "nose-compression-compress-uncompress": -0.157,
+                "eyebrows-angle-down-up": 0.205,
+                "ear-shape-pointed-triangle": -0.087,
+                "eyebrows-trans-backward-forward": 0.25,
+                "mouth-cupidsbow-decr-incr": 0.097,
+                "stomach-pregnant-decr-incr": 0.062,
+                "torso-vshape-decr-incr": 0.211,
+                "hip-scale-horiz-decr-incr": -0.2
+              },
+              "body": "basemesh",
+              "skin": "middleage_african_male",
+              "skin_color": [
+                1.0,
+                1.0,
+                1.0
+              ],
+              "eyes": "blue",
+              "eyes_mesh": "eyes/low-poly",
+              "eyebrows": "eyebrows/eyebrow011",
+              "eyelashes": "eyelashes/eyelashes01",
+              "hair": "hair/faydaen_hair_1",
+              "hair_material": "hair1",
+              "hair_color": [
+                1.0,
+                1.0,
+                1.0
+              ],
+              "clothes": [
+                {
+                  "id": "clothes/toigo_male_suit_3",
+                  "material": "",
+                  "color": [
+                    1,
+                    1,
+                    1
+                  ]
+                },
+                {
+                  "id": "clothes/shoes01",
+                  "material": "",
+                  "color": [
+                    1,
+                    1,
+                    1
+                  ]
+                }
+              ]
+            },
+            "capsule_height": 1.7549
+          }
+        },
+        "blueprints": [
+          {
+            "class": "MHCharacter",
+            "properties": {
+              "foot_ik": true,
+              "preview": "idle",
+              "animations": {},
+              "character": {
+                "macro": {
+                  "gender": 0.8762121253149732,
+                  "age": 0.6493527875702412,
+                  "muscle": 0.40237232861487837,
+                  "weight": 0.6541042493366792,
+                  "height": 0.5274348329974962,
+                  "proportions": 0.7446845127819355,
+                  "cupsize": 0.558338977475561,
+                  "firmness": 0.48147844915801347,
+                  "african": 0.75,
+                  "asian": 0.2379294257066842,
+                  "caucasian": 0.012070574293315789
+                },
+                "modifiers": {
+                  "nose-base-down-up": -0.091,
+                  "eye-height1-decr-incr": -0.063,
+                  "mouth-lowerlip-height-decr-incr": 0.234,
+                  "eye-eyefold-down-up": -0.068,
+                  "eye-corner2-down-up": -0.027,
+                  "nose-compression-compress-uncompress": -0.157,
+                  "eyebrows-angle-down-up": 0.205,
+                  "ear-shape-pointed-triangle": -0.087,
+                  "eyebrows-trans-backward-forward": 0.25,
+                  "mouth-cupidsbow-decr-incr": 0.097,
+                  "stomach-pregnant-decr-incr": 0.062,
+                  "torso-vshape-decr-incr": 0.211,
+                  "hip-scale-horiz-decr-incr": -0.2
+                },
+                "body": "basemesh",
+                "skin": "middleage_african_male",
+                "skin_color": [
+                  1.0,
+                  1.0,
+                  1.0
+                ],
+                "eyes": "blue",
+                "eyes_mesh": "eyes/low-poly",
+                "eyebrows": "eyebrows/eyebrow011",
+                "eyelashes": "eyelashes/eyelashes01",
+                "hair": "hair/faydaen_hair_1",
+                "hair_material": "hair1",
+                "hair_color": [
+                  1.0,
+                  1.0,
+                  1.0
+                ],
+                "clothes": [
+                  {
+                    "id": "clothes/toigo_male_suit_3",
+                    "material": "",
+                    "color": [
+                      1,
+                      1,
+                      1
+                    ]
+                  },
+                  {
+                    "id": "clothes/shoes01",
+                    "material": "",
+                    "color": [
+                      1,
+                      1,
+                      1
+                    ]
+                  }
+                ]
+              },
+              "capsule_height": 1.7549
+            }
+          },
+          {
+            "class": "NPCWalker",
+            "properties": {
+              "path": "NPC Path",
+              "speed": 1.07,
+              "run": false,
+              "mode": "random",
+              "wait_time": 1.7,
+              "start_at_nearest": true,
+              "wander_radius": 6.0,
+              "greet_player": true,
+              "greet_range": 3.0
+            }
+          }
+        ],
+        "visible": true,
+        "tag": "",
+        "collider": null,
+        "rigidbody": null,
+        "spawn_kind": null,
+        "spawn_config": null,
+        "is_sun": false,
+        "sun_light": null,
+        "is_point_light": false,
+        "point_light": null,
+        "is_spot_light": false,
+        "spot_light": null,
+        "is_clouds": false,
+        "cloud_settings": null,
+        "is_ocean": false,
+        "ocean_settings": null,
+        "is_terrain": false,
+        "terrain_config": null,
+        "children": []
+      },
+      {
+        "name": "Townsperson (1)",
+        "position": [
+          3.744673,
+          0.874429,
+          5.448905
+        ],
+        "rotation_euler": [
+          0.0,
+          -146.993866,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "source_path": null,
+        "mesh_type": null,
+        "mesh_params": null,
+        "material": null,
+        "blueprint": {
+          "class": "MHCharacter",
+          "properties": {
+            "foot_ik": true,
+            "preview": "idle",
+            "animations": {},
+            "character": {
+              "macro": {
+                "gender": 0.9038012096291095,
+                "age": 0.5184379751393113,
+                "muscle": 0.3099956876258965,
+                "weight": 0.4951961136973077,
+                "height": 0.5701041952991766,
+                "proportions": 0.763205049074819,
+                "cupsize": 0.39722668405632183,
+                "firmness": 0.42327903565048913,
+                "african": 0.13480677627767695,
+                "asian": 0.75,
+                "caucasian": 0.11519322372232305
+              },
+              "modifiers": {
+                "eye-bag-decr-incr": -0.183,
+                "eyebrows-trans-backward-forward": 0.204,
+                "ear-scale-depth-decr-incr": -0.054,
+                "ear-lobe-decr-incr": -0.306,
+                "mouth-upperlip-volume-decr-incr": -0.023,
+                "nose-scale-vert-decr-incr": -0.202,
+                "mouth-scale-depth-decr-incr": 0.107,
+                "nose-compression-compress-uncompress": 0.087,
+                "mouth-trans-down-up": -0.12,
+                "eye-eyefold-concave-convex": 0.251,
+                "stomach-pregnant-decr-incr": 0.169,
+                "torso-vshape-decr-incr": -0.254
+              },
+              "body": "basemesh",
+              "skin": "young_asian_male",
+              "skin_color": [
+                1.0,
+                1.0,
+                1.0
+              ],
+              "eyes": "grey",
+              "eyes_mesh": "eyes/low-poly",
+              "eyebrows": "eyebrows/eyebrow001",
+              "eyelashes": "eyelashes/eyelashes02",
+              "hair": "hair/short01",
+              "hair_material": "jartur69_short01_dark_ginger",
+              "hair_color": [
+                1.0,
+                1.0,
+                1.0
+              ],
+              "clothes": [
+                {
+                  "id": "clothes/toigo_fisherman_sweater",
+                  "material": "",
+                  "color": [
+                    1,
+                    1,
+                    1
+                  ]
+                },
+                {
+                  "id": "clothes/cortu_jeans_shorts",
+                  "material": "",
+                  "color": [
+                    1,
+                    1,
+                    1
+                  ]
+                },
+                {
+                  "id": "clothes/shoes04",
+                  "material": "",
+                  "color": [
+                    1,
+                    1,
+                    1
+                  ]
+                },
+                {
+                  "id": "clothes/grinsegold_uncle_joshis_hat",
+                  "material": "",
+                  "color": [
+                    1,
+                    1,
+                    1
+                  ]
+                }
+              ]
+            },
+            "capsule_height": 1.7289
+          }
+        },
+        "blueprints": [
+          {
+            "class": "MHCharacter",
+            "properties": {
+              "foot_ik": true,
+              "preview": "idle",
+              "animations": {},
+              "character": {
+                "macro": {
+                  "gender": 0.9038012096291095,
+                  "age": 0.5184379751393113,
+                  "muscle": 0.3099956876258965,
+                  "weight": 0.4951961136973077,
+                  "height": 0.5701041952991766,
+                  "proportions": 0.763205049074819,
+                  "cupsize": 0.39722668405632183,
+                  "firmness": 0.42327903565048913,
+                  "african": 0.13480677627767695,
+                  "asian": 0.75,
+                  "caucasian": 0.11519322372232305
+                },
+                "modifiers": {
+                  "eye-bag-decr-incr": -0.183,
+                  "eyebrows-trans-backward-forward": 0.204,
+                  "ear-scale-depth-decr-incr": -0.054,
+                  "ear-lobe-decr-incr": -0.306,
+                  "mouth-upperlip-volume-decr-incr": -0.023,
+                  "nose-scale-vert-decr-incr": -0.202,
+                  "mouth-scale-depth-decr-incr": 0.107,
+                  "nose-compression-compress-uncompress": 0.087,
+                  "mouth-trans-down-up": -0.12,
+                  "eye-eyefold-concave-convex": 0.251,
+                  "stomach-pregnant-decr-incr": 0.169,
+                  "torso-vshape-decr-incr": -0.254
+                },
+                "body": "basemesh",
+                "skin": "young_asian_male",
+                "skin_color": [
+                  1.0,
+                  1.0,
+                  1.0
+                ],
+                "eyes": "grey",
+                "eyes_mesh": "eyes/low-poly",
+                "eyebrows": "eyebrows/eyebrow001",
+                "eyelashes": "eyelashes/eyelashes02",
+                "hair": "hair/short01",
+                "hair_material": "jartur69_short01_dark_ginger",
+                "hair_color": [
+                  1.0,
+                  1.0,
+                  1.0
+                ],
+                "clothes": [
+                  {
+                    "id": "clothes/toigo_fisherman_sweater",
+                    "material": "",
+                    "color": [
+                      1,
+                      1,
+                      1
+                    ]
+                  },
+                  {
+                    "id": "clothes/cortu_jeans_shorts",
+                    "material": "",
+                    "color": [
+                      1,
+                      1,
+                      1
+                    ]
+                  },
+                  {
+                    "id": "clothes/shoes04",
+                    "material": "",
+                    "color": [
+                      1,
+                      1,
+                      1
+                    ]
+                  },
+                  {
+                    "id": "clothes/grinsegold_uncle_joshis_hat",
+                    "material": "",
+                    "color": [
+                      1,
+                      1,
+                      1
+                    ]
+                  }
+                ]
+              },
+              "capsule_height": 1.7289
+            }
+          },
+          {
+            "class": "NPCWalker",
+            "properties": {
+              "path": "NPC Path",
+              "speed": 1.24,
+              "run": false,
+              "mode": "loop",
+              "wait_time": 1.1,
+              "start_at_nearest": true,
+              "wander_radius": 6.0,
+              "greet_player": true,
+              "greet_range": 3.0
+            }
+          }
+        ],
+        "visible": true,
+        "tag": "",
+        "collider": null,
+        "rigidbody": null,
+        "spawn_kind": null,
+        "spawn_config": null,
+        "is_sun": false,
+        "sun_light": null,
+        "is_point_light": false,
+        "point_light": null,
+        "is_spot_light": false,
+        "spot_light": null,
+        "is_clouds": false,
+        "cloud_settings": null,
+        "is_ocean": false,
+        "ocean_settings": null,
+        "is_terrain": false,
+        "terrain_config": null,
+        "children": []
+      },
+      {
+        "name": "Townsperson (2)",
+        "position": [
+          -1.162198,
+          0.87813,
+          6.518602
+        ],
+        "rotation_euler": [
+          0.0,
+          -120.890495,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "source_path": null,
+        "mesh_type": null,
+        "mesh_params": null,
+        "material": null,
+        "blueprint": {
+          "class": "MHCharacter",
+          "properties": {
+            "foot_ik": true,
+            "preview": "idle",
+            "animations": {},
+            "character": {
+              "macro": {
+                "gender": 0.9331623696303073,
+                "age": 0.7511480536384608,
+                "muscle": 0.5479668352226588,
+                "weight": 0.6213791454779546,
+                "height": 0.4166423587959329,
+                "proportions": 0.7397195951048083,
+                "cupsize": 0.6023320690354685,
+                "firmness": 0.2605497782618664,
+                "african": 0.75,
+                "asian": 0.08955962242500076,
+                "caucasian": 0.16044037757499924
+              },
+              "modifiers": {
+                "eyebrows-trans-down-up": -0.041,
+                "mouth-angles-down-up": 0.001,
+                "mouth-upperlip-volume-decr-incr": -0.195,
+                "eye-eyefold-down-up": 0.021,
+                "nose-flaring-decr-incr": -0.248,
+                "ear-scale-vert-decr-incr": 0.085,
+                "chin-prognathism-decr-incr": 0.091,
+                "chin-prominent-decr-incr": 0.119,
+                "nose-volume-decr-incr": -0.177,
+                "nose-trans-down-up": -0.286,
+                "stomach-pregnant-decr-incr": 0.113
+              },
+              "body": "basemesh",
+              "skin": "middleage_african_male",
+              "skin_color": [
+                1.0,
+                1.0,
+                1.0
+              ],
+              "eyes": "grey",
+              "eyes_mesh": "eyes/low-poly",
+              "eyebrows": "eyebrows/eyebrow007",
+              "eyelashes": "eyelashes/eyelashes01",
+              "hair": "hair/short02",
+              "hair_material": "bogdan666_short_02_gray",
+              "hair_color": [
+                1.0,
+                1.0,
+                1.0
+              ],
+              "clothes": [
+                {
+                  "id": "clothes/toigo_male_suit_tie_and_jacket",
+                  "material": "",
+                  "color": [
+                    1,
+                    1,
+                    1
+                  ]
+                },
+                {
+                  "id": "clothes/shoes02",
+                  "material": "",
+                  "color": [
+                    1,
+                    1,
+                    1
+                  ]
+                }
+              ]
+            },
+            "capsule_height": 1.7363
+          }
+        },
+        "blueprints": [
+          {
+            "class": "MHCharacter",
+            "properties": {
+              "foot_ik": true,
+              "preview": "idle",
+              "animations": {},
+              "character": {
+                "macro": {
+                  "gender": 0.9331623696303073,
+                  "age": 0.7511480536384608,
+                  "muscle": 0.5479668352226588,
+                  "weight": 0.6213791454779546,
+                  "height": 0.4166423587959329,
+                  "proportions": 0.7397195951048083,
+                  "cupsize": 0.6023320690354685,
+                  "firmness": 0.2605497782618664,
+                  "african": 0.75,
+                  "asian": 0.08955962242500076,
+                  "caucasian": 0.16044037757499924
+                },
+                "modifiers": {
+                  "eyebrows-trans-down-up": -0.041,
+                  "mouth-angles-down-up": 0.001,
+                  "mouth-upperlip-volume-decr-incr": -0.195,
+                  "eye-eyefold-down-up": 0.021,
+                  "nose-flaring-decr-incr": -0.248,
+                  "ear-scale-vert-decr-incr": 0.085,
+                  "chin-prognathism-decr-incr": 0.091,
+                  "chin-prominent-decr-incr": 0.119,
+                  "nose-volume-decr-incr": -0.177,
+                  "nose-trans-down-up": -0.286,
+                  "stomach-pregnant-decr-incr": 0.113
+                },
+                "body": "basemesh",
+                "skin": "middleage_african_male",
+                "skin_color": [
+                  1.0,
+                  1.0,
+                  1.0
+                ],
+                "eyes": "grey",
+                "eyes_mesh": "eyes/low-poly",
+                "eyebrows": "eyebrows/eyebrow007",
+                "eyelashes": "eyelashes/eyelashes01",
+                "hair": "hair/short02",
+                "hair_material": "bogdan666_short_02_gray",
+                "hair_color": [
+                  1.0,
+                  1.0,
+                  1.0
+                ],
+                "clothes": [
+                  {
+                    "id": "clothes/toigo_male_suit_tie_and_jacket",
+                    "material": "",
+                    "color": [
+                      1,
+                      1,
+                      1
+                    ]
+                  },
+                  {
+                    "id": "clothes/shoes02",
+                    "material": "",
+                    "color": [
+                      1,
+                      1,
+                      1
+                    ]
+                  }
+                ]
+              },
+              "capsule_height": 1.7363
+            }
+          },
+          {
+            "class": "NPCWalker",
+            "properties": {
+              "path": "NPC Path",
+              "speed": 1.23,
+              "run": false,
+              "mode": "loop",
+              "wait_time": 0.4,
+              "start_at_nearest": true,
+              "wander_radius": 6.0,
+              "greet_player": true,
+              "greet_range": 3.0
+            }
+          }
+        ],
+        "visible": true,
+        "tag": "",
+        "collider": null,
+        "rigidbody": null,
+        "spawn_kind": null,
+        "spawn_config": null,
+        "is_sun": false,
+        "sun_light": null,
+        "is_point_light": false,
+        "point_light": null,
+        "is_spot_light": false,
+        "spot_light": null,
+        "is_clouds": false,
+        "cloud_settings": null,
+        "is_ocean": false,
+        "ocean_settings": null,
+        "is_terrain": false,
+        "terrain_config": null,
+        "children": []
+      },
+      {
+        "name": "Townsperson (3)",
+        "position": [
+          -5.893248,
+          0.780881,
+          2.671936
+        ],
+        "rotation_euler": [
+          0.0,
+          -123.8778,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "source_path": null,
+        "mesh_type": null,
+        "mesh_params": null,
+        "material": null,
+        "blueprint": {
+          "class": "MHCharacter",
+          "properties": {
+            "foot_ik": true,
+            "preview": "idle",
+            "animations": {},
+            "character": {
+              "macro": {
+                "gender": 0.12273916775163447,
+                "age": 0.7618523084346535,
+                "muscle": 0.6955911094434057,
+                "weight": 0.3627602353470081,
+                "height": 0.4559732694610218,
+                "proportions": 0.5852521147494026,
+                "cupsize": 0.33491735418754154,
+                "firmness": 0.4213611523444758,
+                "african": 0.1741180675754067,
+                "asian": 0.75,
+                "caucasian": 0.07588193242459329
+              },
+              "modifiers": {
+                "ear-scale-vert-decr-incr": -0.222,
+                "eye-push1-in-out": -0.063,
+                "nose-hump-decr-incr": 0.163,
+                "cheek-bones-decr-incr": 0.156,
+                "chin-height-decr-incr": -0.059,
+                "nose-compression-compress-uncompress": 0.2,
+                "ear-trans-backward-forward": 0.051,
+                "nose-volume-decr-incr": 0.229,
+                "nose-curve-concave-convex": -0.176,
+                "eye-eyefold-angle-down-up": -0.092
+              },
+              "body": "basemesh",
+              "skin": "middleage_asian_female",
+              "skin_color": [
+                1.0,
+                1.0,
+                1.0
+              ],
+              "eyes": "ice",
+              "eyes_mesh": "eyes/low-poly",
+              "eyebrows": "eyebrows/eyebrow005",
+              "eyelashes": "eyelashes/eyelashes03",
+              "hair": "hair/ponytail01",
+              "hair_material": "dariush086_ponytail01_gold",
+              "hair_color": [
+                1.0,
+                1.0,
+                1.0
+              ],
+              "clothes": [
+                {
+                  "id": "clothes/toigo_fisherman_sweater",
+                  "material": "",
+                  "color": [
+                    1,
+                    1,
+                    1
+                  ]
+                },
+                {
+                  "id": "clothes/toigo_harem_pants",
+                  "material": "",
+                  "color": [
+                    1,
+                    1,
+                    1
+                  ]
+                },
+                {
+                  "id": "clothes/toigo_flats",
+                  "material": "",
+                  "color": [
+                    1,
+                    1,
+                    1
+                  ]
+                }
+              ]
+            },
+            "capsule_height": 1.5418
+          }
+        },
+        "blueprints": [
+          {
+            "class": "MHCharacter",
+            "properties": {
+              "foot_ik": true,
+              "preview": "idle",
+              "animations": {},
+              "character": {
+                "macro": {
+                  "gender": 0.12273916775163447,
+                  "age": 0.7618523084346535,
+                  "muscle": 0.6955911094434057,
+                  "weight": 0.3627602353470081,
+                  "height": 0.4559732694610218,
+                  "proportions": 0.5852521147494026,
+                  "cupsize": 0.33491735418754154,
+                  "firmness": 0.4213611523444758,
+                  "african": 0.1741180675754067,
+                  "asian": 0.75,
+                  "caucasian": 0.07588193242459329
+                },
+                "modifiers": {
+                  "ear-scale-vert-decr-incr": -0.222,
+                  "eye-push1-in-out": -0.063,
+                  "nose-hump-decr-incr": 0.163,
+                  "cheek-bones-decr-incr": 0.156,
+                  "chin-height-decr-incr": -0.059,
+                  "nose-compression-compress-uncompress": 0.2,
+                  "ear-trans-backward-forward": 0.051,
+                  "nose-volume-decr-incr": 0.229,
+                  "nose-curve-concave-convex": -0.176,
+                  "eye-eyefold-angle-down-up": -0.092
+                },
+                "body": "basemesh",
+                "skin": "middleage_asian_female",
+                "skin_color": [
+                  1.0,
+                  1.0,
+                  1.0
+                ],
+                "eyes": "ice",
+                "eyes_mesh": "eyes/low-poly",
+                "eyebrows": "eyebrows/eyebrow005",
+                "eyelashes": "eyelashes/eyelashes03",
+                "hair": "hair/ponytail01",
+                "hair_material": "dariush086_ponytail01_gold",
+                "hair_color": [
+                  1.0,
+                  1.0,
+                  1.0
+                ],
+                "clothes": [
+                  {
+                    "id": "clothes/toigo_fisherman_sweater",
+                    "material": "",
+                    "color": [
+                      1,
+                      1,
+                      1
+                    ]
+                  },
+                  {
+                    "id": "clothes/toigo_harem_pants",
+                    "material": "",
+                    "color": [
+                      1,
+                      1,
+                      1
+                    ]
+                  },
+                  {
+                    "id": "clothes/toigo_flats",
+                    "material": "",
+                    "color": [
+                      1,
+                      1,
+                      1
+                    ]
+                  }
+                ]
+              },
+              "capsule_height": 1.5418
+            }
+          },
+          {
+            "class": "NPCWalker",
+            "properties": {
+              "path": "NPC Path",
+              "speed": 1.03,
+              "run": false,
+              "mode": "random",
+              "wait_time": 0.5,
+              "start_at_nearest": true,
+              "wander_radius": 6.0,
+              "greet_player": true,
+              "greet_range": 3.0
+            }
+          }
+        ],
+        "visible": true,
+        "tag": "",
+        "collider": null,
+        "rigidbody": null,
+        "spawn_kind": null,
+        "spawn_config": null,
+        "is_sun": false,
+        "sun_light": null,
+        "is_point_light": false,
+        "point_light": null,
+        "is_spot_light": false,
+        "spot_light": null,
+        "is_clouds": false,
+        "cloud_settings": null,
+        "is_ocean": false,
+        "ocean_settings": null,
+        "is_terrain": false,
+        "terrain_config": null,
+        "children": []
+      },
+      {
+        "name": "Townsperson (4)",
+        "position": [
+          -6.067727,
+          0.854949,
+          -2.250707
+        ],
+        "rotation_euler": [
+          0.0,
+          -135.370209,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "source_path": null,
+        "mesh_type": null,
+        "mesh_params": null,
+        "material": null,
+        "blueprint": {
+          "class": "MHCharacter",
+          "properties": {
+            "foot_ik": true,
+            "preview": "idle",
+            "animations": {},
+            "character": {
+              "macro": {
+                "gender": 0.8841433611411927,
+                "age": 0.6256440845322795,
+                "muscle": 0.4427799873483316,
+                "weight": 0.21738031169450833,
+                "height": 0.5420405926408911,
+                "proportions": 0.8081619833322757,
+                "cupsize": 0.5114010945985099,
+                "firmness": 0.661358924823675,
+                "african": 0.18297632368417097,
+                "asian": 0.75,
+                "caucasian": 0.06702367631582903
+              },
+              "modifiers": {
+                "mouth-lowerlip-height-decr-incr": 0.09,
+                "mouth-lowerlip-volume-decr-incr": -0.063,
+                "nose-base-down-up": -0.024,
+                "chin-bones-decr-incr": 0.025,
+                "eye-corner1-down-up": -0.169,
+                "nose-hump-decr-incr": -0.224,
+                "eye-bag-decr-incr": 0.048,
+                "mouth-lowerlip-width-decr-incr": -0.28,
+                "eye-eyefold-concave-convex": 0.068,
+                "ear-wing-decr-incr": 0.211,
+                "torso-vshape-decr-incr": -0.051
+              },
+              "body": "basemesh",
+              "skin": "middleage_asian_male",
+              "skin_color": [
+                1.0,
+                1.0,
+                1.0
+              ],
+              "eyes": "green",
+              "eyes_mesh": "eyes/low-poly",
+              "eyebrows": "eyebrows/eyebrow010",
+              "eyelashes": "eyelashes/eyelashes03",
+              "hair": "hair/faydaen_hair_1",
+              "hair_material": "hair1",
+              "hair_color": [
+                1.0,
+                1.0,
+                1.0
+              ],
+              "clothes": [
+                {
+                  "id": "clothes/toigo_male_double-breasted_suit",
+                  "material": "",
+                  "color": [
+                    1,
+                    1,
+                    1
+                  ]
+                },
+                {
+                  "id": "clothes/shoes05",
+                  "material": "",
+                  "color": [
+                    1,
+                    1,
+                    1
+                  ]
+                }
+              ]
+            },
+            "capsule_height": 1.6899
+          }
+        },
+        "blueprints": [
+          {
+            "class": "MHCharacter",
+            "properties": {
+              "foot_ik": true,
+              "preview": "idle",
+              "animations": {},
+              "character": {
+                "macro": {
+                  "gender": 0.8841433611411927,
+                  "age": 0.6256440845322795,
+                  "muscle": 0.4427799873483316,
+                  "weight": 0.21738031169450833,
+                  "height": 0.5420405926408911,
+                  "proportions": 0.8081619833322757,
+                  "cupsize": 0.5114010945985099,
+                  "firmness": 0.661358924823675,
+                  "african": 0.18297632368417097,
+                  "asian": 0.75,
+                  "caucasian": 0.06702367631582903
+                },
+                "modifiers": {
+                  "mouth-lowerlip-height-decr-incr": 0.09,
+                  "mouth-lowerlip-volume-decr-incr": -0.063,
+                  "nose-base-down-up": -0.024,
+                  "chin-bones-decr-incr": 0.025,
+                  "eye-corner1-down-up": -0.169,
+                  "nose-hump-decr-incr": -0.224,
+                  "eye-bag-decr-incr": 0.048,
+                  "mouth-lowerlip-width-decr-incr": -0.28,
+                  "eye-eyefold-concave-convex": 0.068,
+                  "ear-wing-decr-incr": 0.211,
+                  "torso-vshape-decr-incr": -0.051
+                },
+                "body": "basemesh",
+                "skin": "middleage_asian_male",
+                "skin_color": [
+                  1.0,
+                  1.0,
+                  1.0
+                ],
+                "eyes": "green",
+                "eyes_mesh": "eyes/low-poly",
+                "eyebrows": "eyebrows/eyebrow010",
+                "eyelashes": "eyelashes/eyelashes03",
+                "hair": "hair/faydaen_hair_1",
+                "hair_material": "hair1",
+                "hair_color": [
+                  1.0,
+                  1.0,
+                  1.0
+                ],
+                "clothes": [
+                  {
+                    "id": "clothes/toigo_male_double-breasted_suit",
+                    "material": "",
+                    "color": [
+                      1,
+                      1,
+                      1
+                    ]
+                  },
+                  {
+                    "id": "clothes/shoes05",
+                    "material": "",
+                    "color": [
+                      1,
+                      1,
+                      1
+                    ]
+                  }
+                ]
+              },
+              "capsule_height": 1.6899
+            }
+          },
+          {
+            "class": "NPCWalker",
+            "properties": {
+              "path": "NPC Path",
+              "speed": 1.37,
+              "run": false,
+              "mode": "loop",
+              "wait_time": 0.6,
+              "start_at_nearest": true,
+              "wander_radius": 6.0,
+              "greet_player": true,
+              "greet_range": 3.0
+            }
+          }
+        ],
+        "visible": true,
+        "tag": "",
+        "collider": null,
+        "rigidbody": null,
+        "spawn_kind": null,
+        "spawn_config": null,
+        "is_sun": false,
+        "sun_light": null,
+        "is_point_light": false,
+        "point_light": null,
+        "is_spot_light": false,
+        "spot_light": null,
+        "is_clouds": false,
+        "cloud_settings": null,
+        "is_ocean": false,
+        "ocean_settings": null,
+        "is_terrain": false,
+        "terrain_config": null,
+        "children": []
+      },
+      {
+        "name": "Townsperson (5)",
+        "position": [
+          -3.296812,
+          0.842662,
+          -5.634416
+        ],
+        "rotation_euler": [
+          0.0,
+          -147.355896,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "source_path": null,
+        "mesh_type": null,
+        "mesh_params": null,
+        "material": null,
+        "blueprint": {
+          "class": "MHCharacter",
+          "properties": {
+            "foot_ik": true,
+            "preview": "idle",
+            "animations": {},
+            "character": {
+              "macro": {
+                "gender": 0.000297598144656519,
+                "age": 0.6991339700815256,
+                "muscle": 0.3947181585775168,
+                "weight": 0.4429419956811292,
+                "height": 0.5247224593597852,
+                "proportions": 0.8057245676146958,
+                "cupsize": 0.41228397267724465,
+                "firmness": 0.6218652660333592,
+                "african": 0.75,
+                "asian": 0.027106918304390243,
+                "caucasian": 0.22289308169560976
+              },
+              "modifiers": {
+                "ear-wing-decr-incr": 0.292,
+                "mouth-upperlip-height-decr-incr": -0.307,
+                "nose-point-down-up": -0.121,
+                "mouth-upperlip-ext-down-up": 0.227,
+                "mouth-lowerlip-ext-down-up": 0.31,
+                "mouth-philtrum-volume-decr-incr": -0.099,
+                "eye-eyefold-down-up": 0.158,
+                "eyebrows-trans-down-up": 0.121,
+                "eye-corner2-down-up": -0.22,
+                "nose-scale-depth-decr-incr": 0.238
+              },
+              "body": "basemesh",
+              "skin": "middleage_african_female",
+              "skin_color": [
+                1.0,
+                1.0,
+                1.0
+              ],
+              "eyes": "lightblue",
+              "eyes_mesh": "eyes/low-poly",
+              "eyebrows": "eyebrows/eyebrow010",
+              "eyelashes": "eyelashes/eyelashes03",
+              "hair": "hair/rehmanpolanski_hair_bun_brown",
+              "hair_material": "hair_bun_brown",
+              "hair_color": [
+                1.0,
+                1.0,
+                1.0
+              ],
+              "clothes": [
+                {
+                  "id": "clothes/toigo_fisherman_sweater",
+                  "material": "",
+                  "color": [
+                    1,
+                    1,
+                    1
+                  ]
+                },
+                {
+                  "id": "clothes/toigo_harem_pants",
+                  "material": "",
+                  "color": [
+                    1,
+                    1,
+                    1
+                  ]
+                },
+                {
+                  "id": "clothes/toigo_flats",
+                  "material": "",
+                  "color": [
+                    1,
+                    1,
+                    1
+                  ]
+                }
+              ]
+            },
+            "capsule_height": 1.6653
+          }
+        },
+        "blueprints": [
+          {
+            "class": "MHCharacter",
+            "properties": {
+              "foot_ik": true,
+              "preview": "idle",
+              "animations": {},
+              "character": {
+                "macro": {
+                  "gender": 0.000297598144656519,
+                  "age": 0.6991339700815256,
+                  "muscle": 0.3947181585775168,
+                  "weight": 0.4429419956811292,
+                  "height": 0.5247224593597852,
+                  "proportions": 0.8057245676146958,
+                  "cupsize": 0.41228397267724465,
+                  "firmness": 0.6218652660333592,
+                  "african": 0.75,
+                  "asian": 0.027106918304390243,
+                  "caucasian": 0.22289308169560976
+                },
+                "modifiers": {
+                  "ear-wing-decr-incr": 0.292,
+                  "mouth-upperlip-height-decr-incr": -0.307,
+                  "nose-point-down-up": -0.121,
+                  "mouth-upperlip-ext-down-up": 0.227,
+                  "mouth-lowerlip-ext-down-up": 0.31,
+                  "mouth-philtrum-volume-decr-incr": -0.099,
+                  "eye-eyefold-down-up": 0.158,
+                  "eyebrows-trans-down-up": 0.121,
+                  "eye-corner2-down-up": -0.22,
+                  "nose-scale-depth-decr-incr": 0.238
+                },
+                "body": "basemesh",
+                "skin": "middleage_african_female",
+                "skin_color": [
+                  1.0,
+                  1.0,
+                  1.0
+                ],
+                "eyes": "lightblue",
+                "eyes_mesh": "eyes/low-poly",
+                "eyebrows": "eyebrows/eyebrow010",
+                "eyelashes": "eyelashes/eyelashes03",
+                "hair": "hair/rehmanpolanski_hair_bun_brown",
+                "hair_material": "hair_bun_brown",
+                "hair_color": [
+                  1.0,
+                  1.0,
+                  1.0
+                ],
+                "clothes": [
+                  {
+                    "id": "clothes/toigo_fisherman_sweater",
+                    "material": "",
+                    "color": [
+                      1,
+                      1,
+                      1
+                    ]
+                  },
+                  {
+                    "id": "clothes/toigo_harem_pants",
+                    "material": "",
+                    "color": [
+                      1,
+                      1,
+                      1
+                    ]
+                  },
+                  {
+                    "id": "clothes/toigo_flats",
+                    "material": "",
+                    "color": [
+                      1,
+                      1,
+                      1
+                    ]
+                  }
+                ]
+              },
+              "capsule_height": 1.6653
+            }
+          },
+          {
+            "class": "NPCWalker",
+            "properties": {
+              "path": "NPC Path",
+              "speed": 1.28,
+              "run": false,
+              "mode": "loop",
+              "wait_time": 2.4,
+              "start_at_nearest": true,
+              "wander_radius": 6.0,
+              "greet_player": true,
+              "greet_range": 3.0
+            }
+          }
+        ],
+        "visible": true,
+        "tag": "",
+        "collider": null,
+        "rigidbody": null,
+        "spawn_kind": null,
+        "spawn_config": null,
+        "is_sun": false,
+        "sun_light": null,
+        "is_point_light": false,
+        "point_light": null,
+        "is_spot_light": false,
+        "spot_light": null,
+        "is_clouds": false,
+        "cloud_settings": null,
+        "is_ocean": false,
+        "ocean_settings": null,
+        "is_terrain": false,
+        "terrain_config": null,
+        "children": []
+      },
+      {
+        "name": "Townsperson (6)",
+        "position": [
+          2.703858,
+          0.863014,
+          -5.880025
+        ],
+        "rotation_euler": [
+          0.0,
+          -163.500473,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "source_path": null,
+        "mesh_type": null,
+        "mesh_params": null,
+        "material": null,
+        "blueprint": {
+          "class": "MHCharacter",
+          "properties": {
+            "foot_ik": true,
+            "preview": "idle",
+            "animations": {},
+            "character": {
+              "macro": {
+                "gender": 0.12315052167635684,
+                "age": 0.5215402831305027,
+                "muscle": 0.5876642892035127,
+                "weight": 0.228836218424477,
+                "height": 0.5711726257556321,
+                "proportions": 0.5955739630364396,
+                "cupsize": 0.9434765807888341,
+                "firmness": 0.2918514818437423,
+                "african": 0.23551580780536074,
+                "asian": 0.014484192194639256,
+                "caucasian": 0.75
+              },
+              "modifiers": {
+                "eye-push1-in-out": -0.298,
+                "mouth-upperlip-middle-down-up": -0.106,
+                "eye-bag-height-decr-incr": 0.221,
+                "mouth-trans-in-out": -0.225,
+                "ear-flap-decr-incr": -0.047,
+                "eyebrows-trans-down-up": -0.324,
+                "nose-base-down-up": 0.166,
+                "mouth-scale-depth-decr-incr": -0.28,
+                "mouth-lowerlip-middle-down-up": -0.223,
+                "mouth-cupidsbow-decr-incr": 0.172,
+                "stomach-pregnant-decr-incr": 0.032,
+                "hip-scale-horiz-decr-incr": -0.045
+              },
+              "body": "basemesh",
+              "skin": "young_caucasian_female",
+              "skin_color": [
+                1.0,
+                1.0,
+                1.0
+              ],
+              "eyes": "brown",
+              "eyes_mesh": "eyes/low-poly",
+              "eyebrows": "eyebrows/eyebrow003",
+              "eyelashes": "eyelashes/eyelashes02",
+              "hair": "hair/braid01",
+              "hair_material": "toigo_braid01_black",
+              "hair_color": [
+                1.0,
+                1.0,
+                1.0
+              ],
+              "clothes": [
+                {
+                  "id": "clothes/toigo_halter_dress_midi",
+                  "material": "",
+                  "color": [
+                    1,
+                    1,
+                    1
+                  ]
+                },
+                {
+                  "id": "clothes/toigo_flats",
+                  "material": "",
+                  "color": [
+                    1,
+                    1,
+                    1
+                  ]
+                }
+              ]
+            },
+            "capsule_height": 1.706
+          }
+        },
+        "blueprints": [
+          {
+            "class": "MHCharacter",
+            "properties": {
+              "foot_ik": true,
+              "preview": "idle",
+              "animations": {},
+              "character": {
+                "macro": {
+                  "gender": 0.12315052167635684,
+                  "age": 0.5215402831305027,
+                  "muscle": 0.5876642892035127,
+                  "weight": 0.228836218424477,
+                  "height": 0.5711726257556321,
+                  "proportions": 0.5955739630364396,
+                  "cupsize": 0.9434765807888341,
+                  "firmness": 0.2918514818437423,
+                  "african": 0.23551580780536074,
+                  "asian": 0.014484192194639256,
+                  "caucasian": 0.75
+                },
+                "modifiers": {
+                  "eye-push1-in-out": -0.298,
+                  "mouth-upperlip-middle-down-up": -0.106,
+                  "eye-bag-height-decr-incr": 0.221,
+                  "mouth-trans-in-out": -0.225,
+                  "ear-flap-decr-incr": -0.047,
+                  "eyebrows-trans-down-up": -0.324,
+                  "nose-base-down-up": 0.166,
+                  "mouth-scale-depth-decr-incr": -0.28,
+                  "mouth-lowerlip-middle-down-up": -0.223,
+                  "mouth-cupidsbow-decr-incr": 0.172,
+                  "stomach-pregnant-decr-incr": 0.032,
+                  "hip-scale-horiz-decr-incr": -0.045
+                },
+                "body": "basemesh",
+                "skin": "young_caucasian_female",
+                "skin_color": [
+                  1.0,
+                  1.0,
+                  1.0
+                ],
+                "eyes": "brown",
+                "eyes_mesh": "eyes/low-poly",
+                "eyebrows": "eyebrows/eyebrow003",
+                "eyelashes": "eyelashes/eyelashes02",
+                "hair": "hair/braid01",
+                "hair_material": "toigo_braid01_black",
+                "hair_color": [
+                  1.0,
+                  1.0,
+                  1.0
+                ],
+                "clothes": [
+                  {
+                    "id": "clothes/toigo_halter_dress_midi",
+                    "material": "",
+                    "color": [
+                      1,
+                      1,
+                      1
+                    ]
+                  },
+                  {
+                    "id": "clothes/toigo_flats",
+                    "material": "",
+                    "color": [
+                      1,
+                      1,
+                      1
+                    ]
+                  }
+                ]
+              },
+              "capsule_height": 1.706
+            }
+          },
+          {
+            "class": "NPCWalker",
+            "properties": {
+              "path": "NPC Path",
+              "speed": 1.18,
+              "run": false,
+              "mode": "random",
+              "wait_time": 2.4,
+              "start_at_nearest": true,
+              "wander_radius": 6.0,
+              "greet_player": true,
+              "greet_range": 3.0
+            }
+          }
+        ],
+        "visible": true,
+        "tag": "",
+        "collider": null,
+        "rigidbody": null,
+        "spawn_kind": null,
+        "spawn_config": null,
+        "is_sun": false,
+        "sun_light": null,
+        "is_point_light": false,
+        "point_light": null,
+        "is_spot_light": false,
+        "spot_light": null,
+        "is_clouds": false,
+        "cloud_settings": null,
+        "is_ocean": false,
+        "ocean_settings": null,
+        "is_terrain": false,
+        "terrain_config": null,
+        "children": []
+      },
+      {
+        "name": "NPC Path (1)",
+        "position": [
+          -7.0,
+          0.0,
+          16.6
+        ],
+        "rotation_euler": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "source_path": null,
+        "mesh_type": null,
+        "mesh_params": null,
+        "material": null,
+        "blueprint": {
+          "class": "NPCPath",
+          "properties": {
+            "closed": true
+          }
+        },
+        "blueprints": [
+          {
+            "class": "NPCPath",
+            "properties": {
+              "closed": true
+            }
+          }
+        ],
+        "visible": true,
+        "tag": "",
+        "collider": null,
+        "rigidbody": null,
+        "spawn_kind": null,
+        "spawn_config": null,
+        "is_sun": false,
+        "sun_light": null,
+        "is_point_light": false,
+        "point_light": null,
+        "is_spot_light": false,
+        "spot_light": null,
+        "is_clouds": false,
+        "cloud_settings": null,
+        "is_ocean": false,
+        "ocean_settings": null,
+        "is_terrain": false,
+        "terrain_config": null,
+        "children": []
+      },
+      {
+        "name": "NPC Path (1) P1",
+        "position": [
+          -7.0,
+          0.0,
+          16.6
+        ],
+        "rotation_euler": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "source_path": null,
+        "mesh_type": "sphere",
+        "mesh_params": {
+          "radius": 0.22
+        },
+        "material": {
+          "name": "NPC Path (1) P1_mat",
+          "base_color": [
+            0.25,
+            0.85,
+            1.0,
+            1.0
+          ],
+          "metallic": 0.0,
+          "roughness": 0.4,
+          "emissive": [
+            0.05,
+            0.35,
+            0.5
+          ],
+          "emissive_intensity": 1.0,
+          "alpha_cutoff": 0.5,
+          "base_color_tex": null,
+          "metallic_roughness_tex": null,
+          "normal_tex": null,
+          "emissive_tex": null,
+          "occlusion_tex": null,
+          "double_sided": false,
+          "alpha_mode": "OPAQUE"
+        },
+        "blueprint": {
+          "class": "NPCWaypoint",
+          "properties": {
+            "path": "NPC Path (1)",
+            "order": 0,
+            "wait": 1.0
+          }
+        },
+        "blueprints": [
+          {
+            "class": "NPCWaypoint",
+            "properties": {
+              "path": "NPC Path (1)",
+              "order": 0,
+              "wait": 1.0
+            }
+          }
+        ],
+        "visible": true,
+        "tag": "",
+        "collider": null,
+        "rigidbody": null,
+        "spawn_kind": null,
+        "spawn_config": null,
+        "is_sun": false,
+        "sun_light": null,
+        "is_point_light": false,
+        "point_light": null,
+        "is_spot_light": false,
+        "spot_light": null,
+        "is_clouds": false,
+        "cloud_settings": null,
+        "is_ocean": false,
+        "ocean_settings": null,
+        "is_terrain": false,
+        "terrain_config": null,
+        "children": []
+      },
+      {
+        "name": "NPC Path (1) P2",
+        "position": [
+          -7.0,
+          1.1,
+          11.9
+        ],
+        "rotation_euler": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "source_path": null,
+        "mesh_type": "sphere",
+        "mesh_params": {
+          "radius": 0.22
+        },
+        "material": {
+          "name": "NPC Path (1) P2_mat",
+          "base_color": [
+            0.25,
+            0.85,
+            1.0,
+            1.0
+          ],
+          "metallic": 0.0,
+          "roughness": 0.4,
+          "emissive": [
+            0.05,
+            0.35,
+            0.5
+          ],
+          "emissive_intensity": 1.0,
+          "alpha_cutoff": 0.5,
+          "base_color_tex": null,
+          "metallic_roughness_tex": null,
+          "normal_tex": null,
+          "emissive_tex": null,
+          "occlusion_tex": null,
+          "double_sided": false,
+          "alpha_mode": "OPAQUE"
+        },
+        "blueprint": {
+          "class": "NPCWaypoint",
+          "properties": {
+            "path": "NPC Path (1)",
+            "order": 1,
+            "wait": 1.0
+          }
+        },
+        "blueprints": [
+          {
+            "class": "NPCWaypoint",
+            "properties": {
+              "path": "NPC Path (1)",
+              "order": 1,
+              "wait": 1.0
+            }
+          }
+        ],
+        "visible": true,
+        "tag": "",
+        "collider": null,
+        "rigidbody": null,
+        "spawn_kind": null,
+        "spawn_config": null,
+        "is_sun": false,
+        "sun_light": null,
+        "is_point_light": false,
+        "point_light": null,
+        "is_spot_light": false,
+        "spot_light": null,
+        "is_clouds": false,
+        "cloud_settings": null,
+        "is_ocean": false,
+        "ocean_settings": null,
+        "is_terrain": false,
+        "terrain_config": null,
+        "children": []
+      },
+      {
+        "name": "Stairs Walker",
+        "position": [
+          -7.0,
+          0.848902,
+          16.6
+        ],
+        "rotation_euler": [
+          0.0,
+          -72.950966,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "source_path": null,
+        "mesh_type": null,
+        "mesh_params": null,
+        "material": null,
+        "blueprint": {
+          "class": "MHCharacter",
+          "properties": {
+            "foot_ik": true,
+            "preview": "idle",
+            "animations": {},
+            "character": {
+              "macro": {
+                "gender": 0.041254397755367885,
+                "age": 0.5848200804965527,
+                "muscle": 0.4821376402703958,
+                "weight": 0.26042345370544684,
+                "height": 0.5232622840847401,
+                "proportions": 0.6187687278741082,
+                "cupsize": 0.4518792538705097,
+                "firmness": 0.6035259498746902,
+                "african": 0.75,
+                "asian": 0.006252688805666734,
+                "caucasian": 0.24374731119433327
+              },
+              "modifiers": {
+                "nose-nostrils-angle-down-up": -0.155,
+                "nose-greek-decr-incr": 0.259,
+                "cheek-bones-decr-incr": 0.181,
+                "nose-width1-decr-incr": -0.238,
+                "eye-corner1-down-up": -0.054,
+                "nose-point-width-decr-incr": -0.155,
+                "mouth-scale-vert-decr-incr": -0.199,
+                "eye-push1-in-out": 0.184,
+                "mouth-cupidsbow-width-decr-incr": -0.278,
+                "nose-nostrils-width-decr-incr": -0.084,
+                "stomach-pregnant-decr-incr": -0.094,
+                "torso-vshape-decr-incr": -0.274,
+                "hip-scale-horiz-decr-incr": -0.225
+              },
+              "body": "basemesh",
+              "skin": "young_african_female",
+              "skin_color": [
+                1.0,
+                1.0,
+                1.0
+              ],
+              "eyes": "grey",
+              "eyes_mesh": "eyes/low-poly",
+              "eyebrows": "eyebrows/eyebrow002",
+              "eyelashes": "eyelashes/eyelashes03",
+              "hair": "hair/ponytail01",
+              "hair_material": "mtknife_ponytail01_deep_red",
+              "hair_color": [
+                1.0,
+                1.0,
+                1.0
+              ],
+              "clothes": [
+                {
+                  "id": "clothes/toigo_turtleneck_halter_top",
+                  "material": "",
+                  "color": [
+                    1,
+                    1,
+                    1
+                  ]
+                },
+                {
+                  "id": "clothes/frankyaye_mini_skirt_01",
+                  "material": "",
+                  "color": [
+                    1,
+                    1,
+                    1
+                  ]
+                },
+                {
+                  "id": "clothes/shoes06",
+                  "material": "",
+                  "color": [
+                    1,
+                    1,
+                    1
+                  ]
+                },
+                {
+                  "id": "clothes/spamrakuen_sagerfrogs_glasses_01",
+                  "material": "",
+                  "color": [
+                    1,
+                    1,
+                    1
+                  ]
+                }
+              ]
+            },
+            "capsule_height": 1.6778
+          }
+        },
+        "blueprints": [
+          {
+            "class": "MHCharacter",
+            "properties": {
+              "foot_ik": true,
+              "preview": "idle",
+              "animations": {},
+              "character": {
+                "macro": {
+                  "gender": 0.041254397755367885,
+                  "age": 0.5848200804965527,
+                  "muscle": 0.4821376402703958,
+                  "weight": 0.26042345370544684,
+                  "height": 0.5232622840847401,
+                  "proportions": 0.6187687278741082,
+                  "cupsize": 0.4518792538705097,
+                  "firmness": 0.6035259498746902,
+                  "african": 0.75,
+                  "asian": 0.006252688805666734,
+                  "caucasian": 0.24374731119433327
+                },
+                "modifiers": {
+                  "nose-nostrils-angle-down-up": -0.155,
+                  "nose-greek-decr-incr": 0.259,
+                  "cheek-bones-decr-incr": 0.181,
+                  "nose-width1-decr-incr": -0.238,
+                  "eye-corner1-down-up": -0.054,
+                  "nose-point-width-decr-incr": -0.155,
+                  "mouth-scale-vert-decr-incr": -0.199,
+                  "eye-push1-in-out": 0.184,
+                  "mouth-cupidsbow-width-decr-incr": -0.278,
+                  "nose-nostrils-width-decr-incr": -0.084,
+                  "stomach-pregnant-decr-incr": -0.094,
+                  "torso-vshape-decr-incr": -0.274,
+                  "hip-scale-horiz-decr-incr": -0.225
+                },
+                "body": "basemesh",
+                "skin": "young_african_female",
+                "skin_color": [
+                  1.0,
+                  1.0,
+                  1.0
+                ],
+                "eyes": "grey",
+                "eyes_mesh": "eyes/low-poly",
+                "eyebrows": "eyebrows/eyebrow002",
+                "eyelashes": "eyelashes/eyelashes03",
+                "hair": "hair/ponytail01",
+                "hair_material": "mtknife_ponytail01_deep_red",
+                "hair_color": [
+                  1.0,
+                  1.0,
+                  1.0
+                ],
+                "clothes": [
+                  {
+                    "id": "clothes/toigo_turtleneck_halter_top",
+                    "material": "",
+                    "color": [
+                      1,
+                      1,
+                      1
+                    ]
+                  },
+                  {
+                    "id": "clothes/frankyaye_mini_skirt_01",
+                    "material": "",
+                    "color": [
+                      1,
+                      1,
+                      1
+                    ]
+                  },
+                  {
+                    "id": "clothes/shoes06",
+                    "material": "",
+                    "color": [
+                      1,
+                      1,
+                      1
+                    ]
+                  },
+                  {
+                    "id": "clothes/spamrakuen_sagerfrogs_glasses_01",
+                    "material": "",
+                    "color": [
+                      1,
+                      1,
+                      1
+                    ]
+                  }
+                ]
+              },
+              "capsule_height": 1.6778
+            }
+          },
+          {
+            "class": "NPCWalker",
+            "properties": {
+              "path": "NPC Path (1)",
+              "speed": 1.1,
+              "run": false,
+              "mode": "pingpong",
+              "wait_time": 1.5,
+              "start_at_nearest": true,
+              "wander_radius": 6.0,
+              "greet_player": false,
+              "greet_range": 3.0
+            }
+          }
+        ],
+        "visible": true,
+        "tag": "",
+        "collider": null,
+        "rigidbody": null,
+        "spawn_kind": null,
+        "spawn_config": null,
+        "is_sun": false,
+        "sun_light": null,
+        "is_point_light": false,
+        "point_light": null,
+        "is_spot_light": false,
+        "spot_light": null,
+        "is_clouds": false,
+        "cloud_settings": null,
+        "is_ocean": false,
+        "ocean_settings": null,
+        "is_terrain": false,
+        "terrain_config": null,
+        "children": []
+      },
+      {
+        "name": "NPC Path (2)",
+        "position": [
+          6.0,
+          0.0,
+          21.0
+        ],
+        "rotation_euler": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "source_path": null,
+        "mesh_type": null,
+        "mesh_params": null,
+        "material": null,
+        "blueprint": {
+          "class": "NPCPath",
+          "properties": {
+            "closed": true
+          }
+        },
+        "blueprints": [
+          {
+            "class": "NPCPath",
+            "properties": {
+              "closed": true
+            }
+          }
+        ],
+        "visible": true,
+        "tag": "",
+        "collider": null,
+        "rigidbody": null,
+        "spawn_kind": null,
+        "spawn_config": null,
+        "is_sun": false,
+        "sun_light": null,
+        "is_point_light": false,
+        "point_light": null,
+        "is_spot_light": false,
+        "spot_light": null,
+        "is_clouds": false,
+        "cloud_settings": null,
+        "is_ocean": false,
+        "ocean_settings": null,
+        "is_terrain": false,
+        "terrain_config": null,
+        "children": []
+      },
+      {
+        "name": "NPC Path (2) P1",
+        "position": [
+          6.0,
+          0.0,
+          21.0
+        ],
+        "rotation_euler": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "source_path": null,
+        "mesh_type": "sphere",
+        "mesh_params": {
+          "radius": 0.22
+        },
+        "material": {
+          "name": "NPC Path (2) P1_mat",
+          "base_color": [
+            0.25,
+            0.85,
+            1.0,
+            1.0
+          ],
+          "metallic": 0.0,
+          "roughness": 0.4,
+          "emissive": [
+            0.05,
+            0.35,
+            0.5
+          ],
+          "emissive_intensity": 1.0,
+          "alpha_cutoff": 0.5,
+          "base_color_tex": null,
+          "metallic_roughness_tex": null,
+          "normal_tex": null,
+          "emissive_tex": null,
+          "occlusion_tex": null,
+          "double_sided": false,
+          "alpha_mode": "OPAQUE"
+        },
+        "blueprint": {
+          "class": "NPCWaypoint",
+          "properties": {
+            "path": "NPC Path (2)",
+            "order": 0,
+            "wait": 1.0
+          }
+        },
+        "blueprints": [
+          {
+            "class": "NPCWaypoint",
+            "properties": {
+              "path": "NPC Path (2)",
+              "order": 0,
+              "wait": 1.0
+            }
+          }
+        ],
+        "visible": true,
+        "tag": "",
+        "collider": null,
+        "rigidbody": null,
+        "spawn_kind": null,
+        "spawn_config": null,
+        "is_sun": false,
+        "sun_light": null,
+        "is_point_light": false,
+        "point_light": null,
+        "is_spot_light": false,
+        "spot_light": null,
+        "is_clouds": false,
+        "cloud_settings": null,
+        "is_ocean": false,
+        "ocean_settings": null,
+        "is_terrain": false,
+        "terrain_config": null,
+        "children": []
+      },
+      {
+        "name": "NPC Path (2) P2",
+        "position": [
+          6.0,
+          2.0,
+          12.8
+        ],
+        "rotation_euler": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "source_path": null,
+        "mesh_type": "sphere",
+        "mesh_params": {
+          "radius": 0.22
+        },
+        "material": {
+          "name": "NPC Path (2) P2_mat",
+          "base_color": [
+            0.25,
+            0.85,
+            1.0,
+            1.0
+          ],
+          "metallic": 0.0,
+          "roughness": 0.4,
+          "emissive": [
+            0.05,
+            0.35,
+            0.5
+          ],
+          "emissive_intensity": 1.0,
+          "alpha_cutoff": 0.5,
+          "base_color_tex": null,
+          "metallic_roughness_tex": null,
+          "normal_tex": null,
+          "emissive_tex": null,
+          "occlusion_tex": null,
+          "double_sided": false,
+          "alpha_mode": "OPAQUE"
+        },
+        "blueprint": {
+          "class": "NPCWaypoint",
+          "properties": {
+            "path": "NPC Path (2)",
+            "order": 1,
+            "wait": 1.0
+          }
+        },
+        "blueprints": [
+          {
+            "class": "NPCWaypoint",
+            "properties": {
+              "path": "NPC Path (2)",
+              "order": 1,
+              "wait": 1.0
+            }
+          }
+        ],
+        "visible": true,
+        "tag": "",
+        "collider": null,
+        "rigidbody": null,
+        "spawn_kind": null,
+        "spawn_config": null,
+        "is_sun": false,
+        "sun_light": null,
+        "is_point_light": false,
+        "point_light": null,
+        "is_spot_light": false,
+        "spot_light": null,
+        "is_clouds": false,
+        "cloud_settings": null,
+        "is_ocean": false,
+        "ocean_settings": null,
+        "is_terrain": false,
+        "terrain_config": null,
+        "children": []
+      },
+      {
+        "name": "Ramp Walker",
+        "position": [
+          6.0,
+          0.862686,
+          21.0
+        ],
+        "rotation_euler": [
+          0.0,
+          -12.528808,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "source_path": null,
+        "mesh_type": null,
+        "mesh_params": null,
+        "material": null,
+        "blueprint": {
+          "class": "MHCharacter",
+          "properties": {
+            "foot_ik": true,
+            "preview": "idle",
+            "animations": {},
+            "character": {
+              "macro": {
+                "gender": 0.8715899832093041,
+                "age": 0.6757622568350533,
+                "muscle": 0.3825628153940249,
+                "weight": 0.24976723008847845,
+                "height": 0.4213170956917628,
+                "proportions": 0.4576628432097391,
+                "cupsize": 0.5612862127804864,
+                "firmness": 0.3680877728585787,
+                "african": 0.1740560806592632,
+                "asian": 0.0759439193407368,
+                "caucasian": 0.75
+              },
+              "modifiers": {
+                "nose-scale-horiz-decr-incr": -0.238,
+                "mouth-upperlip-height-decr-incr": 0.234,
+                "mouth-lowerlip-width-decr-incr": -0.26,
+                "eyebrows-angle-down-up": -0.079,
+                "chin-bones-decr-incr": 0.335,
+                "ear-trans-backward-forward": -0.16,
+                "ear-trans-down-up": -0.223,
+                "mouth-angles-down-up": -0.306,
+                "ear-scale-decr-incr": 0.055,
+                "ear-shape-square-round": -0.219,
+                "stomach-pregnant-decr-incr": -0.201,
+                "torso-vshape-decr-incr": -0.254
+              },
+              "body": "basemesh",
+              "skin": "middleage_caucasian_male",
+              "skin_color": [
+                1.0,
+                1.0,
+                1.0
+              ],
+              "eyes": "blue",
+              "eyes_mesh": "eyes/low-poly",
+              "eyebrows": "eyebrows/eyebrow002",
+              "eyelashes": "eyelashes/eyelashes03",
+              "hair": "hair/cortu_short_messy_hair",
+              "hair_material": "short_messy",
+              "hair_color": [
+                1.0,
+                1.0,
+                1.0
+              ],
+              "clothes": [
+                {
+                  "id": "clothes/toigo_male_double-breasted_suit",
+                  "material": "",
+                  "color": [
+                    1,
+                    1,
+                    1
+                  ]
+                },
+                {
+                  "id": "clothes/toigo_mj_cloth_shoes",
+                  "material": "",
+                  "color": [
+                    1,
+                    1,
+                    1
+                  ]
+                },
+                {
+                  "id": "clothes/frankyaye_glasses_library_male",
+                  "material": "",
+                  "color": [
+                    1,
+                    1,
+                    1
+                  ]
+                }
+              ]
+            },
+            "capsule_height": 1.7054
+          }
+        },
+        "blueprints": [
+          {
+            "class": "MHCharacter",
+            "properties": {
+              "foot_ik": true,
+              "preview": "idle",
+              "animations": {},
+              "character": {
+                "macro": {
+                  "gender": 0.8715899832093041,
+                  "age": 0.6757622568350533,
+                  "muscle": 0.3825628153940249,
+                  "weight": 0.24976723008847845,
+                  "height": 0.4213170956917628,
+                  "proportions": 0.4576628432097391,
+                  "cupsize": 0.5612862127804864,
+                  "firmness": 0.3680877728585787,
+                  "african": 0.1740560806592632,
+                  "asian": 0.0759439193407368,
+                  "caucasian": 0.75
+                },
+                "modifiers": {
+                  "nose-scale-horiz-decr-incr": -0.238,
+                  "mouth-upperlip-height-decr-incr": 0.234,
+                  "mouth-lowerlip-width-decr-incr": -0.26,
+                  "eyebrows-angle-down-up": -0.079,
+                  "chin-bones-decr-incr": 0.335,
+                  "ear-trans-backward-forward": -0.16,
+                  "ear-trans-down-up": -0.223,
+                  "mouth-angles-down-up": -0.306,
+                  "ear-scale-decr-incr": 0.055,
+                  "ear-shape-square-round": -0.219,
+                  "stomach-pregnant-decr-incr": -0.201,
+                  "torso-vshape-decr-incr": -0.254
+                },
+                "body": "basemesh",
+                "skin": "middleage_caucasian_male",
+                "skin_color": [
+                  1.0,
+                  1.0,
+                  1.0
+                ],
+                "eyes": "blue",
+                "eyes_mesh": "eyes/low-poly",
+                "eyebrows": "eyebrows/eyebrow002",
+                "eyelashes": "eyelashes/eyelashes03",
+                "hair": "hair/cortu_short_messy_hair",
+                "hair_material": "short_messy",
+                "hair_color": [
+                  1.0,
+                  1.0,
+                  1.0
+                ],
+                "clothes": [
+                  {
+                    "id": "clothes/toigo_male_double-breasted_suit",
+                    "material": "",
+                    "color": [
+                      1,
+                      1,
+                      1
+                    ]
+                  },
+                  {
+                    "id": "clothes/toigo_mj_cloth_shoes",
+                    "material": "",
+                    "color": [
+                      1,
+                      1,
+                      1
+                    ]
+                  },
+                  {
+                    "id": "clothes/frankyaye_glasses_library_male",
+                    "material": "",
+                    "color": [
+                      1,
+                      1,
+                      1
+                    ]
+                  }
+                ]
+              },
+              "capsule_height": 1.7054
+            }
+          },
+          {
+            "class": "NPCWalker",
+            "properties": {
+              "path": "NPC Path (2)",
+              "speed": 1.1,
+              "run": false,
+              "mode": "pingpong",
+              "wait_time": 1.5,
+              "start_at_nearest": true,
+              "wander_radius": 6.0,
+              "greet_player": false,
+              "greet_range": 3.0
+            }
+          }
+        ],
+        "visible": true,
+        "tag": "",
+        "collider": null,
+        "rigidbody": null,
+        "spawn_kind": null,
+        "spawn_config": null,
+        "is_sun": false,
+        "sun_light": null,
+        "is_point_light": false,
+        "point_light": null,
+        "is_spot_light": false,
+        "spot_light": null,
+        "is_clouds": false,
+        "cloud_settings": null,
+        "is_ocean": false,
+        "ocean_settings": null,
+        "is_terrain": false,
+        "terrain_config": null,
+        "children": []
+      },
+      {
+        "name": "NPC Path (3)",
+        "position": [
+          -26.0,
+          0.0,
+          0.0
+        ],
+        "rotation_euler": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "source_path": null,
+        "mesh_type": null,
+        "mesh_params": null,
+        "material": null,
+        "blueprint": {
+          "class": "NPCPath",
+          "properties": {
+            "closed": true
+          }
+        },
+        "blueprints": [
+          {
+            "class": "NPCPath",
+            "properties": {
+              "closed": true
+            }
+          }
+        ],
+        "visible": true,
+        "tag": "",
+        "collider": null,
+        "rigidbody": null,
+        "spawn_kind": null,
+        "spawn_config": null,
+        "is_sun": false,
+        "sun_light": null,
+        "is_point_light": false,
+        "point_light": null,
+        "is_spot_light": false,
+        "spot_light": null,
+        "is_clouds": false,
+        "cloud_settings": null,
+        "is_ocean": false,
+        "ocean_settings": null,
+        "is_terrain": false,
+        "terrain_config": null,
+        "children": []
+      },
+      {
+        "name": "NPC Path (3) P1",
+        "position": [
+          -20.0,
+          0.0,
+          0.0
+        ],
+        "rotation_euler": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "source_path": null,
+        "mesh_type": "sphere",
+        "mesh_params": {
+          "radius": 0.22
+        },
+        "material": {
+          "name": "NPC Path (3) P1_mat",
+          "base_color": [
+            0.25,
+            0.85,
+            1.0,
+            1.0
+          ],
+          "metallic": 0.0,
+          "roughness": 0.4,
+          "emissive": [
+            0.05,
+            0.35,
+            0.5
+          ],
+          "emissive_intensity": 1.0,
+          "alpha_cutoff": 0.5,
+          "base_color_tex": null,
+          "metallic_roughness_tex": null,
+          "normal_tex": null,
+          "emissive_tex": null,
+          "occlusion_tex": null,
+          "double_sided": false,
+          "alpha_mode": "OPAQUE"
+        },
+        "blueprint": {
+          "class": "NPCWaypoint",
+          "properties": {
+            "path": "NPC Path (3)",
+            "order": 0,
+            "wait": -1.0
+          }
+        },
+        "blueprints": [
+          {
+            "class": "NPCWaypoint",
+            "properties": {
+              "path": "NPC Path (3)",
+              "order": 0,
+              "wait": -1.0
+            }
+          }
+        ],
+        "visible": true,
+        "tag": "",
+        "collider": null,
+        "rigidbody": null,
+        "spawn_kind": null,
+        "spawn_config": null,
+        "is_sun": false,
+        "sun_light": null,
+        "is_point_light": false,
+        "point_light": null,
+        "is_spot_light": false,
+        "spot_light": null,
+        "is_clouds": false,
+        "cloud_settings": null,
+        "is_ocean": false,
+        "ocean_settings": null,
+        "is_terrain": false,
+        "terrain_config": null,
+        "children": []
+      },
+      {
+        "name": "NPC Path (3) P2",
+        "position": [
+          -26.0,
+          0.0,
+          6.0
+        ],
+        "rotation_euler": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "source_path": null,
+        "mesh_type": "sphere",
+        "mesh_params": {
+          "radius": 0.22
+        },
+        "material": {
+          "name": "NPC Path (3) P2_mat",
+          "base_color": [
+            0.25,
+            0.85,
+            1.0,
+            1.0
+          ],
+          "metallic": 0.0,
+          "roughness": 0.4,
+          "emissive": [
+            0.05,
+            0.35,
+            0.5
+          ],
+          "emissive_intensity": 1.0,
+          "alpha_cutoff": 0.5,
+          "base_color_tex": null,
+          "metallic_roughness_tex": null,
+          "normal_tex": null,
+          "emissive_tex": null,
+          "occlusion_tex": null,
+          "double_sided": false,
+          "alpha_mode": "OPAQUE"
+        },
+        "blueprint": {
+          "class": "NPCWaypoint",
+          "properties": {
+            "path": "NPC Path (3)",
+            "order": 1,
+            "wait": -1.0
+          }
+        },
+        "blueprints": [
+          {
+            "class": "NPCWaypoint",
+            "properties": {
+              "path": "NPC Path (3)",
+              "order": 1,
+              "wait": -1.0
+            }
+          }
+        ],
+        "visible": true,
+        "tag": "",
+        "collider": null,
+        "rigidbody": null,
+        "spawn_kind": null,
+        "spawn_config": null,
+        "is_sun": false,
+        "sun_light": null,
+        "is_point_light": false,
+        "point_light": null,
+        "is_spot_light": false,
+        "spot_light": null,
+        "is_clouds": false,
+        "cloud_settings": null,
+        "is_ocean": false,
+        "ocean_settings": null,
+        "is_terrain": false,
+        "terrain_config": null,
+        "children": []
+      },
+      {
+        "name": "NPC Path (3) P3",
+        "position": [
+          -32.0,
+          0.0,
+          0.0
+        ],
+        "rotation_euler": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "source_path": null,
+        "mesh_type": "sphere",
+        "mesh_params": {
+          "radius": 0.22
+        },
+        "material": {
+          "name": "NPC Path (3) P3_mat",
+          "base_color": [
+            0.25,
+            0.85,
+            1.0,
+            1.0
+          ],
+          "metallic": 0.0,
+          "roughness": 0.4,
+          "emissive": [
+            0.05,
+            0.35,
+            0.5
+          ],
+          "emissive_intensity": 1.0,
+          "alpha_cutoff": 0.5,
+          "base_color_tex": null,
+          "metallic_roughness_tex": null,
+          "normal_tex": null,
+          "emissive_tex": null,
+          "occlusion_tex": null,
+          "double_sided": false,
+          "alpha_mode": "OPAQUE"
+        },
+        "blueprint": {
+          "class": "NPCWaypoint",
+          "properties": {
+            "path": "NPC Path (3)",
+            "order": 2,
+            "wait": -1.0
+          }
+        },
+        "blueprints": [
+          {
+            "class": "NPCWaypoint",
+            "properties": {
+              "path": "NPC Path (3)",
+              "order": 2,
+              "wait": -1.0
+            }
+          }
+        ],
+        "visible": true,
+        "tag": "",
+        "collider": null,
+        "rigidbody": null,
+        "spawn_kind": null,
+        "spawn_config": null,
+        "is_sun": false,
+        "sun_light": null,
+        "is_point_light": false,
+        "point_light": null,
+        "is_spot_light": false,
+        "spot_light": null,
+        "is_clouds": false,
+        "cloud_settings": null,
+        "is_ocean": false,
+        "ocean_settings": null,
+        "is_terrain": false,
+        "terrain_config": null,
+        "children": []
+      },
+      {
+        "name": "NPC Path (3) P4",
+        "position": [
+          -26.0,
+          0.0,
+          -6.0
+        ],
+        "rotation_euler": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "source_path": null,
+        "mesh_type": "sphere",
+        "mesh_params": {
+          "radius": 0.22
+        },
+        "material": {
+          "name": "NPC Path (3) P4_mat",
+          "base_color": [
+            0.25,
+            0.85,
+            1.0,
+            1.0
+          ],
+          "metallic": 0.0,
+          "roughness": 0.4,
+          "emissive": [
+            0.05,
+            0.35,
+            0.5
+          ],
+          "emissive_intensity": 1.0,
+          "alpha_cutoff": 0.5,
+          "base_color_tex": null,
+          "metallic_roughness_tex": null,
+          "normal_tex": null,
+          "emissive_tex": null,
+          "occlusion_tex": null,
+          "double_sided": false,
+          "alpha_mode": "OPAQUE"
+        },
+        "blueprint": {
+          "class": "NPCWaypoint",
+          "properties": {
+            "path": "NPC Path (3)",
+            "order": 3,
+            "wait": -1.0
+          }
+        },
+        "blueprints": [
+          {
+            "class": "NPCWaypoint",
+            "properties": {
+              "path": "NPC Path (3)",
+              "order": 3,
+              "wait": -1.0
+            }
+          }
+        ],
+        "visible": true,
+        "tag": "",
+        "collider": null,
+        "rigidbody": null,
+        "spawn_kind": null,
+        "spawn_config": null,
+        "is_sun": false,
+        "sun_light": null,
+        "is_point_light": false,
+        "point_light": null,
+        "is_spot_light": false,
+        "spot_light": null,
+        "is_clouds": false,
+        "cloud_settings": null,
+        "is_ocean": false,
+        "ocean_settings": null,
+        "is_terrain": false,
+        "terrain_config": null,
+        "children": []
+      },
+      {
+        "name": "Zombie",
+        "position": [
+          -26.0,
+          0.812576,
+          -4.0
+        ],
+        "rotation_euler": [
+          0.0,
+          -115.201126,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "source_path": null,
+        "mesh_type": null,
+        "mesh_params": null,
+        "material": null,
+        "blueprint": {
+          "class": "MHCharacter",
+          "properties": {
+            "foot_ik": true,
+            "preview": "idle",
+            "animations": {},
+            "character": {
+              "macro": {
+                "gender": 0.051966345156367146,
+                "age": 0.8128005109790769,
+                "muscle": 0.3365533540078023,
+                "weight": 0.4474821857487,
+                "height": 0.5389504341387316,
+                "proportions": 0.5972794311376951,
+                "cupsize": 0.6616409618852098,
+                "firmness": 0.5726929962346123,
+                "african": 0.0003737238990337566,
+                "asian": 0.24962627610096624,
+                "caucasian": 0.75
+              },
+              "modifiers": {
+                "ear-shape-square-round": 0.32,
+                "nose-trans-in-out": -0.158,
+                "nose-nostrils-angle-down-up": -0.105,
+                "nose-flaring-decr-incr": -0.304,
+                "chin-prominent-decr-incr": 0.213,
+                "chin-width-decr-incr": 0.087,
+                "eye-eyefold-angle-down-up": 0.216,
+                "nose-point-down-up": -0.087,
+                "nose-width1-decr-incr": 0.293,
+                "chin-cleft-decr-incr": 0.176,
+                "torso-vshape-decr-incr": 0.194
+              },
+              "body": "basemesh",
+              "skin": "sohh_female_zombie_skin",
+              "skin_color": [
+                0.85,
+                0.95,
+                0.8
+              ],
+              "eyes": "grey",
+              "eyes_mesh": "eyes/low-poly",
+              "eyebrows": "eyebrows/eyebrow008",
+              "eyelashes": "eyelashes/eyelashes01",
+              "hair": "hair/elvs_french_braid_variation",
+              "hair_material": "frenchbraid1mh01",
+              "hair_color": [
+                1,
+                1,
+                1
+              ],
+              "clothes": [
+                {
+                  "id": "clothes/toigo_camisole_dress_with_full_skirt",
+                  "material": "",
+                  "color": [
+                    1,
+                    1,
+                    1
+                  ]
+                }
+              ]
+            },
+            "capsule_height": 1.6052
+          }
+        },
+        "blueprints": [
+          {
+            "class": "MHCharacter",
+            "properties": {
+              "foot_ik": true,
+              "preview": "idle",
+              "animations": {},
+              "character": {
+                "macro": {
+                  "gender": 0.051966345156367146,
+                  "age": 0.8128005109790769,
+                  "muscle": 0.3365533540078023,
+                  "weight": 0.4474821857487,
+                  "height": 0.5389504341387316,
+                  "proportions": 0.5972794311376951,
+                  "cupsize": 0.6616409618852098,
+                  "firmness": 0.5726929962346123,
+                  "african": 0.0003737238990337566,
+                  "asian": 0.24962627610096624,
+                  "caucasian": 0.75
+                },
+                "modifiers": {
+                  "ear-shape-square-round": 0.32,
+                  "nose-trans-in-out": -0.158,
+                  "nose-nostrils-angle-down-up": -0.105,
+                  "nose-flaring-decr-incr": -0.304,
+                  "chin-prominent-decr-incr": 0.213,
+                  "chin-width-decr-incr": 0.087,
+                  "eye-eyefold-angle-down-up": 0.216,
+                  "nose-point-down-up": -0.087,
+                  "nose-width1-decr-incr": 0.293,
+                  "chin-cleft-decr-incr": 0.176,
+                  "torso-vshape-decr-incr": 0.194
+                },
+                "body": "basemesh",
+                "skin": "sohh_female_zombie_skin",
+                "skin_color": [
+                  0.85,
+                  0.95,
+                  0.8
+                ],
+                "eyes": "grey",
+                "eyes_mesh": "eyes/low-poly",
+                "eyebrows": "eyebrows/eyebrow008",
+                "eyelashes": "eyelashes/eyelashes01",
+                "hair": "hair/elvs_french_braid_variation",
+                "hair_material": "frenchbraid1mh01",
+                "hair_color": [
+                  1,
+                  1,
+                  1
+                ],
+                "clothes": [
+                  {
+                    "id": "clothes/toigo_camisole_dress_with_full_skirt",
+                    "material": "",
+                    "color": [
+                      1,
+                      1,
+                      1
+                    ]
+                  }
+                ]
+              },
+              "capsule_height": 1.6052
+            }
+          },
+          {
+            "class": "MHEnemy",
+            "properties": {
+              "path": "NPC Path (3)",
+              "patrol_speed": 0.8,
+              "chase_speed": 2.0,
+              "detect_range": 18.0,
+              "fov": 120.0,
+              "hearing_range": 4.0,
+              "require_los": true,
+              "lose_interest": 6.0,
+              "attack_range": 1.4,
+              "attack_damage": 12.0,
+              "attack_cooldown": 1.3,
+              "attack_style": "melee",
+              "hitscan_range": 25.0,
+              "max_health": 60.0,
+              "wait_time": 2.0,
+              "growl_sound": "enemy",
+              "death_sound": "hurt"
+            }
+          }
+        ],
+        "visible": true,
+        "tag": "",
+        "collider": null,
+        "rigidbody": null,
+        "spawn_kind": null,
+        "spawn_config": null,
+        "is_sun": false,
+        "sun_light": null,
+        "is_point_light": false,
+        "point_light": null,
+        "is_spot_light": false,
+        "spot_light": null,
+        "is_clouds": false,
+        "cloud_settings": null,
+        "is_ocean": false,
+        "ocean_settings": null,
+        "is_terrain": false,
+        "terrain_config": null,
+        "children": []
+      },
+      {
+        "name": "Zombie (1)",
+        "position": [
+          -26.0,
+          0.895855,
+          4.0
+        ],
+        "rotation_euler": [
+          0.0,
+          -103.240517,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "source_path": null,
+        "mesh_type": null,
+        "mesh_params": null,
+        "material": null,
+        "blueprint": {
+          "class": "MHCharacter",
+          "properties": {
+            "foot_ik": true,
+            "preview": "idle",
+            "animations": {},
+            "character": {
+              "macro": {
+                "gender": 0.08127357787532127,
+                "age": 0.7476157198078492,
+                "muscle": 0.6853584237827604,
+                "weight": 0.28048212349147184,
+                "height": 0.6138950227409956,
+                "proportions": 0.658569729214291,
+                "cupsize": 0.7712408448410271,
+                "firmness": 0.6865585831711125,
+                "african": 0.75,
+                "asian": 0.22704215439660358,
+                "caucasian": 0.02295784560339642
+              },
+              "modifiers": {
+                "nose-scale-horiz-decr-incr": 0.083,
+                "nose-width3-decr-incr": 0.189,
+                "eye-corner2-down-up": 0.295,
+                "chin-jaw-drop-decr-incr": -0.339,
+                "eyebrows-angle-down-up": 0.327,
+                "eye-epicanthus-in-out": 0.258,
+                "nose-width1-decr-incr": -0.3,
+                "eye-trans-in-out": -0.036,
+                "mouth-trans-down-up": -0.214,
+                "eye-push1-in-out": -0.111
+              },
+              "body": "basemesh",
+              "skin": "naim_abbassi_zombie_skin",
+              "skin_color": [
+                0.85,
+                0.95,
+                0.8
+              ],
+              "eyes": "grey",
+              "eyes_mesh": "eyes/low-poly",
+              "eyebrows": "eyebrows/eyebrow001",
+              "eyelashes": "eyelashes/eyelashes01",
+              "hair": "hair/short03",
+              "hair_material": "short03",
+              "hair_color": [
+                1.0,
+                1.0,
+                1.0
+              ],
+              "clothes": [
+                {
+                  "id": "clothes/toigo_halter_dress_knee_length",
+                  "material": "",
+                  "color": [
+                    1,
+                    1,
+                    1
+                  ]
+                }
+              ]
+            },
+            "capsule_height": 1.7717
+          }
+        },
+        "blueprints": [
+          {
+            "class": "MHCharacter",
+            "properties": {
+              "foot_ik": true,
+              "preview": "idle",
+              "animations": {},
+              "character": {
+                "macro": {
+                  "gender": 0.08127357787532127,
+                  "age": 0.7476157198078492,
+                  "muscle": 0.6853584237827604,
+                  "weight": 0.28048212349147184,
+                  "height": 0.6138950227409956,
+                  "proportions": 0.658569729214291,
+                  "cupsize": 0.7712408448410271,
+                  "firmness": 0.6865585831711125,
+                  "african": 0.75,
+                  "asian": 0.22704215439660358,
+                  "caucasian": 0.02295784560339642
+                },
+                "modifiers": {
+                  "nose-scale-horiz-decr-incr": 0.083,
+                  "nose-width3-decr-incr": 0.189,
+                  "eye-corner2-down-up": 0.295,
+                  "chin-jaw-drop-decr-incr": -0.339,
+                  "eyebrows-angle-down-up": 0.327,
+                  "eye-epicanthus-in-out": 0.258,
+                  "nose-width1-decr-incr": -0.3,
+                  "eye-trans-in-out": -0.036,
+                  "mouth-trans-down-up": -0.214,
+                  "eye-push1-in-out": -0.111
+                },
+                "body": "basemesh",
+                "skin": "naim_abbassi_zombie_skin",
+                "skin_color": [
+                  0.85,
+                  0.95,
+                  0.8
+                ],
+                "eyes": "grey",
+                "eyes_mesh": "eyes/low-poly",
+                "eyebrows": "eyebrows/eyebrow001",
+                "eyelashes": "eyelashes/eyelashes01",
+                "hair": "hair/short03",
+                "hair_material": "short03",
+                "hair_color": [
+                  1.0,
+                  1.0,
+                  1.0
+                ],
+                "clothes": [
+                  {
+                    "id": "clothes/toigo_halter_dress_knee_length",
+                    "material": "",
+                    "color": [
+                      1,
+                      1,
+                      1
+                    ]
+                  }
+                ]
+              },
+              "capsule_height": 1.7717
+            }
+          },
+          {
+            "class": "MHEnemy",
+            "properties": {
+              "path": "NPC Path (3)",
+              "patrol_speed": 0.8,
+              "chase_speed": 2.0,
+              "detect_range": 18.0,
+              "fov": 120.0,
+              "hearing_range": 4.0,
+              "require_los": true,
+              "lose_interest": 6.0,
+              "attack_range": 1.4,
+              "attack_damage": 12.0,
+              "attack_cooldown": 1.3,
+              "attack_style": "melee",
+              "hitscan_range": 25.0,
+              "max_health": 60.0,
+              "wait_time": 2.0,
+              "growl_sound": "enemy",
+              "death_sound": "hurt"
+            }
+          }
+        ],
+        "visible": true,
+        "tag": "",
+        "collider": null,
+        "rigidbody": null,
+        "spawn_kind": null,
+        "spawn_config": null,
+        "is_sun": false,
+        "sun_light": null,
+        "is_point_light": false,
+        "point_light": null,
+        "is_spot_light": false,
+        "spot_light": null,
+        "is_clouds": false,
+        "cloud_settings": null,
+        "is_ocean": false,
+        "ocean_settings": null,
+        "is_terrain": false,
+        "terrain_config": null,
+        "children": []
+      },
+      {
+        "name": "NPC Path (4)",
+        "position": [
+          26.0,
+          0.0,
+          0.0
+        ],
+        "rotation_euler": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "source_path": null,
+        "mesh_type": null,
+        "mesh_params": null,
+        "material": null,
+        "blueprint": {
+          "class": "NPCPath",
+          "properties": {
+            "closed": true
+          }
+        },
+        "blueprints": [
+          {
+            "class": "NPCPath",
+            "properties": {
+              "closed": true
+            }
+          }
+        ],
+        "visible": true,
+        "tag": "",
+        "collider": null,
+        "rigidbody": null,
+        "spawn_kind": null,
+        "spawn_config": null,
+        "is_sun": false,
+        "sun_light": null,
+        "is_point_light": false,
+        "point_light": null,
+        "is_spot_light": false,
+        "spot_light": null,
+        "is_clouds": false,
+        "cloud_settings": null,
+        "is_ocean": false,
+        "ocean_settings": null,
+        "is_terrain": false,
+        "terrain_config": null,
+        "children": []
+      },
+      {
+        "name": "NPC Path (4) P1",
+        "position": [
+          31.0,
+          0.0,
+          0.0
+        ],
+        "rotation_euler": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "source_path": null,
+        "mesh_type": "sphere",
+        "mesh_params": {
+          "radius": 0.22
+        },
+        "material": {
+          "name": "NPC Path (4) P1_mat",
+          "base_color": [
+            0.25,
+            0.85,
+            1.0,
+            1.0
+          ],
+          "metallic": 0.0,
+          "roughness": 0.4,
+          "emissive": [
+            0.05,
+            0.35,
+            0.5
+          ],
+          "emissive_intensity": 1.0,
+          "alpha_cutoff": 0.5,
+          "base_color_tex": null,
+          "metallic_roughness_tex": null,
+          "normal_tex": null,
+          "emissive_tex": null,
+          "occlusion_tex": null,
+          "double_sided": false,
+          "alpha_mode": "OPAQUE"
+        },
+        "blueprint": {
+          "class": "NPCWaypoint",
+          "properties": {
+            "path": "NPC Path (4)",
+            "order": 0,
+            "wait": -1.0
+          }
+        },
+        "blueprints": [
+          {
+            "class": "NPCWaypoint",
+            "properties": {
+              "path": "NPC Path (4)",
+              "order": 0,
+              "wait": -1.0
+            }
+          }
+        ],
+        "visible": true,
+        "tag": "",
+        "collider": null,
+        "rigidbody": null,
+        "spawn_kind": null,
+        "spawn_config": null,
+        "is_sun": false,
+        "sun_light": null,
+        "is_point_light": false,
+        "point_light": null,
+        "is_spot_light": false,
+        "spot_light": null,
+        "is_clouds": false,
+        "cloud_settings": null,
+        "is_ocean": false,
+        "ocean_settings": null,
+        "is_terrain": false,
+        "terrain_config": null,
+        "children": []
+      },
+      {
+        "name": "NPC Path (4) P2",
+        "position": [
+          26.0,
+          0.0,
+          5.0
+        ],
+        "rotation_euler": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "source_path": null,
+        "mesh_type": "sphere",
+        "mesh_params": {
+          "radius": 0.22
+        },
+        "material": {
+          "name": "NPC Path (4) P2_mat",
+          "base_color": [
+            0.25,
+            0.85,
+            1.0,
+            1.0
+          ],
+          "metallic": 0.0,
+          "roughness": 0.4,
+          "emissive": [
+            0.05,
+            0.35,
+            0.5
+          ],
+          "emissive_intensity": 1.0,
+          "alpha_cutoff": 0.5,
+          "base_color_tex": null,
+          "metallic_roughness_tex": null,
+          "normal_tex": null,
+          "emissive_tex": null,
+          "occlusion_tex": null,
+          "double_sided": false,
+          "alpha_mode": "OPAQUE"
+        },
+        "blueprint": {
+          "class": "NPCWaypoint",
+          "properties": {
+            "path": "NPC Path (4)",
+            "order": 1,
+            "wait": -1.0
+          }
+        },
+        "blueprints": [
+          {
+            "class": "NPCWaypoint",
+            "properties": {
+              "path": "NPC Path (4)",
+              "order": 1,
+              "wait": -1.0
+            }
+          }
+        ],
+        "visible": true,
+        "tag": "",
+        "collider": null,
+        "rigidbody": null,
+        "spawn_kind": null,
+        "spawn_config": null,
+        "is_sun": false,
+        "sun_light": null,
+        "is_point_light": false,
+        "point_light": null,
+        "is_spot_light": false,
+        "spot_light": null,
+        "is_clouds": false,
+        "cloud_settings": null,
+        "is_ocean": false,
+        "ocean_settings": null,
+        "is_terrain": false,
+        "terrain_config": null,
+        "children": []
+      },
+      {
+        "name": "NPC Path (4) P3",
+        "position": [
+          21.0,
+          0.0,
+          0.0
+        ],
+        "rotation_euler": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "source_path": null,
+        "mesh_type": "sphere",
+        "mesh_params": {
+          "radius": 0.22
+        },
+        "material": {
+          "name": "NPC Path (4) P3_mat",
+          "base_color": [
+            0.25,
+            0.85,
+            1.0,
+            1.0
+          ],
+          "metallic": 0.0,
+          "roughness": 0.4,
+          "emissive": [
+            0.05,
+            0.35,
+            0.5
+          ],
+          "emissive_intensity": 1.0,
+          "alpha_cutoff": 0.5,
+          "base_color_tex": null,
+          "metallic_roughness_tex": null,
+          "normal_tex": null,
+          "emissive_tex": null,
+          "occlusion_tex": null,
+          "double_sided": false,
+          "alpha_mode": "OPAQUE"
+        },
+        "blueprint": {
+          "class": "NPCWaypoint",
+          "properties": {
+            "path": "NPC Path (4)",
+            "order": 2,
+            "wait": -1.0
+          }
+        },
+        "blueprints": [
+          {
+            "class": "NPCWaypoint",
+            "properties": {
+              "path": "NPC Path (4)",
+              "order": 2,
+              "wait": -1.0
+            }
+          }
+        ],
+        "visible": true,
+        "tag": "",
+        "collider": null,
+        "rigidbody": null,
+        "spawn_kind": null,
+        "spawn_config": null,
+        "is_sun": false,
+        "sun_light": null,
+        "is_point_light": false,
+        "point_light": null,
+        "is_spot_light": false,
+        "spot_light": null,
+        "is_clouds": false,
+        "cloud_settings": null,
+        "is_ocean": false,
+        "ocean_settings": null,
+        "is_terrain": false,
+        "terrain_config": null,
+        "children": []
+      },
+      {
+        "name": "NPC Path (4) P4",
+        "position": [
+          26.0,
+          0.0,
+          -5.0
+        ],
+        "rotation_euler": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "source_path": null,
+        "mesh_type": "sphere",
+        "mesh_params": {
+          "radius": 0.22
+        },
+        "material": {
+          "name": "NPC Path (4) P4_mat",
+          "base_color": [
+            0.25,
+            0.85,
+            1.0,
+            1.0
+          ],
+          "metallic": 0.0,
+          "roughness": 0.4,
+          "emissive": [
+            0.05,
+            0.35,
+            0.5
+          ],
+          "emissive_intensity": 1.0,
+          "alpha_cutoff": 0.5,
+          "base_color_tex": null,
+          "metallic_roughness_tex": null,
+          "normal_tex": null,
+          "emissive_tex": null,
+          "occlusion_tex": null,
+          "double_sided": false,
+          "alpha_mode": "OPAQUE"
+        },
+        "blueprint": {
+          "class": "NPCWaypoint",
+          "properties": {
+            "path": "NPC Path (4)",
+            "order": 3,
+            "wait": -1.0
+          }
+        },
+        "blueprints": [
+          {
+            "class": "NPCWaypoint",
+            "properties": {
+              "path": "NPC Path (4)",
+              "order": 3,
+              "wait": -1.0
+            }
+          }
+        ],
+        "visible": true,
+        "tag": "",
+        "collider": null,
+        "rigidbody": null,
+        "spawn_kind": null,
+        "spawn_config": null,
+        "is_sun": false,
+        "sun_light": null,
+        "is_point_light": false,
+        "point_light": null,
+        "is_spot_light": false,
+        "spot_light": null,
+        "is_clouds": false,
+        "cloud_settings": null,
+        "is_ocean": false,
+        "ocean_settings": null,
+        "is_terrain": false,
+        "terrain_config": null,
+        "children": []
+      },
+      {
+        "name": "Soldier",
+        "position": [
+          26.0,
+          0.891389,
+          5.0
+        ],
+        "rotation_euler": [
+          0.0,
+          111.250504,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "source_path": null,
+        "mesh_type": null,
+        "mesh_params": null,
+        "material": null,
+        "blueprint": {
+          "class": "MHCharacter",
+          "properties": {
+            "foot_ik": true,
+            "preview": "idle",
+            "animations": {},
+            "character": {
+              "macro": {
+                "gender": 0.8861384018949596,
+                "age": 0.7,
+                "muscle": 0.6811671204261991,
+                "weight": 0.6302864430531089,
+                "height": 0.4869910675451234,
+                "proportions": 0.8287926486907073,
+                "cupsize": 0.33576543165542694,
+                "firmness": 0.359796893425662,
+                "african": 0.75,
+                "asian": 0.1571819509447764,
+                "caucasian": 0.09281804905522359
+              },
+              "modifiers": {
+                "cheek-inner-decr-incr": -0.091,
+                "mouth-lowerlip-volume-decr-incr": 0.311,
+                "eye-scale-decr-incr": 0.197,
+                "ear-flap-decr-incr": 0.113,
+                "mouth-lowerlip-ext-down-up": -0.198,
+                "cheek-trans-down-up": 0.194,
+                "mouth-upperlip-middle-down-up": -0.243,
+                "nose-septumangle-decr-incr": -0.155,
+                "eyebrows-trans-backward-forward": 0.059,
+                "mouth-lowerlip-width-decr-incr": 0.17,
+                "stomach-pregnant-decr-incr": -0.283,
+                "torso-vshape-decr-incr": -0.074
+              },
+              "body": "basemesh",
+              "skin": "middleage_african_male",
+              "skin_color": [
+                1.0,
+                1.0,
+                1.0
+              ],
+              "eyes": "brown",
+              "eyes_mesh": "eyes/low-poly",
+              "eyebrows": "eyebrows/eyebrow007",
+              "eyelashes": "eyelashes/eyelashes02",
+              "hair": "hair/short02",
+              "hair_material": "",
+              "hair_color": [
+                1.0,
+                1.0,
+                1.0
+              ],
+              "clothes": [
+                {
+                  "id": "clothes/cortu_cargo_pants",
+                  "material": "",
+                  "color": [
+                    1,
+                    1,
+                    1
+                  ]
+                },
+                {
+                  "id": "clothes/toigo_basic_tucked_t-shirt",
+                  "material": "",
+                  "color": [
+                    1,
+                    1,
+                    1
+                  ]
+                },
+                {
+                  "id": "clothes/culturalibre_male_boots",
+                  "material": "",
+                  "color": [
+                    1,
+                    1,
+                    1
+                  ]
+                },
+                {
+                  "id": "clothes/mrgreaterthan_m1_helmet",
+                  "material": "",
+                  "color": [
+                    1,
+                    1,
+                    1
+                  ]
+                }
+              ]
+            },
+            "capsule_height": 1.7628
+          }
+        },
+        "blueprints": [
+          {
+            "class": "MHCharacter",
+            "properties": {
+              "foot_ik": true,
+              "preview": "idle",
+              "animations": {},
+              "character": {
+                "macro": {
+                  "gender": 0.8861384018949596,
+                  "age": 0.7,
+                  "muscle": 0.6811671204261991,
+                  "weight": 0.6302864430531089,
+                  "height": 0.4869910675451234,
+                  "proportions": 0.8287926486907073,
+                  "cupsize": 0.33576543165542694,
+                  "firmness": 0.359796893425662,
+                  "african": 0.75,
+                  "asian": 0.1571819509447764,
+                  "caucasian": 0.09281804905522359
+                },
+                "modifiers": {
+                  "cheek-inner-decr-incr": -0.091,
+                  "mouth-lowerlip-volume-decr-incr": 0.311,
+                  "eye-scale-decr-incr": 0.197,
+                  "ear-flap-decr-incr": 0.113,
+                  "mouth-lowerlip-ext-down-up": -0.198,
+                  "cheek-trans-down-up": 0.194,
+                  "mouth-upperlip-middle-down-up": -0.243,
+                  "nose-septumangle-decr-incr": -0.155,
+                  "eyebrows-trans-backward-forward": 0.059,
+                  "mouth-lowerlip-width-decr-incr": 0.17,
+                  "stomach-pregnant-decr-incr": -0.283,
+                  "torso-vshape-decr-incr": -0.074
+                },
+                "body": "basemesh",
+                "skin": "middleage_african_male",
+                "skin_color": [
+                  1.0,
+                  1.0,
+                  1.0
+                ],
+                "eyes": "brown",
+                "eyes_mesh": "eyes/low-poly",
+                "eyebrows": "eyebrows/eyebrow007",
+                "eyelashes": "eyelashes/eyelashes02",
+                "hair": "hair/short02",
+                "hair_material": "",
+                "hair_color": [
+                  1.0,
+                  1.0,
+                  1.0
+                ],
+                "clothes": [
+                  {
+                    "id": "clothes/cortu_cargo_pants",
+                    "material": "",
+                    "color": [
+                      1,
+                      1,
+                      1
+                    ]
+                  },
+                  {
+                    "id": "clothes/toigo_basic_tucked_t-shirt",
+                    "material": "",
+                    "color": [
+                      1,
+                      1,
+                      1
+                    ]
+                  },
+                  {
+                    "id": "clothes/culturalibre_male_boots",
+                    "material": "",
+                    "color": [
+                      1,
+                      1,
+                      1
+                    ]
+                  },
+                  {
+                    "id": "clothes/mrgreaterthan_m1_helmet",
+                    "material": "",
+                    "color": [
+                      1,
+                      1,
+                      1
+                    ]
+                  }
+                ]
+              },
+              "capsule_height": 1.7628
+            }
+          },
+          {
+            "class": "MHEnemy",
+            "properties": {
+              "path": "NPC Path (4)",
+              "patrol_speed": 1.2,
+              "chase_speed": 3.6,
+              "detect_range": 22.0,
+              "fov": 120.0,
+              "hearing_range": 4.0,
+              "require_los": true,
+              "lose_interest": 6.0,
+              "attack_range": 1.6,
+              "attack_damage": 6.0,
+              "attack_cooldown": 1.2,
+              "attack_style": "hitscan",
+              "hitscan_range": 25.0,
+              "max_health": 120.0,
+              "wait_time": 2.0,
+              "growl_sound": "enemy",
+              "death_sound": "hurt"
+            }
+          }
+        ],
+        "visible": true,
+        "tag": "",
+        "collider": null,
+        "rigidbody": null,
+        "spawn_kind": null,
+        "spawn_config": null,
+        "is_sun": false,
+        "sun_light": null,
+        "is_point_light": false,
+        "point_light": null,
+        "is_spot_light": false,
+        "spot_light": null,
+        "is_clouds": false,
+        "cloud_settings": null,
+        "is_ocean": false,
+        "ocean_settings": null,
+        "is_terrain": false,
+        "terrain_config": null,
+        "children": []
+      }
+    ]
+  },
+  "camera": {
+    "position": [
+      7.0,
+      3.5999999046325684,
+      15.5
+    ],
+    "yaw": 22.0,
+    "pitch": -12.0
+  },
+  "settings": {
+    "shadows": true,
+    "ssao": true,
+    "bloom": true,
+    "fxaa": true,
+    "msaa": true,
+    "msaa_samples": 4
+  },
+  "saved_at": "2026-10-30 03:05:04"
+}

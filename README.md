@@ -31,6 +31,13 @@ The whole engine ships as a single file, `Heaven3D.py`, so it is easy to read, h
 - **Wireframe view**: a **View** menu in the top-left corner of the viewport (not in the crowded toolbar) switches between *Lit*, *Lit + Wireframe* and *Wireframe* (x-ray), and shows or hides the grid. The selected object is drawn in orange.
 - **Car Race Kit 1.1**: replace the dummy car's **body and wheels with your own 3D models** (`.glb`, `.gltf`, `.blend`, `.obj`). They're fitted automatically; the wheels spin and steer.
 
+## 🧍 New package: MakeHuman Characters
+
+- **Realistic people, built in the engine**: the MPFB 2 / MakeHuman body with gender, age, muscle, weight, height, proportion and ethnicity morphs plus 186 detail sliders, **175 clothes**, 34 hair styles, 66 skins, eyes and brows, all edited live in a new **Character Creator** panel.
+- **Mixamo-ready**: every character gets MPFB's Mixamo skeleton and GPU skinning. Load Mixamo `.fbx` (or `.glb` / `.bvh`) animations per slot and they're retargeted automatically; idle, walk, run, attack, shoot, hit, death and wave are built in.
+- **NPCs and enemies**: NPCs walk paths (loop, ping-pong, random), wait and wave at you; enemies patrol, see and hear you, chase, attack (melee or hitscan), react to hits and die. **Foot IK** keeps feet planted on stairs and slopes.
+- **100% CC0 assets**: free for commercial games, no credit, no royalties. New *Character Town* template. Guide: [docs/CHARACTERS.md](docs/CHARACTERS.md).
+
 ## What's new in 2.7.0
 
 - **Standalone editions for Windows and Linux**: unzip and double-click. Python and every library are inside, so there's nothing to install.
@@ -115,6 +122,7 @@ Packages add features to the Hub, the editor and your games, and they're plain P
 | Physics Plus | Editor, Game | physics quality presets (120 Hz, more solver iterations) and gravity presets |
 | Spline Roads | Editor, Game | roads drawn with control points that follow the terrain |
 | Car Race Kit | Editor, Game | arcade car (use your own body and wheel models), checkpoints, race manager, and a *Race Track* template |
+| MakeHuman Characters | Editor, Game | CC0 MakeHuman people with a Character Creator, Mixamo animations, path-walking NPCs, enemies, foot IK and a *Character Town* template |
 
 ```python
 # engine.py of a package
