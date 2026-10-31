@@ -1,0 +1,434 @@
+{
+  "version": "2.7.3",
+  "type": "heaven3d_project",
+  "scene": {
+    "name": "__root__",
+    "position": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "rotation_euler": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "scale": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "source_path": null,
+    "mesh_type": null,
+    "mesh_params": null,
+    "material": null,
+    "blueprint": null,
+    "blueprints": [],
+    "visible": true,
+    "tag": "",
+    "collider": null,
+    "rigidbody": null,
+    "spawn_kind": null,
+    "spawn_config": null,
+    "is_sun": false,
+    "sun_light": null,
+    "is_point_light": false,
+    "point_light": null,
+    "is_spot_light": false,
+    "spot_light": null,
+    "is_clouds": false,
+    "cloud_settings": null,
+    "is_ocean": false,
+    "ocean_settings": null,
+    "is_terrain": false,
+    "terrain_config": null,
+    "children": [
+      {
+        "name": "Sun",
+        "position": [
+          0.0,
+          50.0,
+          0.0
+        ],
+        "rotation_euler": [
+          -50.0,
+          -30.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "source_path": null,
+        "mesh_type": null,
+        "mesh_params": null,
+        "material": null,
+        "blueprint": null,
+        "blueprints": [],
+        "visible": true,
+        "tag": "",
+        "collider": null,
+        "rigidbody": null,
+        "spawn_kind": null,
+        "spawn_config": null,
+        "is_sun": true,
+        "sun_light": {
+          "direction": [
+            0.32139381766319275,
+            -0.7660444378852844,
+            -0.5566704273223877
+          ],
+          "color": [
+            1.0,
+            0.9599999785423279,
+            0.8999999761581421
+          ],
+          "intensity": 3.0,
+          "shadow_map_size": 2048,
+          "shadow_bias": 0.001
+        },
+        "is_point_light": false,
+        "point_light": null,
+        "is_spot_light": false,
+        "spot_light": null,
+        "is_clouds": false,
+        "cloud_settings": null,
+        "is_ocean": false,
+        "ocean_settings": null,
+        "is_terrain": false,
+        "terrain_config": null,
+        "children": []
+      },
+      {
+        "name": "Clouds",
+        "position": [
+          0.0,
+          80.0,
+          0.0
+        ],
+        "rotation_euler": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "source_path": null,
+        "mesh_type": null,
+        "mesh_params": null,
+        "material": null,
+        "blueprint": null,
+        "blueprints": [],
+        "visible": true,
+        "tag": "",
+        "collider": null,
+        "rigidbody": null,
+        "spawn_kind": null,
+        "spawn_config": null,
+        "is_sun": false,
+        "sun_light": null,
+        "is_point_light": false,
+        "point_light": null,
+        "is_spot_light": false,
+        "spot_light": null,
+        "is_clouds": true,
+        "cloud_settings": {
+          "enabled": true,
+          "coverage": 0.45,
+          "density": 0.85,
+          "scale": 1.0,
+          "altitude": 800.0,
+          "speed": 0.012,
+          "tint": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "wind_dir": [
+            0.8,
+            0.6
+          ]
+        },
+        "is_ocean": false,
+        "ocean_settings": null,
+        "is_terrain": false,
+        "terrain_config": null,
+        "children": []
+      },
+      {
+        "name": "Ocean",
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation_euler": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "source_path": null,
+        "mesh_type": null,
+        "mesh_params": null,
+        "material": null,
+        "blueprint": null,
+        "blueprints": [],
+        "visible": true,
+        "tag": "",
+        "collider": null,
+        "rigidbody": null,
+        "spawn_kind": null,
+        "spawn_config": null,
+        "is_sun": false,
+        "sun_light": null,
+        "is_point_light": false,
+        "point_light": null,
+        "is_spot_light": false,
+        "spot_light": null,
+        "is_clouds": false,
+        "cloud_settings": null,
+        "is_ocean": true,
+        "ocean_settings": {
+          "enabled": true,
+          "sea_level": 0.0,
+          "water_shallow": [
+            0.05999999865889549,
+            0.6200000047683716,
+            0.6000000238418579
+          ],
+          "water_deep": [
+            0.0,
+            0.17000000178813934,
+            0.30000001192092896
+          ],
+          "wave_height": 0.45,
+          "wave_speed": 1.0,
+          "wind_dir": [
+            1.0,
+            0.35
+          ],
+          "wind_strength": 1.0,
+          "choppiness": 0.7,
+          "foam_amount": 1.0,
+          "buoyancy_enabled": true,
+          "buoyancy_strength": 1.0
+        },
+        "is_terrain": false,
+        "terrain_config": null,
+        "children": []
+      },
+      {
+        "name": "Player Spawn",
+        "position": [
+          -226.348419,
+          3.843248,
+          241.190948
+        ],
+        "rotation_euler": [
+          0.0,
+          -43.181698,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "source_path": null,
+        "mesh_type": "capsule",
+        "mesh_params": {
+          "radius": 0.35,
+          "height": 1.8
+        },
+        "material": {
+          "name": "player_spawn_mat",
+          "base_color": [
+            0.2,
+            0.9,
+            0.6,
+            0.35
+          ],
+          "metallic": 0.0,
+          "roughness": 0.6,
+          "emissive": [
+            0.1,
+            0.55,
+            0.3
+          ],
+          "emissive_intensity": 0.6,
+          "alpha_cutoff": 0.5,
+          "base_color_tex": null,
+          "metallic_roughness_tex": null,
+          "normal_tex": null,
+          "emissive_tex": null,
+          "occlusion_tex": null,
+          "double_sided": true,
+          "alpha_mode": "BLEND"
+        },
+        "blueprint": null,
+        "blueprints": [],
+        "visible": true,
+        "tag": "",
+        "collider": null,
+        "rigidbody": null,
+        "spawn_kind": "player",
+        "spawn_config": {
+          "health": 100.0,
+          "bullets": 120,
+          "walk_speed": 6.0,
+          "run_speed": 10.0,
+          "cam_rot_speed": 0.13
+        },
+        "is_sun": false,
+        "sun_light": null,
+        "is_point_light": false,
+        "point_light": null,
+        "is_spot_light": false,
+        "spot_light": null,
+        "is_clouds": false,
+        "cloud_settings": null,
+        "is_ocean": false,
+        "ocean_settings": null,
+        "is_terrain": false,
+        "terrain_config": null,
+        "children": []
+      },
+      {
+        "name": "Tropical Island",
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation_euler": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "source_path": null,
+        "mesh_type": null,
+        "mesh_params": null,
+        "material": null,
+        "blueprint": {
+          "class": "TropicalIsland",
+          "properties": {
+            "seed": 20261101,
+            "size": 650,
+            "topology": "classic",
+            "max_height": 0.0,
+            "coast_roughness": 0.5,
+            "beach_width": 0.5,
+            "erosion": 0.5,
+            "roads": 3,
+            "road_width": 4.0,
+            "jungle": 0.6,
+            "tree_density": 1.0,
+            "palm_density": 1.0,
+            "grass_density": 1.0,
+            "flower_density": 1.0,
+            "rock_density": 1.0,
+            "resolution": 0,
+            "detail_distance": 55.0,
+            "far_distance": 140.0,
+            "grass_distance": 70.0,
+            "wind": 0.6,
+            "shadow_distance": 120.0,
+            "tree_collision": true,
+            "tropical_water": true
+          }
+        },
+        "blueprints": [
+          {
+            "class": "TropicalIsland",
+            "properties": {
+              "seed": 20261101,
+              "size": 650,
+              "topology": "classic",
+              "max_height": 0.0,
+              "coast_roughness": 0.5,
+              "beach_width": 0.5,
+              "erosion": 0.5,
+              "roads": 3,
+              "road_width": 4.0,
+              "jungle": 0.6,
+              "tree_density": 1.0,
+              "palm_density": 1.0,
+              "grass_density": 1.0,
+              "flower_density": 1.0,
+              "rock_density": 1.0,
+              "resolution": 0,
+              "detail_distance": 55.0,
+              "far_distance": 140.0,
+              "grass_distance": 70.0,
+              "wind": 0.6,
+              "shadow_distance": 120.0,
+              "tree_collision": true,
+              "tropical_water": true
+            }
+          }
+        ],
+        "visible": true,
+        "tag": "",
+        "collider": {
+          "center": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "is_trigger": false,
+          "friction": 0.6,
+          "restitution": 0.0,
+          "type": "heightfield"
+        },
+        "rigidbody": null,
+        "spawn_kind": null,
+        "spawn_config": null,
+        "is_sun": false,
+        "sun_light": null,
+        "is_point_light": false,
+        "point_light": null,
+        "is_spot_light": false,
+        "spot_light": null,
+        "is_clouds": false,
+        "cloud_settings": null,
+        "is_ocean": false,
+        "ocean_settings": null,
+        "is_terrain": false,
+        "terrain_config": null,
+        "children": []
+      }
+    ]
+  },
+  "camera": {
+    "position": [
+      47.125,
+      207.35000610351562,
+      452.3999938964844
+    ],
+    "yaw": 4.0,
+    "pitch": -24.0
+  },
+  "settings": {
+    "shadows": true,
+    "ssao": true,
+    "bloom": true,
+    "fxaa": true,
+    "msaa": true,
+    "msaa_samples": 4
+  },
+  "saved_at": "2026-11-01 02:07:20"
+}

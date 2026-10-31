@@ -46,6 +46,14 @@ The whole engine ships as a single file, `Heaven3D.py`, so it is easy to read, h
 - **Wireframe view**: a **View** menu in the top-left corner of the viewport (not in the crowded toolbar) switches between *Lit*, *Lit + Wireframe* and *Wireframe* (x-ray), and shows or hides the grid. The selected object is drawn in orange.
 - **Car Race Kit 1.1**: replace the dummy car's **body and wheels with your own 3D models** (`.glb`, `.gltf`, `.blend`, `.obj`). They're fitted automatically; the wheels spin and steer.
 
+## 🏝️ New package: Tropical Islands
+
+- **One click, a whole island**: *Packages > Islands: new tropical island* generates terrain, beaches, jungle, meadows, flowers, rocks and dirt roads in the engine's ocean (turquoise lagoon water included). Press Play and walk it.
+- **Endless variety**: 9 shapes (*classic, volcano, mountains, hills, atoll, twin peaks, plateau, archipelago, flat*), any size from 150 m to 3 km, a seed, coastline roughness, beach width, erosion (river valleys), number of roads and density sliders for jungle, trees, palms, grass, flowers and rocks. Change a setting in the Inspector and the island rebuilds.
+- **AAA terrain material**: 4 CC0 PBR layers (beach sand, jungle floor, dirt, mossy rock) blended by height, with per-pixel **slope auto-material** (steep ground turns to rock), triplanar cliffs, anti-tiling and wet sand at the waterline.
+- **Realistic CC0 vegetation**: 5 trees (coconut palm in 5 shapes, royal palm, island tree, flowering jacaranda, acacia), 2 grasses, 2 flowers and 2 rock kinds, built from Poly Haven scans and Nobiax palms into game-ready LODs (leaf-cluster cards, impostors far away), swaying in the wind, with alpha-tested shadows and trunk collision in Play.
+- Saved as a few numbers; rebuilt identically (and cached) when the project opens. Guide: [docs/ISLANDS.md](docs/ISLANDS.md).
+
 ## 🧍 New package: MakeHuman Characters
 
 - **Realistic people, built in the engine**: the MPFB 2 / MakeHuman body with gender, age, muscle, weight, height, proportion and ethnicity morphs plus 186 detail sliders, **175 clothes**, 34 hair styles, 66 skins, eyes and brows, all edited live in a new **Character Creator** panel.
@@ -138,6 +146,7 @@ Packages add features to the Hub, the editor and your games, and they're plain P
 | Spline Roads | Editor, Game | roads drawn with control points that follow the terrain |
 | Car Race Kit | Editor, Game | arcade car (use your own body and wheel models), checkpoints, race manager, and a *Race Track* template |
 | MakeHuman Characters | Editor, Game | CC0 MakeHuman people with a Character Creator, Mixamo animations, path-walking NPCs, enemies, foot IK and a *Character Town* template |
+| Tropical Islands | Editor, Game | one-click procedural tropical islands (9 shapes, any size) with beaches, jungle, flowers, rocks and dirt roads, slope-aware terrain materials, LOD vegetation with wind, and a *Tropical Island* template |
 
 ```python
 # engine.py of a package

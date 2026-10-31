@@ -196,5 +196,6 @@ python Heaven3D_Hub.py --safe-mode
 | **Spline Roads** | Editor, Game | roads drawn with control points that follow the terrain, with markings and a collider |
 | **Car Race Kit** | Editor, Game | arcade car, checkpoints, race manager (laps, countdown, best lap), *Race Track* template |
 | **MakeHuman Characters** | Editor, Game | MPFB2 / MakeHuman people (morphs, 175 CC0 clothes, hair, skins) with a Character Creator, Mixamo / glTF / BVH animation retargeting, path-walking NPCs, enemies, foot IK, *Character Town* template. See [CHARACTERS.md](CHARACTERS.md) |
+| **Tropical Islands** | Editor, Game | procedural tropical islands (9 shapes, any size): beaches, jungle, flowers, rocks, dirt roads, slope-aware 4-layer terrain material, LOD vegetation with wind, *Tropical Island* template. See [ISLANDS.md](ISLANDS.md) |
 
 Their source in `packages/` is a good place to learn from.
