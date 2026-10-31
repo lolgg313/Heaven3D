@@ -15,7 +15,7 @@ import math
 
 import numpy as np
 
-GEN_VERSION = 6                      # bump when the output of generate() changes (invalidates caches)
+GEN_VERSION = 7                      # bump when the output of generate() changes (invalidates caches)
 TOPOLOGIES = ("classic", "volcano", "mountains", "hills", "atoll", "twin_peaks", "plateau", "archipelago", "flat")
 
 DEFAULTS = {
@@ -401,18 +401,38 @@ def _roads(p, h, extent, rng):
     return roads
 
 
+def _nearest_road(pts, vals, N, extent, maxd):
+    """Distance (m) from every grid point to the nearest road point within maxd,
+    and that point's value (numpy only: each point updates a small window)."""
+    cell = extent / (N - 1)
+    dist = np.full((N, N), np.inf)
+    val = np.zeros((N, N))
+    r = int(math.ceil(maxd / cell)) + 1
+    off = np.arange(-r, r + 1)
+    for (px, pz), pv in zip(pts, vals):
+        cx = int(round((px + extent / 2) / cell))
+        cz = int(round((pz + extent / 2) / cell))
+        x0, x1 = max(0, cx - r), min(N, cx + r + 1)
+        z0, z1 = max(0, cz - r), min(N, cz + r + 1)
+        if x0 >= x1 or z0 >= z1:
+            continue
+        gx = (np.arange(x0, x1) * cell - extent / 2) - px
+        gz = (np.arange(z0, z1) * cell - extent / 2) - pz
+        d = np.sqrt(gz[:, None] ** 2 + gx[None, :] ** 2)
+        sub = dist[z0:z1, x0:x1]
+        better = (d < sub) & (d <= maxd)
+        sub[better] = d[better]
+        val[z0:z1, x0:x1][better] = pv
+    return dist, val
+
+
 def _road_field(roads, N, extent, width):
-    """Distance (m) from every grid point to the nearest road, + the road's level."""
-    from scipy.spatial import cKDTree
+    """Distance (m) from every grid point to the nearest road."""
     if not roads:
         return np.full((N, N), 1e9), None
     pts = np.vstack(roads)
-    tree = cKDTree(pts)
-    xs = np.linspace(-extent / 2, extent / 2, N)
-    X, Z = np.meshgrid(xs, xs)
-    d, idx = tree.query(np.stack([X.ravel(), Z.ravel()], 1), distance_upper_bound=width * 6 + 30)
-    d = d.reshape(N, N)
-    return d, pts
+    d, _ = _nearest_road(pts, np.zeros(len(pts)), N, extent, width * 6 + 30)
+    return np.where(np.isfinite(d), d, 1e9), pts
 
 
 # --------------------------------------------------------------------------- island
@@ -466,12 +486,9 @@ def generate(params=None, progress=None):
             y = np.maximum(y, 1.6)
             out.append(np.column_stack([r[:, 0], y, r[:, 1]]))
         roads = out
-        from scipy.spatial import cKDTree
         allp = np.vstack(out)
-        tree = cKDTree(allp[:, [0, 2]])
-        dd, ii = tree.query(np.stack([X.ravel(), Z.ravel()], 1), distance_upper_bound=rw * 4 + 12)
-        dd = dd.reshape(N, N)
-        lvl = np.where(np.isfinite(dd), allp[np.minimum(ii, len(allp) - 1), 1].reshape(N, N), h)
+        dd, lv = _nearest_road(allp[:, [0, 2]], allp[:, 1], N, extent, rw * 4 + 12)
+        lvl = np.where(np.isfinite(dd), lv, h)
         w = smoothstep(rw * 2.2 + 3.0, rw * 0.55, dd)
         h = h * (1 - w) + (lvl - 0.08) * w
         road_d = np.where(np.isfinite(dd), dd, 1e9)
