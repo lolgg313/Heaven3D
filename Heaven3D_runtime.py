@@ -5432,19 +5432,40 @@ const vec2 POISSON[16] = vec2[](
     vec2(-0.24188840,  0.99706507), vec2(-0.81409955,  0.91437590),
     vec2( 0.19984126,  0.78641367), vec2( 0.14383161, -0.14100790)
 );
-float shadow_calc(vec3 world_pos, vec3 N, vec3 L){
+float shadow_calc(vec3 world_pos, vec3 N, vec3 L, float foliage){
     if (u_use_shadow == 0) return 0.0;
-    vec2 texel = 1.0 / vec2(textureSize(u_shadow_map, 0));
-    // Normal-offset: push the receiver along its normal to kill surface acne
-    // on curved/grazing geometry (EEVEE does the same trick).
-    vec3 p = world_pos + N * texel.x * 2.5;
+    vec2 sm_size = vec2(textureSize(u_shadow_map, 0));
+    vec2 texel = 1.0 / sm_size;
+    // Biases in WORLD units, scaled by the real size of one shadow texel
+    // (read off the orthographic light matrix: row 0 = 2/width, row 2 =
+    // 2/depth-range).  A fixed NDC bias meant ~0.7 m on islands (detached,
+    // floating shadows) and too little on small scenes (acne stripes).
+    vec3 m_rx = vec3(u_light_space[0][0], u_light_space[1][0], u_light_space[2][0]);
+    vec3 m_rz = vec3(u_light_space[0][2], u_light_space[1][2], u_light_space[2][2]);
+    float texel_ws = 2.0 / max(length(m_rx) * sm_size.x, 1e-6);
+    float depth_per_m = 0.5 * length(m_rz);
+    // Normal-offset toward the light side of the surface (double-sided
+    // foliage may face away), largest at grazing angles where acne lives.
+    vec3 Nl = dot(N, L) < 0.0 ? -N : N;
+    float cos_t = clamp(dot(Nl, L), 0.0, 1.0);
+    float sin_t = sqrt(max(0.0, 1.0 - cos_t * cos_t));
+    float tan_t = min(sin_t / max(cos_t, 0.05), 5.0);
+    vec3 p = world_pos + Nl * (texel_ws * (0.35 + 1.4 * sin_t));
     vec4 ls = u_light_space * vec4(p, 1.0);
     vec3 proj = ls.xyz / ls.w;
     proj = proj * 0.5 + 0.5;
     if (proj.z > 1.0 || proj.x < 0.0 || proj.x > 1.0 || proj.y < 0.0 || proj.y > 1.0)
         return 0.0;
+    // Fade out over the last 6% of the shadow area: no hard line where the
+    // shadow map ends (it follows the camera on big terrains).
+    vec2 edge = abs(proj.xy * 2.0 - 1.0);
+    float fade = 1.0 - smoothstep(0.88, 1.0, max(edge.x, edge.y));
     float current = proj.z;
-    float bias = max(0.0012, 0.0035 * (1.0 - clamp(dot(N, L), 0.0, 1.0)));
+    // Slope-scaled depth bias covering the PCF footprint.  Foliage cards are
+    // treated as thick (leaves don't self-shadow into black clumps).
+    float bias_m = texel_ws * (0.6 + 1.1 * tan_t);
+    if (foliage > 0.5) bias_m = max(bias_m, 0.45);
+    float bias = bias_m * depth_per_m;
     // Interleaved gradient noise rotation per pixel
     float ign = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
     float ang = ign * 6.2831853;
@@ -5459,7 +5480,7 @@ float shadow_calc(vec3 world_pos, vec3 N, vec3 L){
         float lit = texture(u_shadow_map, vec3(proj.xy + off, current - bias));
         shadow += 1.0 - lit;
     }
-    return shadow / 16.0;
+    return shadow / 16.0 * fade;
 }
 
 // ---------------------------------------------------------------- PBR
@@ -5665,7 +5686,7 @@ void main(){
     float ndl = max(dot(N, L), 0.0);
     if (foliage > 0.5)
         ndl = clamp((dot(N, L) + 0.55) / 1.55, 0.0, 1.0);
-    float sh = (ndl > 0.0) ? shadow_calc(world_pos, N, L) : 0.0;
+    float sh = (ndl > 0.0) ? shadow_calc(world_pos, N, L, foliage) : 0.0;
     // Most engines (Unity/Godot sliders, UE's AO-on-direct option) partially
     // apply AO to direct light too — it grounds objects instead of letting
     // contact zones stay fully sunlit.  u_ao_direct ~0.35 is the sweet spot.
@@ -6370,6 +6391,9 @@ class Renderer:
     The deferred renderer.  Owns the G-buffer, shadow map, and all
     post-processing framebuffers.  Build once; resize() on window changes.
     """
+    # G-buffer world-position format (see _build_framebuffers).
+    _gpos_dtype = 'f4'
+
 
     def __init__(self, ctx: moderngl.Context, width: int, height: int):
         self.ctx = ctx
@@ -6576,7 +6600,24 @@ class Renderer:
             return self.ctx.texture((cw, ch), comp, dtype=dt)
 
         # ---- G-buffer (MRT) ----
-        self.g_position = _tex(w, h, 4, 'f2')
+        # World position is RGBA32F: half floats only hold ~0.125 m steps
+        # at 128-256 m from the origin (0.25 m past 256 m), which turned
+        # shadows into blocky staircases / striped bands and gave SSAO a
+        # grid of lines on every surface away from the world origin.
+        # The other attachments (normals, colours) are fine as RGBA16F.
+        def _make_gpos():
+            # RGBA32F if the driver renders to it, else the old RGBA16F.
+            for dt in ((self._gpos_dtype, 'f2') if self._gpos_dtype != 'f2' else ('f2',)):
+                try:
+                    t = _tex(w, h, 4, dt)
+                    fb = self.ctx.framebuffer([t])
+                    fb.release()
+                    self._gpos_dtype = dt
+                    return t
+                except Exception as ex:
+                    Log.warn(f"G-buffer position as {dt} unavailable ({ex})")
+            raise RuntimeError("no renderable G-buffer position format")
+        self.g_position = _make_gpos()
         self.g_normal   = _tex(w, h, 4, 'f2')
         self.g_albedo   = _tex(w, h, 4, 'f2')
         self.g_material = _tex(w, h, 4, 'f2')
@@ -6590,8 +6631,8 @@ class Renderer:
 
         # ---- MSAA G-buffer (hardware AA on geometric edges) ----
         # The geometry pass renders into these multisampled renderbuffers
-        # (same RGBA16F formats as the G-buffer textures so the resolve is
-        # a clean 1:1 blit), then copy_framebuffer() resolves all 5 MRT
+        # (same formats as the G-buffer textures so the resolve is a clean
+        # 1:1 blit), then copy_framebuffer() resolves all 5 MRT
         # attachments into the regular single-sample textures in ONE call.
         self.g_fbo_msaa = None
         self.g_msaa_color_rbs = []
@@ -6601,33 +6642,56 @@ class Renderer:
             if getattr(self, "enable_msaa", False) else 0
         if msaa_req > 0:
             samples = max(1, min(msaa_req, int(self.ctx.max_samples)))
-            try:
-                self.g_msaa_color_rbs = [
-                    self.ctx.renderbuffer((w, h), 4, samples=samples,
-                                          dtype='f2')
-                    for _ in range(5)]
-                self.g_msaa_depth_rb = self.ctx.depth_renderbuffer(
-                    (w, h), samples=samples)
-                self.g_fbo_msaa = self.ctx.framebuffer(
-                    self.g_msaa_color_rbs, self.g_msaa_depth_rb)
-                self._msaa_samples_active = samples
-                vram += w * h * (8 * 5 + 4) * samples  # 5xRGBA16F + depth
-            except Exception as ex:
-                # Driver refused — disable so we don't retry every frame.
-                Log.warn(f"MSAA {samples}x unavailable ({ex}); "
-                         f"running with FXAA only.")
-                for rb in self.g_msaa_color_rbs:
-                    try: rb.release()
-                    except Exception: pass
+            for _attempt in range(2):
                 try:
-                    if self.g_msaa_depth_rb is not None:
-                        self.g_msaa_depth_rb.release()
-                except Exception: pass
-                self.g_msaa_color_rbs = []
-                self.g_msaa_depth_rb = None
-                self.g_fbo_msaa = None
-                self._msaa_samples_active = 0
-                self.msaa_samples = 0
+                    self.g_msaa_color_rbs = [
+                        self.ctx.renderbuffer((w, h), 4, samples=samples,
+                                              dtype=(self._gpos_dtype if _i == 0
+                                                     else 'f2'))
+                        for _i in range(5)]
+                    self.g_msaa_depth_rb = self.ctx.depth_renderbuffer(
+                        (w, h), samples=samples)
+                    self.g_fbo_msaa = self.ctx.framebuffer(
+                        self.g_msaa_color_rbs, self.g_msaa_depth_rb)
+                    self._msaa_samples_active = samples
+                    vram += w * h * (8 * 5 + 4 + (8 if self._gpos_dtype == 'f4' else 0)) \
+                        * samples  # 4xRGBA16F + position + depth
+                    break
+                except Exception as ex:
+                    for rb in self.g_msaa_color_rbs:
+                        try: rb.release()
+                        except Exception: pass
+                    try:
+                        if self.g_msaa_depth_rb is not None:
+                            self.g_msaa_depth_rb.release()
+                    except Exception: pass
+                    self.g_msaa_color_rbs = []
+                    self.g_msaa_depth_rb = None
+                    self.g_fbo_msaa = None
+                    self._msaa_samples_active = 0
+                    if _attempt == 0 and self._gpos_dtype != 'f2':
+                        # Multisampled RGBA32F refused: keep MSAA, fall back
+                        # to an RGBA16F position (the resolve needs identical
+                        # formats, so the single-sample one follows).
+                        Log.warn(f"MSAA {samples}x with RGBA32F position "
+                                 f"unavailable ({ex}); using RGBA16F.")
+                        self._gpos_dtype = 'f2'
+                        try:
+                            self.g_fbo.release()
+                            self.g_position.release()
+                        except Exception:
+                            pass
+                        self.g_position = _tex(w, h, 4, 'f2')
+                        self.g_fbo = self.ctx.framebuffer(
+                            [self.g_position, self.g_normal, self.g_albedo,
+                             self.g_material, self.g_emissive],
+                            self.g_depth)
+                        continue
+                    # Driver refused — disable so we don't retry every frame.
+                    Log.warn(f"MSAA {samples}x unavailable ({ex}); "
+                             f"running with FXAA only.")
+                    self.msaa_samples = 0
+                    break
 
         # ---- HDR scene (lighting output) ----
         self.scene_color = _tex(w, h, 3, 'f2')
@@ -6909,6 +6973,27 @@ class Renderer:
         pad = 2.0
         left, right = mins.x - pad, maxs.x + pad
         bottom, top = mins.y - pad, maxs.y + pad
+        # Stabilise: when anything moves the bounds change every frame, and
+        # a window that rescales / slides by fractions of a texel makes all
+        # shadow edges shimmer.  Grow the extents to coarse steps (texel
+        # size stays constant until the scene really grows) and snap the
+        # window to whole texels.  Only ever ENLARGES the fit slightly.
+        try:
+            n = max(256, int(self.shadow_map_size))
+
+            def _stable(lo, hi):
+                half = max((hi - lo) * 0.5, 0.5)
+                # power-of-two step (~3% of the size): a discrete ladder,
+                # so the size only changes when the scene crosses a step
+                q = max(0.5, 2.0 ** math.floor(math.log2(half * 0.03 + 1e-9)))
+                half = math.ceil(half / q) * q
+                step = (2.0 * half) / n
+                mid = math.floor(((lo + hi) * 0.5) / step + 0.5) * step
+                return mid - half, mid + half
+            left, right = _stable(left, right)
+            bottom, top = _stable(bottom, top)
+        except Exception:
+            pass
         # Light looks down -Z in light space; depth = -z.  Give generous
         # depth range so off-screen casters still shadow the visible area.
         near = max(0.1, -maxs.z - 60.0)
@@ -12916,7 +13001,8 @@ class CharacterController:
         cc.is_grounded                  # refreshed after move()
 
     Features: collide-and-slide (up to 3 planes), slope limit, step
-    offset, ground detection, ceiling bump.  Pure CPU, no GL."""
+    offset, ground detection, ground snap, ceiling bump.  Pure CPU, no GL."""
+    _H3D_SLOPE_FIX = True     # slope-speed / downhill-hop fix (see _move_slide)
 
     def __init__(self, world: PhysicsWorld, node: "SceneNode",
                  radius: float = 0.35, height: float = 1.8,
@@ -12934,6 +13020,7 @@ class CharacterController:
         self.ground_normal = glm.vec3(0, 1, 0)
         self.ground_node: Optional[SceneNode] = None
         self.hit_ceiling = False
+        self._floor_hit = False
 
     def _capsule(self, center: glm.vec3) -> Tuple[glm.vec3, glm.vec3, float]:
         seg = self.height * 0.5 - self.radius
@@ -12999,6 +13086,7 @@ class CharacterController:
         disp = _v3(displacement)
         start = self.position
         self.hit_ceiling = False
+        was_grounded = self.is_grounded
         if glm.length(disp) < 1e-9:
             self._update_ground()
             return glm.vec3(0.0)
@@ -13014,6 +13102,7 @@ class CharacterController:
                 pos = self._move_slide(pos, sub, allow_step=True)
         # ---- vertical pass (gravity / jumps / ceiling) ----
         disp_v = glm.vec3(0.0, disp.y, 0.0)
+        self._floor_hit = False
         if abs(disp.y) > 1e-9:
             max_step = max(self.radius * 0.5, 0.05)
             n_sub = max(1, int(math.ceil(abs(disp.y) / max_step)))
@@ -13022,40 +13111,93 @@ class CharacterController:
                 pos = self._move_slide(pos, sub, allow_step=False)
         _write_node_world_position(self.node, pos)
         self._update_ground()
+        # ---- ground snap (walking DOWN slopes) ----
+        # Walking downhill, the horizontal pass leaves the capsule floating
+        # a little above the slope every frame and gravity alone can't keep
+        # up, so the player used to hop down slopes airborne (no footsteps,
+        # bob/jerk).  If we were grounded, are not jumping, and this
+        # frame's gravity pass touched no floor, slide down at most the drop
+        # a walkable slope can produce over this frame's horizontal travel;
+        # keep it only if it lands on walkable ground (ledges and cliffs
+        # still fall).  On flat ground the gravity pass always touches the
+        # floor, so this costs nothing there.
+        if (was_grounded and disp.y <= 0.0 and not self._floor_hit
+                and not self.hit_ceiling):
+            h_len = math.hypot(disp.x, disp.z)
+            if h_len > 1e-6:
+                tan_lim = math.sqrt(max(0.0, 1.0 - self.slope_cos ** 2)) \
+                    / max(self.slope_cos, 0.05)
+                snap = min(h_len * tan_lim + self.skin * 2.0 + 0.02,
+                           max(self.step_offset, 0.1))
+                cand = glm.vec3(pos)
+                max_step = max(self.radius * 0.5, 0.05)
+                n_sub = max(1, int(math.ceil(snap / max_step)))
+                sub = glm.vec3(0.0, -snap / float(n_sub), 0.0)
+                for _ in range(n_sub):
+                    cand = self._move_slide(cand, sub, allow_step=False)
+                    if self._floor_hit:
+                        break
+                if self._floor_hit:
+                    _write_node_world_position(self.node, cand)
+                    self._update_ground()
+                    if not self.is_grounded:
+                        _write_node_world_position(self.node, pos)
+                        self._update_ground()
         return self.position - start
+
+    def _floor_lift(self, n: glm.vec3, push: float, node) -> float:
+        """Vertical distance that clears a contact on WALKABLE ground.
+        Heightfields report a vertical depth (lift = depth); every other
+        shape reports depth along the normal (lift = depth / n.y)."""
+        if isinstance(getattr(node, "collider", None), HeightfieldCollider):
+            return push
+        return push / max(float(n.y), 0.3)
 
     def _move_slide(self, pos: glm.vec3, delta: glm.vec3,
                     allow_step: bool = True) -> glm.vec3:
-        remaining = glm.vec3(delta)
-        for _bounce in range(3):
-            if glm.length(remaining) < 1e-9:
-                break
-            target = pos + remaining
+        """Move by `delta`, then resolve penetrations at the target.
+
+        Walkable ground (inside the slope limit) is cleared by lifting the
+        capsule STRAIGHT UP, so walking up a slope keeps exactly the
+        horizontal speed (and resting on one never drifts downhill).
+        Walls / steep faces push out along their normal — that push-out
+        IS the slide along the surface.  The motion is applied once: the
+        old code also re-applied the projected remainder after the
+        push-out, which made the player up to ~2x faster up ramps and
+        slopes (and along walls), with jerky speed changes on bumps."""
+        target = pos + delta
+        moving_h = abs(delta.x) > 1e-9 or abs(delta.z) > 1e-9
+        step_lim = min(0.7, self.slope_cos)
+        tried_step = False
+        for _it in range(4):
             hits = self._collide_capsule(target)
             if not hits:
-                pos = target
                 break
             hits.sort(key=lambda h: -h[1])
-            n, depth, _node = hits[0]
-            if n.y < -0.3 and remaining.y > 0.0:
+            n, depth, node = hits[0]
+            push = depth + self.skin
+            if push <= 1e-7:
+                break
+            if n.y < -0.3 and delta.y > 0.0:
                 self.hit_ceiling = True
-            pos = target + n * (depth + self.skin)
-            # Step assist must run BEFORE slide projection: a vertical wall
-            # zeroes the horizontal remainder, which is exactly the motion
-            # the step-up needs to test.
-            if allow_step and self.step_offset > 0.0 and abs(n.y) < 0.7:
-                horiz = glm.vec3(remaining.x, 0.0, remaining.z)
-                if glm.length(horiz) > 1e-9:
-                    stepped = self._try_step(pos, horiz, n)
-                    if stepped is not None:
-                        pos, remaining = stepped
-                        continue
-            into = glm.dot(remaining, n)
-            if into < 0.0:
-                remaining = remaining - n * into
-            else:
-                remaining = glm.vec3(0.0)
-        return pos
+            if n.y > self.slope_cos and delta.y <= 0.0:
+                self._floor_hit = True
+                target = glm.vec3(target.x,
+                                  target.y + self._floor_lift(n, push, node),
+                                  target.z)
+                continue
+            out = target + n * push
+            # Step assist (stairs, curbs): only against faces too steep to
+            # walk on — walkable slopes are climbed by the lift above, and
+            # stepping on them teleported the player forward (jerk).
+            if allow_step and not tried_step and moving_h \
+                    and self.step_offset > 0.0 and abs(n.y) < step_lim:
+                tried_step = True
+                stepped = self._try_step(out, glm.vec3(delta.x, 0.0, delta.z), n)
+                if stepped is not None:
+                    return stepped[0]
+            target = out
+        return target
 
     def _try_step(self, pos: glm.vec3, remaining: glm.vec3,
                   wall_normal: glm.vec3 = None):
@@ -28706,7 +28848,12 @@ void main(){
     # the VERTICAL part of the correction — zero horizontal drift, while
     # walking, jumping, step-assist, moving platforms and steep-slope
     # behaviour all keep the stock code path.  Pure math, zero FPS cost.
+    # The stock _move_slide now lifts straight up on walkable ground in
+    # EVERY pass (and no longer double-applies slides), which covers this
+    # carve-out; the wrap below only installs over an older stock mover.
     try:
+        if getattr(CharacterController, "_H3D_SLOPE_FIX", False):
+            raise RuntimeError("skip: stock mover already slope-correct")
         _TP_PREV_MOVE_SLIDE = CharacterController._move_slide
 
         def _tp_cc_move_slide(self, pos: glm.vec3, delta: glm.vec3,
@@ -28757,6 +28904,8 @@ void main(){
                                            allow_step=allow_step)
 
         CharacterController._move_slide = _tp_cc_move_slide
+    except RuntimeError:
+        pass
     except Exception as _tp_ex:
         _tp_log_once("cc_wrap", f"[TERRAINPATCH] anti-slide wrap: {_tp_ex}")
 

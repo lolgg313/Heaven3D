@@ -1507,9 +1507,19 @@ def _fit_light_frustum(original, self, scene, light_view):
         pass
     c = light_view * glm.vec4(cam.x + fwd.x, cam.y, cam.z + fwd.z, 1.0)
     rr = r * 0.75
+    # Snap the window to whole shadow-map texels: it follows the camera, and
+    # sliding by fractions of a texel made every shadow edge crawl and
+    # shimmer while walking or turning.  Snapped, edges stay rock steady.
+    try:
+        n = max(256, int(getattr(self, "shadow_map_size", 2048) or 2048))
+    except Exception:
+        n = 2048
+    step = (2.0 * rr) / n
+    cx = math.floor(c.x / step + 0.5) * step
+    cy = math.floor(c.y / step + 0.5) * step
     near = max(0.1, -c.z - 600.0)
     far = -c.z + 600.0
-    return glm.ortho(c.x - rr, c.x + rr, c.y - rr, c.y + rr, near, far)
+    return glm.ortho(cx - rr, cx + rr, cy - rr, cy + rr, near, far)
 
 
 # =========================================================================== tools

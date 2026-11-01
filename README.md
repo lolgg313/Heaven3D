@@ -46,6 +46,13 @@ The whole engine ships as a single file, `Heaven3D.py`, so it is easy to read, h
 - **Tropical Islands 1.1**: octahedral impostors for far trees (as in *Amplify Impostors*): 64 baked views blended per pixel with normals, correct from any angle including from above, with proper lighting and shadows. Smooth dithered LOD cross-fades instead of popping (as in Unity's LOD Group / *GPU Instancer*), vectorized LOD selection that only runs when the camera moves, and natural per-tree colour variation. New `lod_crossfade` property.
 - **Fixed: walking on islands in exported games**: the player no longer falls through the island in exported games, and palm trunks, trees and boulders block the player in Play as intended (both were broken in the first 2.7.3 build).
 
+**Fixes: clean shadows and smooth slopes.**
+
+- **No more striped / blocky shadows or line grids**: the G-buffer now stores world positions at full 32-bit precision. Half floats only had 12-25 cm steps away from the world origin, which drew staircase shadows on sand, diagonal stripes on terrain and rocks, and a grid of lines in the ambient occlusion on every surface. Falls back to the old format automatically on drivers that can't render it.
+- **Shadows stick to their objects**: the shadow bias is now measured in world units from the real shadow-texel size (it was ~0.7 m on islands, so shadows floated away from rocks and trunks), shadows fade out softly at the edge of the shadow area instead of ending on a hard line, and the shadow window snaps to whole texels so edges no longer crawl or shimmer while you walk or turn.
+- **Walking up ramps and slopes no longer speeds you up**: the character controller re-applied its slide after resolving a contact, so the player moved up to 2x faster up slopes and ramps (and along walls), with jerky bursts on bumps and step-assist teleports on steep ramps. Uphill speed now equals flat-ground speed on terrain, boxes and meshes; walking downhill stays glued to the ground instead of hopping.
+- **Tropical Islands 1.1.1**: stable (texel-snapped) island shadows. Existing projects update when opened in the editor.
+
 ## What's new in 2.7.1
 
 - **macOS support**: standalone editions for **Apple Silicon** and **Intel** Macs (`Heaven3D Hub.app`, `Heaven3D Editor.app`), and **macOS `.app` export** for your games (with your game icon). The editor runs on Apple's OpenGL 4.1 core profile; dialogs and the Library open the Mac way.
