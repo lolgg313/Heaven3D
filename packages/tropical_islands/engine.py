@@ -1026,6 +1026,7 @@ class IslandRuntime:
             self._chunk_arrays()
             a = self._arr
         if not a["chs"]:
+            self._dist = np.zeros(0)
             return a["chs"], np.zeros(0, np.int64)
         wp = self.node.world_position()
         dx = a["cx"] + wp.x - cam[0]
@@ -1033,6 +1034,7 @@ class IslandRuntime:
         dy = np.maximum(0.0, cam[1] - (a["cy"] + wp.y))
         d = np.maximum(0.0, np.sqrt(dx * dx + dz * dz) - a["half"])
         d = np.sqrt(d * d + dy * dy)
+        self._dist = d
         cur = np.array([c["lod"] for c in a["chs"]], np.int64)
         near = np.full(len(d), float(self.view("detail_distance")))
         far = np.full(len(d), float(self.view("far_distance")))
@@ -1053,8 +1055,9 @@ class IslandRuntime:
         if not moved and view == getattr(self, "_last_view", None) and not getattr(self, "_pending", True):
             return 0
         chs, want = self._desired_lods(cam)
-        for ch, w in zip(chs, want.tolist()):
+        for ch, w, dd in zip(chs, want.tolist(), self._dist.tolist()):
             ch["want"] = w
+            ch["dist"] = dd
         todo = [ch for ch in chs if ch["want"] != ch["lod"]]
         if jump2 > 15.0 ** 2:
             # a teleport (game start, respawn, editor focus): the chunks that are wrong
@@ -1065,8 +1068,9 @@ class IslandRuntime:
             self._pending = False
             self._snap = set()
             return 0
-        wp = self.node.world_position()
-        todo.sort(key=lambda ch: (ch["center"][0] + wp.x - cam[0]) ** 2 + (ch["center"][1] + wp.z - cam[2]) ** 2)
+        # nearest first, by distance to the chunk's edge (what decides its detail),
+        # so the trees right next to the camera get their detail first
+        todo.sort(key=lambda ch: ch["dist"])
         n = 0
         for ch in todo:
             self._build_chunk(ch)
