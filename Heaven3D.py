@@ -249,6 +249,10 @@ def _clamp(v, lo, hi):
 # SECTION 1  —  SCENE GRAPH  (transform hierarchy in pure Python + pyglm)
 # #############################################################################
 
+_GLM_VEC3 = type(glm.vec3(0.0))
+_GLM_MAT4 = type(glm.mat4(1.0))
+
+
 class SceneNode:
     """
     A transform in the scene graph.  Holds local pos/rot/scale, a parent,
@@ -349,6 +353,22 @@ class SceneNode:
 
     # ---- local matrix ----
     def local_matrix(self) -> glm.mat4:
+        # Memoised on the exact TRS values: physics / AI / rendering ask for
+        # the same node's matrix thousands of times per frame, and rebuilding
+        # three rotations each time was the engine's #1 CPU cost.  The cache
+        # holds COPIES of the values, so in-place edits (node.position.x = 1)
+        # are always seen; a fresh copy is returned so callers may mutate it.
+        p, r, sc = self.position, self.rotation_euler, self.scale
+        if type(p) is _GLM_VEC3 and type(r) is _GLM_VEC3 and type(sc) is _GLM_VEC3:
+            c = self.__dict__.get("_h3d_lm")
+            if c is not None and c[0] == p and c[1] == r and c[2] == sc:
+                return _GLM_MAT4(c[3])
+            M = self._local_matrix_uncached()
+            self.__dict__["_h3d_lm"] = (_GLM_VEC3(p), _GLM_VEC3(r), _GLM_VEC3(sc), M)
+            return _GLM_MAT4(M)
+        return self._local_matrix_uncached()
+
+    def _local_matrix_uncached(self) -> glm.mat4:
         T = glm.translate(glm.mat4(1.0), self.position)
         # Unity-style rotation: Y then X then Z
         R = (glm.rotate(glm.mat4(1.0), math.radians(self.rotation_euler.y),
@@ -11203,10 +11223,43 @@ def _vabs(v: glm.vec3) -> glm.vec3:
     return glm.vec3(abs(v.x), abs(v.y), abs(v.z))
 
 
+def _collider_sig(col):
+    """Values that define a primitive collider's local shape."""
+    c = col.center
+    sz = getattr(col, "size", None)
+    if sz is not None and not isinstance(sz, (int, float)):
+        sz = (float(sz.x), float(sz.y), float(sz.z))
+    return (float(c.x), float(c.y), float(c.z), getattr(col, "radius", None),
+            getattr(col, "height", None), sz)
+
+
 def _shape_from_node_collider(node: "SceneNode", col: Collider) -> dict:
     """World shape of a collider attached to a (possibly static) node,
-    computed from the node's CURRENT world transform."""
+    computed from the node's CURRENT world transform.
+
+    Primitive shapes are cached on the collider and reused while the node's
+    world matrix and the collider's own values are unchanged (every
+    character move used to rebuild every collider's shape from scratch).
+    Shape views are read-only by contract, so sharing them is safe."""
+    if isinstance(col, (HeightfieldCollider, MeshCollider)):
+        return _shape_from_node_collider_uncached(node, col)
     m = node.world_matrix()
+    try:
+        sig = _collider_sig(col)
+        c = col.__dict__.get("_h3d_sv")
+        if c is not None and c[2] == sig and c[1] == m:
+            return c[3]                   # primitives depend on m + values only
+        sv = _shape_from_node_collider_uncached(node, col, m)
+        col.__dict__["_h3d_sv"] = (None, _GLM_MAT4(m), sig, sv)
+        return sv
+    except Exception:
+        return _shape_from_node_collider_uncached(node, col)
+
+
+def _shape_from_node_collider_uncached(node: "SceneNode", col: Collider,
+                                       m=None) -> dict:
+    if m is None:
+        m = node.world_matrix()
     ws = _world_scale(node)
     if isinstance(col, SphereCollider):
         c = glm.vec3(m * glm.vec4(col.center, 1.0))
@@ -11642,12 +11695,22 @@ def _tri_obb_mtv(a: glm.vec3, b: glm.vec3, c: glm.vec3, box: dict):
     return n_world, max(0.0, best_depth)
 
 
-def _hf_local(s: dict, world_p: glm.vec3) -> Optional[Tuple[float, float, float]]:
+def _hf_xform(node: "SceneNode"):
+    """(world position, world scale) of a heightfield node from ONE world
+    matrix — the same values world_position() / _world_scale() return,
+    without building the matrix twice per height sample."""
+    m = node.world_matrix()
+    ws = glm.vec3(glm.length(glm.vec3(m[0])),
+                  glm.length(glm.vec3(m[1])),
+                  glm.length(glm.vec3(m[2])))
+    return glm.vec3(m[3]), ws
+
+
+def _hf_local(s: dict, world_p: glm.vec3, _xf=None) -> Optional[Tuple[float, float, float]]:
     """World point -> (local_x, local_z, height_scale_y) for a heightfield,
     or None when outside the terrain bounds."""
     node = s["node"]; hf = s["hf"]
-    ws = _world_scale(node)
-    wp = node.world_position()
+    wp, ws = _xf if _xf is not None else _hf_xform(node)
     if abs(ws.x) < 1e-8 or abs(ws.z) < 1e-8:
         return None
     lx = (world_p.x - wp.x) / ws.x
@@ -11657,19 +11720,18 @@ def _hf_local(s: dict, world_p: glm.vec3) -> Optional[Tuple[float, float, float]
     return lx, lz, ws.y
 
 
-def _hf_height_world(s: dict, world_x: float, world_z: float) -> Optional[float]:
-    r = _hf_local(s, glm.vec3(world_x, 0.0, world_z))
+def _hf_height_world(s: dict, world_x: float, world_z: float, _xf=None) -> Optional[float]:
+    xf = _xf if _xf is not None else _hf_xform(s["node"])
+    r = _hf_local(s, glm.vec3(world_x, 0.0, world_z), xf)
     if r is None:
         return None
-    node = s["node"]
-    return node.world_position().y + s["hf"].height_at_local(r[0], r[1]) * r[2]
+    return xf[0].y + s["hf"].height_at_local(r[0], r[1]) * r[2]
 
 
-def _hf_normal_world(s: dict, world_x: float, world_z: float) -> glm.vec3:
+def _hf_normal_world(s: dict, world_x: float, world_z: float, _xf=None) -> glm.vec3:
     """Surface normal from the heightfield gradient (world space)."""
     node = s["node"]; hf = s["hf"]
-    ws = _world_scale(node)
-    wp = node.world_position()
+    wp, ws = _xf if _xf is not None else _hf_xform(node)
     eps = hf._cell * 0.75
     def h_at(x, z):
         lx = (x - wp.x) / max(ws.x, 1e-8)
@@ -11766,14 +11828,15 @@ def _contact_sphere_plane(sphere: dict, plane: dict, sphere_is_a: bool):
     return (point, n, depth)
 
 
-def _contact_sphere_heightfield(sphere: dict, hf: dict, sphere_is_a: bool):
-    h = _hf_height_world(hf, sphere["c"].x, sphere["c"].z)
+def _contact_sphere_heightfield(sphere: dict, hf: dict, sphere_is_a: bool, _xf=None):
+    xf = _xf if _xf is not None else _hf_xform(hf["node"])
+    h = _hf_height_world(hf, sphere["c"].x, sphere["c"].z, xf)
     if h is None:
         return None
     gap = sphere["c"].y - sphere["r"] - h
     if gap >= 0.0:
         return None
-    n_hf = _hf_normal_world(hf, sphere["c"].x, sphere["c"].z)
+    n_hf = _hf_normal_world(hf, sphere["c"].x, sphere["c"].z, xf)
     depth = -gap
     point = glm.vec3(sphere["c"].x, h, sphere["c"].z)
     n = n_hf if sphere_is_a else -n_hf
@@ -11948,9 +12011,10 @@ def _contact_capsule_plane(cap: dict, plane: dict, cap_is_a: bool):
 
 def _contact_capsule_heightfield(cap: dict, hf: dict, cap_is_a: bool):
     best = None
+    xf = _hf_xform(hf["node"])
     for (c, r) in _capsule_sample_spheres(cap):
         sph = {"kind": "sphere", "c": c, "r": r}
-        res = _contact_sphere_heightfield(sph, hf, cap_is_a)
+        res = _contact_sphere_heightfield(sph, hf, cap_is_a, xf)
         if res is not None and (best is None or res[2] > best[2]):
             best = res
     return best
@@ -12159,7 +12223,8 @@ def _generate_contact(sa: dict, sb: dict):
 class _PhysEntry:
     """One collider-bearing node tracked by the PhysicsWorld."""
     __slots__ = ("node", "collider", "body", "kind", "scale",
-                 "aabb0", "aabb1", "asleep")  # [TRIPLEA:phys_entry_asleep_slot]
+                 "aabb0", "aabb1", "asleep",  # [TRIPLEA:phys_entry_asleep_slot]
+                 "_aabb_src")
 
     def __init__(self, node, collider, body):
         self.node = node
@@ -12171,6 +12236,7 @@ class _PhysEntry:
         self.scale = _world_scale(node)
         self.aabb0 = glm.vec3(0)
         self.aabb1 = glm.vec3(0)
+        self._aabb_src = None        # shape view the AABB was built from
         self.asleep = False          # island sleep flag (physics overhaul)
 
     def shape(self) -> dict:
@@ -12179,7 +12245,10 @@ class _PhysEntry:
         return _shape_from_node_collider(self.node, self.collider)
 
     def refresh_aabb(self):
-        self.aabb0, self.aabb1 = _shape_aabb(self.shape())
+        sv = self.shape()
+        if sv is not self._aabb_src:          # cached shape -> same AABB
+            self.aabb0, self.aabb1 = _shape_aabb(sv)
+            self._aabb_src = sv if sv.get("kind") in ("sphere", "box", "capsule", "plane") else None
 
     @property
     def inv_mass(self) -> float:
@@ -12944,10 +13013,11 @@ class PhysicsWorld:
         dt_step = max_t / steps
         prev_t = 0.0
         prev_above = None
+        xf = _hf_xform(s["node"])      # node does not move during the ray
         for i in range(steps + 1):
             t = i * dt_step
             p = ro + rd * t
-            h = _hf_height_world(s, p.x, p.z)
+            h = _hf_height_world(s, p.x, p.z, xf)
             above = None if h is None else (p.y - h)
             if above is not None and above <= 0.0 and prev_above is not None \
                     and prev_above > 0.0:
@@ -12955,14 +13025,14 @@ class PhysicsWorld:
                 for _ in range(16):
                     mid = (lo + hi) * 0.5
                     pm = ro + rd * mid
-                    hm = _hf_height_world(s, pm.x, pm.z)
+                    hm = _hf_height_world(s, pm.x, pm.z, xf)
                     if hm is not None and pm.y - hm <= 0.0:
                         hi = mid
                     else:
                         lo = mid
                 hit_t = hi
                 p_hit = ro + rd * hit_t
-                n = _hf_normal_world(s, p_hit.x, p_hit.z)
+                n = _hf_normal_world(s, p_hit.x, p_hit.z, xf)
                 if glm.dot(n, rd) > 0.0:
                     n = -n
                 return hit_t, n
@@ -13021,6 +13091,7 @@ class CharacterController:
         self.ground_node: Optional[SceneNode] = None
         self.hit_ceiling = False
         self._floor_hit = False
+        self._snap = None                # per-move collider snapshot
 
     def _capsule(self, center: glm.vec3) -> Tuple[glm.vec3, glm.vec3, float]:
         seg = self.height * 0.5 - self.radius
@@ -13034,12 +13105,51 @@ class CharacterController:
     def feet_position(self) -> glm.vec3:
         return self.position - glm.vec3(0, self.height * 0.5, 0)
 
+    def _snapshot(self) -> list:
+        """The colliders this character can touch, validated ONCE for a
+        whole move().  One move() asks for contacts 3-9 times (slide passes,
+        step probe, ground snap, ground check) and nothing else can move in
+        between, so re-validating every collider's transform per query was
+        wasted work.  Colliders in this character's own subtree move WITH
+        it and stay live (re-validated per query), exactly as before."""
+        own = {id(n) for n in self.node.traverse()}
+        snap = []
+        for e in self.world.entries:
+            if e.node is self.node or e.collider.is_trigger:
+                continue
+            if not e.node.visible:
+                continue
+            if id(e.node) in own:
+                snap.append((e, None, None, None))
+                continue
+            e.refresh_aabb()
+            snap.append((e, e.aabb0, e.aabb1, e.shape()))
+        return snap
+
     def _collide_capsule(self, center: glm.vec3) -> List[tuple]:
         """All penetration resolutions for a capsule at `center`.
         Returns [(normal, depth, node)]."""
         p0, p1, r = self._capsule(center)
         me = {"kind": "capsule", "p0": p0, "p1": p1, "r": r}
         out = []
+        snap = self.__dict__.get("_snap")
+        if snap is not None:
+            pad = glm.vec3(r + self.skin)
+            qlo = glm.min(p0, p1) - pad
+            qhi = glm.max(p0, p1) + pad
+            for (e, lo, hi, sv) in snap:
+                if lo is None:                  # own subtree: live
+                    e.refresh_aabb()
+                    lo, hi, sv = e.aabb0, e.aabb1, None
+                if not _aabb_overlap(qlo, qhi, lo, hi):
+                    continue
+                raw = _generate_contact(me, sv if sv is not None else e.shape())
+                if not raw:
+                    continue
+                for (point, normal, depth) in raw:
+                    if depth > 0.0:
+                        out.append((normal, depth, e.node))
+            return out
         for e in self.world.entries:
             if e.node is self.node or e.collider.is_trigger:
                 continue
@@ -13091,6 +13201,13 @@ class CharacterController:
             self._update_ground()
             return glm.vec3(0.0)
 
+        self._snap = self._snapshot()
+        try:
+            return self._move_impl(disp, start, was_grounded)
+        finally:
+            self._snap = None
+
+    def _move_impl(self, disp, start, was_grounded):
         pos = glm.vec3(start)
         # ---- horizontal pass (with step assist) ----
         disp_h = glm.vec3(disp.x, 0.0, disp.z)
@@ -15096,6 +15213,10 @@ class HeavenEngine:
         self.width = int(width)
         self.height = int(height)
         self.project_path = project_path
+        try:
+            _h3d_start_numba_warmup()
+        except Exception:
+            pass
 
         pygame.init()
         pygame.display.set_mode((self.width, self.height),
@@ -25288,6 +25409,124 @@ if not globals().get("_CFAM_NUMBA_BOOST_INSTALLED"):
         pass
 
     # ------------------------------------------------------------------
+    # T5b: PhysicsWorld._ray_heightfield — the 201-sample march, the
+    # 16-step bisection and the gradient normal in ONE kernel (it was
+    # ~4 ms of Python per ray: enemy line-of-sight, bullets, step probes).
+    # Exact transcription: glm's float32 ray points (ro + rd * t computed
+    # in float32), float64 height math, same comparisons and order.  Used
+    # only when the collider uses the stock samplers above; anything else
+    # (or no numba) runs the original method.
+    # ------------------------------------------------------------------
+    try:
+        if not _HAS_NUMBA:
+            raise RuntimeError("numba not installed")
+        _CFAM_ORIG_ray_heightfield = PhysicsWorld._ray_heightfield
+        _CFAM_BASE_inside_local = HeightfieldCollider.inside_local
+
+        @_jit(cache=True)
+        def _cfam_hf_sample(px, pz, h, size, cell, res, wpx, wpy, wpz,
+                            wsx, wsy, wsz):
+            # _hf_height_world: (ok, height)
+            if abs(wsx) < 1e-8 or abs(wsz) < 1e-8:
+                return False, 0.0
+            lx = (px - wpx) / wsx
+            lz = (pz - wpz) / wsz
+            half = size * 0.5
+            if not (-half <= lx <= half and -half <= lz <= half):
+                return False, 0.0
+            return True, wpy + _cfam_height_kernel(h, lx, lz, size, cell, res) * wsy
+
+        @_jit(cache=True)
+        def _cfam_hf_h_clamped(x, z, h, size, cell, res, wpx, wpz,
+                               wsx, wsy, wsz):
+            # h_at() inside _hf_normal_world
+            half = size * 0.5
+            lx = (x - wpx) / max(wsx, 1e-8)
+            lz = (z - wpz) / max(wsz, 1e-8)
+            lx = max(-half, min(half, lx))
+            lz = max(-half, min(half, lz))
+            return _cfam_height_kernel(h, lx, lz, size, cell, res) * wsy
+
+        @_jit(cache=True)
+        def _cfam_ray_hf_kernel(rox, roy, roz, rdx, rdy, rdz, max_t, h,
+                                size, cell, res, wpx, wpy, wpz,
+                                wsx, wsy, wsz):
+            ox = np.float32(rox); oy = np.float32(roy); oz = np.float32(roz)
+            dx = np.float32(rdx); dy = np.float32(rdy); dz = np.float32(rdz)
+            steps = 200
+            dt_step = max_t / steps
+            prev_t = 0.0
+            prev_ok = False
+            prev_above = 0.0
+            for i in range(steps + 1):
+                t = i * dt_step
+                tf = np.float32(t)
+                px = np.float64(ox + dx * tf)
+                py = np.float64(oy + dy * tf)
+                pz = np.float64(oz + dz * tf)
+                ok, hh = _cfam_hf_sample(px, pz, h, size, cell, res,
+                                         wpx, wpy, wpz, wsx, wsy, wsz)
+                above = py - hh
+                if ok and above <= 0.0 and prev_ok and prev_above > 0.0:
+                    lo = prev_t
+                    hi = t
+                    for _k in range(16):
+                        mid = (lo + hi) * 0.5
+                        mf = np.float32(mid)
+                        mx = np.float64(ox + dx * mf)
+                        my = np.float64(oy + dy * mf)
+                        mz = np.float64(oz + dz * mf)
+                        mok, hm = _cfam_hf_sample(mx, mz, h, size, cell, res,
+                                                  wpx, wpy, wpz, wsx, wsy, wsz)
+                        if mok and my - hm <= 0.0:
+                            hi = mid
+                        else:
+                            lo = mid
+                    hit_t = hi
+                    hf32 = np.float32(hit_t)
+                    hx_ = np.float64(ox + dx * hf32)
+                    hz_ = np.float64(oz + dz * hf32)
+                    eps = cell * 0.75
+                    gx = (_cfam_hf_h_clamped(hx_ + eps, hz_, h, size, cell, res, wpx, wpz, wsx, wsy, wsz)
+                          - _cfam_hf_h_clamped(hx_ - eps, hz_, h, size, cell, res, wpx, wpz, wsx, wsy, wsz)) / (2 * eps)
+                    gz = (_cfam_hf_h_clamped(hx_, hz_ + eps, h, size, cell, res, wpx, wpz, wsx, wsy, wsz)
+                          - _cfam_hf_h_clamped(hx_, hz_ - eps, h, size, cell, res, wpx, wpz, wsx, wsy, wsz)) / (2 * eps)
+                    return True, hit_t, gx, gz
+                prev_t = t
+                prev_ok = ok
+                prev_above = above
+            return False, 0.0, 0.0, 0.0
+
+        def _cfam_ray_heightfield(self, ro, rd, max_t, s):
+            try:
+                hf = s["hf"]
+                cls = type(hf)
+                if (cls.height_at_local is not _cfam_height_at_local
+                        or cls.inside_local is not _CFAM_BASE_inside_local
+                        or not isinstance(hf.heights, np.ndarray)
+                        or hf.heights.ndim != 2):
+                    return _CFAM_ORIG_ray_heightfield(self, ro, rd, max_t, s)
+                wp, ws = _hf_xform(s["node"])
+                ok, t, gx, gz = _cfam_ray_hf_kernel(
+                    float(ro.x), float(ro.y), float(ro.z),
+                    float(rd.x), float(rd.y), float(rd.z), float(max_t),
+                    hf.heights, float(hf.size), float(hf._cell), int(hf.resolution),
+                    float(wp.x), float(wp.y), float(wp.z),
+                    float(ws.x), float(ws.y), float(ws.z))
+                if not ok:
+                    return None, None
+                n = _safe_normalize(glm.vec3(-gx, 1.0, -gz))
+                if glm.dot(n, rd) > 0.0:
+                    n = -n
+                return float(t), n
+            except Exception:
+                return _CFAM_ORIG_ray_heightfield(self, ro, rd, max_t, s)
+
+        PhysicsWorld._ray_heightfield = _cfam_ray_heightfield
+    except Exception:
+        pass
+
+    # ------------------------------------------------------------------
     # T6: Terrain._build_mesh — kernel fills preallocated positions /
     # normals / uvs (float32) and indices (uint32).  float32 fidelity:
     # xL - xR etc. are float32 subtracts; ny = 2.0 * step is float64.
@@ -25552,6 +25791,76 @@ if not globals().get("_CFAM_NUMBA_BOOST_INSTALLED"):
     except Exception:
         pass
 # [CFAMILYPATCH:numba_boost_end]
+
+
+# ---------------------------------------------------------------------------
+# Numba warm-up.  Kernels compile on their FIRST call (~1 s the very first
+# time a game runs, ~0.3 s to load them from the on-disk cache afterwards),
+# which used to freeze gameplay the first time an enemy looked for the
+# player, a bullet hit terrain or a mesh collider was touched.  A background
+# thread started with the engine compiles / loads them while the project
+# loads.  It uses throw-away stand-in objects only (no scene nodes, no
+# engine state), and any failure is ignored: kernels then compile on first
+# use exactly as before.  numba serialises compilation, so a gameplay call
+# arriving mid-compile just waits for it.
+# ---------------------------------------------------------------------------
+_H3D_WARMUP = {"thread": None, "done": False, "seconds": None}
+
+
+class _H3DWarmNode:
+    """Minimal node stand-in (identity transform) for warm-up shapes."""
+    def world_matrix(self):
+        return glm.mat4(1.0)
+
+
+def _h3d_numba_warmup():
+    if not _HAS_NUMBA:
+        return
+    t0 = time.perf_counter()
+    try:
+        for dt in (np.float32, np.float64):
+            hf = HeightfieldCollider.__new__(HeightfieldCollider)
+            hf.size, hf.resolution, hf._cell = 8.0, 8, 1.0
+            hf.heights = (np.arange(81, dtype=np.float64).reshape(9, 9) * 0.01).astype(dt)
+            s = {"kind": "heightfield", "node": _H3DWarmNode(), "hf": hf}
+            type(hf).height_at_local(hf, 0.5, 0.5)
+            PhysicsWorld._ray_heightfield(None, glm.vec3(0.1, 5.0, 0.2),
+                                          glm.vec3(0.0, -1.0, 0.0), 20.0, s)
+    except Exception:
+        pass
+    try:
+        tris = np.array([[[0, 0, 0], [1, 0, 0], [0, 0, 1]],
+                         [[1, 0, 0], [1, 0, 1], [0, 0, 1]]], dtype=np.float32)
+        bvh = _TriMeshBVH(tris)
+        bvh.raycast(glm.vec3(0.3, 1.0, 0.3), glm.vec3(0.0, -1.0, 0.0), 5.0)
+        bvh.query_aabb(glm.vec3(-1.0), glm.vec3(2.0))
+    except Exception:
+        pass
+    try:
+        _ocean_wave_height_at(1.0, 2.0, 0.5)
+    except Exception:
+        pass
+    _H3D_WARMUP["seconds"] = time.perf_counter() - t0
+
+
+def _h3d_start_numba_warmup():
+    """Start the warm-up once per process (background, daemon thread)."""
+    if not _HAS_NUMBA or _H3D_WARMUP["thread"] is not None:
+        return
+    if os.environ.get("HEAVEN3D_NO_WARMUP"):
+        return
+    import threading
+
+    def _run():
+        try:
+            _h3d_numba_warmup()
+        except Exception:
+            pass
+        _H3D_WARMUP["done"] = True
+
+    th = threading.Thread(target=_run, name="heaven3d-numba-warmup", daemon=True)
+    _H3D_WARMUP["thread"] = th
+    th.start()
 
 
 # =====================================================================
