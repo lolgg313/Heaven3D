@@ -52,6 +52,14 @@ The whole engine ships as a single file, `Heaven3D.py`, so it is easy to read, h
 - **Shadows stick to their objects**: the shadow bias is now measured in world units from the real shadow-texel size (it was ~0.7 m on islands, so shadows floated away from rocks and trunks), shadows fade out softly at the edge of the shadow area instead of ending on a hard line, and the shadow window snaps to whole texels so edges no longer crawl or shimmer while you walk or turn.
 - **Walking up ramps and slopes no longer speeds you up**: the character controller re-applied its slide after resolving a contact, so the player moved up to 2x faster up slopes and ramps (and along walls), with jerky bursts on bumps and step-assist teleports on steep ramps. Uphill speed now equals flat-ground speed on terrain, boxes and meshes; walking downhill stays glued to the ground instead of hopping.
 - **Tropical Islands 1.1.1**: stable (texel-snapped) island shadows. Existing projects update when opened in the editor.
+- **No more falling through the sea floor**: terrain collision stopped 1 m below the terrain's origin, so wading into water deeper than ~3 m dropped the player through the world (and raycasts under water missed the ground). Terrain bounds now use the real lowest point.
+
+**Physics performance (same results, much less CPU):**
+
+- Characters and enemies are up to **15x cheaper** to move: node transforms and collider shapes are cached instead of being rebuilt thousands of times per frame, and each character checks the colliders around it once per move instead of up to nine times. A 12-character crowd went from 52 ms to 3.4 ms of physics per frame.
+- **Heightfield raycasts** (enemy line of sight, bullets hitting terrain, step probes) run as a numba kernel: ~4 ms to ~0.01 ms per ray.
+- **No first-use hitches**: numba kernels compile / load in a background thread while the game loads, instead of freezing the game the first time an enemy looks for you.
+- Every change is verified bit-identical to the previous physics (crowds, slopes, meshes, thousands of random rays), with and without numba installed; without numba the engine still runs the caches (~6x faster).
 
 ## What's new in 2.7.1
 

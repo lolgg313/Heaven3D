@@ -11454,10 +11454,17 @@ def _shape_aabb(s: dict) -> Tuple[glm.vec3, glm.vec3]:
         ws = _world_scale(node)
         wp = node.world_position()
         half = hf.size * 0.5
-        lo = glm.vec3(wp.x - half * ws.x, wp.y - 1.0,
+        # Heights can be NEGATIVE (island seabeds go to -20 m and more): the
+        # box used to stop 1 m below the origin, so the broad phase skipped
+        # the terrain for anything deeper and players walking into the sea
+        # fell through the world (raycasts under water missed it too).
+        _h = hf.heights
+        y_a = float(np.min(_h)) * ws.y
+        y_b = float(np.max(_h)) * ws.y
+        lo = glm.vec3(wp.x - half * ws.x, wp.y + min(y_a, y_b, 0.0) - 1.0,
                       wp.z - half * ws.z)
         hi = glm.vec3(wp.x + half * ws.x,
-                      wp.y + float(np.max(hf.heights)) * ws.y + 1.0,
+                      wp.y + max(y_a, y_b) + 1.0,
                       wp.z + half * ws.z)
         return lo, hi
     if k == "mesh":
