@@ -1059,7 +1059,8 @@ class IslandRuntime:
             ch["want"] = w
             ch["dist"] = dd
         todo = [ch for ch in chs if ch["want"] != ch["lod"]]
-        if jump2 > 15.0 ** 2:
+        jumped = last is not None and jump2 > 15.0 ** 2
+        if jumped:
             # a teleport (game start, respawn, editor focus): the chunks that are wrong
             # right now show the right detail at once instead of cross-fading
             self._snap = {id(ch) for ch in todo}
@@ -1076,7 +1077,8 @@ class IslandRuntime:
             self._build_chunk(ch)
             n += 1
             if budget is not None and time.time() - t0 > budget:
-                break
+                if not (jumped and ch is not todo[-1] and todo[n]["dist"] < 25.0):
+                    break                          # after a teleport the surroundings come first, whole
         self._pending = n < len(todo)
         self._order_children()
         return n
