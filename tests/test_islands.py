@@ -191,6 +191,20 @@ def phase_reload(project, mode):
             check(f"{mode}: generated nodes not duplicated",
                   ok and sum(1 for c in isl[0][0].children if getattr(c, "_heaven3d_imported_part", None) == "island")
                   == len(rt.terrain_nodes) + sum(len(ch["nodes"]) for ch in rt.chunks.values()) + len(rt.col_pool))
+        if f == 12 and mode == "runtime":
+            # exported games build the island after Play started: it must still collide
+            n = mod.islands(eng)[0][0]
+            rt = mod.runtime_of(n)
+            ents = [e for e in eng.physics.entries if e.node is n]
+            check("runtime: island ground in the physics world (once)",
+                  len(ents) == 1 and ents[0].collider is n.collider, len(ents))
+            pl = mod._player(eng)
+            if pl is not None:
+                p = pl.world_position()
+                check("runtime: player stands on the island (does not fall through)",
+                      abs(p.y - rt.height_at(p.x, p.z)) < 2.5, f"y {p.y:.2f}")
+            caps = [c for c in rt.col_pool if c.visible]
+            check("runtime: nearby trunks collide", all(eng.physics.entry_for(c) is not None for c in caps), len(caps))
         if f == 12:
             check(f"{mode}: no GL errors", eng.ctx.error == "GL_NO_ERROR", eng.ctx.error)
             shot(f"reload_{mode}")

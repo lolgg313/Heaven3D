@@ -40,6 +40,12 @@ The whole engine ships as a single file, `Heaven3D.py`, so it is easy to read, h
 - **Animations work everywhere**: characters animate in Play from the Hub and in exported games, not only in the editor.
 - **Packages update themselves**: when Heaven3D ships a newer version of a package, older copies in your library and in your projects are replaced automatically when the Hub or editor opens (your package settings are kept).
 
+**Optimization update (the techniques of Unity's best-known optimizer assets, built in):**
+
+- **Faster engine, identical picture**: the scene graph is walked once per frame instead of once per pass, world matrices are computed without recursion, repeated material binds are skipped, and objects outside the sun's shadow view are no longer drawn into the shadow map. Every frame is pixel-for-pixel identical to before (verified on test scenes); CPU time per frame drops roughly 25-50% in large scenes. Set the environment variable `HEAVEN3D_NO_PERF=1` to switch these off.
+- **Tropical Islands 1.1**: octahedral impostors for far trees (as in *Amplify Impostors*): 64 baked views blended per pixel with normals, correct from any angle including from above, with proper lighting and shadows. Smooth dithered LOD cross-fades instead of popping (as in Unity's LOD Group / *GPU Instancer*), vectorized LOD selection that only runs when the camera moves, and natural per-tree colour variation. New `lod_crossfade` property.
+- **Fixed: walking on islands in exported games**: the player no longer falls through the island in exported games, and palm trunks, trees and boulders block the player in Play as intended (both were broken in the first 2.7.3 build).
+
 ## What's new in 2.7.1
 
 - **macOS support**: standalone editions for **Apple Silicon** and **Intel** Macs (`Heaven3D Hub.app`, `Heaven3D Editor.app`), and **macOS `.app` export** for your games (with your game icon). The editor runs on Apple's OpenGL 4.1 core profile; dialogs and the Library open the Mac way.

@@ -61,7 +61,7 @@ PALMS = {
 }
 # runtime albedo tints (engine.py TINTS) - impostors are baked with them so they match
 CARD_TINT = (1.55, 1.65, 1.25)
-WOOD_TINT = {"island_tree": (0.62, 0.58, 0.52)}
+WOOD_TINT = {"island_tree": (1.0, 0.96, 0.9)}
 PALM_TINT = (1.3, 1.35, 1.1)
 TERRAIN = ["aerial_beach_01", "forrest_ground_01", "dirt_floor", "mossy_rock"]
 
@@ -81,18 +81,18 @@ class Baker:
     FS = """
     #version 330
     in vec3 wn; in vec2 uv; in float ao;
-    uniform sampler2D tex; uniform vec3 u; uniform vec3 v; uniform vec3 n; uniform vec3 tint;
+    uniform sampler2D tex; uniform vec3 u; uniform vec3 v; uniform vec3 n; uniform vec3 tint; uniform int objspace;
     layout(location=0) out vec4 col; layout(location=1) out vec4 nor;
     void main(){
         vec3 N = normalize(wn);
-        if (dot(N, n) < 0.0) N = -N;                       // two-sided leaves face the card
+        if (objspace == 0 && dot(N, n) < 0.0) N = -N;      // two-sided leaves face the card
         vec3 t = vec3(dot(N,u), dot(N,v), dot(N,n));
         t.z = max(t.z, 0.25); t = normalize(t);
         vec4 tx = texture(tex, uv);
         if (tx.a < 0.5) discard;
         vec3 a = tx.rgb * tint * ao;
         col = vec4(a, 1.0);
-        nor = vec4(t * 0.5 + 0.5, 1.0);
+        nor = objspace == 1 ? vec4(N * 0.5 + 0.5, 1.0) : vec4(t * 0.5 + 0.5, 1.0);
     }"""
 
     def __init__(self, size):
@@ -101,6 +101,7 @@ class Baker:
         self.ctx = moderngl.create_standalone_context()
         self.size = size
         self.prog = self.ctx.program(vertex_shader=self.VS, fragment_shader=self.FS)
+        self.prog["objspace"].value = 0
         self.col = self.ctx.texture((size, size), 4)
         self.nor = self.ctx.texture((size, size), 4)
         self.dep = self.ctx.depth_renderbuffer((size, size))
@@ -425,6 +426,58 @@ def bake_impostors(name, variants_parts, out_dir, tile=512, size=2048, top=True)
     return out
 
 
+OCT_N = 8                                   # 8 x 8 hemi-octahedral views per impostor
+
+
+def oct_dir(i, j, n=OCT_N):
+    """Frame (i, j) of a hemi-octahedral grid -> unit view direction (y up).
+    Inverse of the runtime mapping g = (px + pz, px - pz), px/pz = v.xz / |v|_1."""
+    gx, gy = i / (n - 1) * 2.0 - 1.0, j / (n - 1) * 2.0 - 1.0
+    px, pz = (gx + gy) * 0.5, (gx - gy) * 0.5
+    y = max(0.0, 1.0 - abs(px) - abs(pz))
+    d = np.array([px, y, pz])
+    return d / max(np.linalg.norm(d), 1e-9)
+
+
+def oct_basis(d):
+    up = np.array([0.0, 1.0, 0.0])
+    r = np.cross(up, d)
+    ln = np.linalg.norm(r)
+    r = r / ln if ln > 1e-3 else np.array([1.0, 0.0, 0.0])
+    return r, np.cross(d, r)
+
+
+def bake_octahedral(name, variants_parts, out_dir, size=1024, n=OCT_N):
+    """Amplify-style hemi-octahedral impostors: n x n orthographic views over the
+    upper hemisphere per variant (colour + alpha, object-space normals), all at the
+    same scale (bounding sphere radius R around the centre (0, cy, 0))."""
+    tile = size // n
+    metas = []
+    for vi, parts in enumerate(variants_parts):
+        baker = Baker(size)
+        baker.prog["objspace"].value = 1
+        allp = np.vstack([p[0] for p in parts])
+        cy = float((allp[:, 1].max() + allp[:, 1].min()) * 0.5)
+        c = np.array([0.0, cy, 0.0])
+        R = float(np.linalg.norm(allp - c, axis=1).max()) * 1.01
+        vaos = [(baker.upload(p[0], p[1], p[2], np.ones(len(p[0])), p[3]), p[4], len(p[3]),
+                 tuple(p[5]) if len(p) > 5 else (1.0, 1.0, 1.0)) for p in parts]
+        for j in range(n):
+            for i in range(n):
+                d = oct_dir(i, j, n)
+                r, u = oct_basis(d)
+                fr = (c, r, u, d, np.array([R, R, R * 1.05]))
+                baker.draw((i * tile, j * tile, tile, tile), fr, [(vao, tex, 0, cnt, tn) for vao, tex, cnt, tn in vaos])
+        for vao, _t, _c, _n in vaos:
+            vao.release()
+        rgba, nor = baker.read()
+        base = os.path.join(out_dir, f"{name}_oct{vi}")
+        save_atlas(rgba, nor, base)
+        metas.append({"albedo": f"{name}_oct{vi}_albedo.png", "normal": f"{name}_oct{vi}_normal.jpg",
+                      "radius": R, "cy": cy})
+    return {"n": n, "variants": metas}
+
+
 def build_tree(name, src_dir, out_dir, baker):
     gname, height, ncards, tile = TREES[name]
     g = GLTF(os.path.join(src_dir, gname, gname + ".gltf"))
@@ -586,7 +639,8 @@ def build_tree(name, src_dir, out_dir, baker):
                            WOOD_TINT.get(name, (1.05, 1.0, 0.95))))
     imp = bake_impostors(name, [parts0], out_dir)[0]
     lods[2] = {"imp": imp}
-    meta = {"kind": "tree", "height": float(H), "imp": {"albedo": name + "_imp_albedo.png", "normal": name + "_imp_normal.jpg"}, "radius": float(np.percentile(np.linalg.norm(fol_pts[:, [0, 2]], axis=1), 95)),
+    octa = bake_octahedral(name, [parts0], out_dir)
+    meta = {"kind": "tree", "height": float(H), "oct": octa, "imp": {"albedo": name + "_imp_albedo.png", "normal": name + "_imp_normal.jpg"}, "radius": float(np.percentile(np.linalg.norm(fol_pts[:, [0, 2]], axis=1), 95)),
             "cards": {"albedo": name + "_cards_albedo.png", "normal": name + "_cards_normal.jpg"}, "wood": mats}
     return [lods], meta
 
@@ -734,7 +788,10 @@ def build_palm(name, palm_dir, out_dir):
                                  for v in variants], out_dir)
     for v, im in zip(variants, imps):
         v[2] = {"imp": im}
-    return variants, {"kind": "palm", "imp": {"albedo": name + "_imp_albedo.png", "normal": name + "_imp_normal.jpg"},
+    octa = bake_octahedral(name, [[(v[0]["palm"]["P"].astype(np.float64), v[0]["palm"]["N"].astype(np.float64),
+                                    v[0]["palm"]["UV"].astype(np.float64), v[0]["palm"]["I"].astype(np.int64), tex, PALM_TINT)]
+                                  for v in variants], out_dir)
+    return variants, {"kind": "palm", "oct": octa, "imp": {"albedo": name + "_imp_albedo.png", "normal": name + "_imp_normal.jpg"},
                       "albedo": name + "_albedo.png", "normal": name + "_normal.jpg", "mr": name + "_mr.png",
                       "heights": list(hr)}
 

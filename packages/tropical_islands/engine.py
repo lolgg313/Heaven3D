@@ -35,7 +35,7 @@ STATE = {"islands": {}, "time": 0.0, "cam": None, "dirty": {}, "lib": None, "ter
 GEN_KEYS = tuple(k for k in ("seed", "size", "topology", "max_height", "coast_roughness", "beach_width", "erosion",
                              "roads", "road_width", "jungle", "tree_density", "palm_density", "grass_density",
                              "flower_density", "rock_density", "resolution"))
-VIEW_DEFAULTS = {"detail_distance": 55.0, "far_distance": 140.0, "grass_distance": 70.0, "wind": 0.6,
+VIEW_DEFAULTS = {"lod_crossfade": True, "detail_distance": 55.0, "far_distance": 140.0, "grass_distance": 70.0, "wind": 0.6,
                  "shadow_distance": 120.0, "tree_collision": True, "tropical_water": True}
 
 # species -> how it is drawn
@@ -58,7 +58,7 @@ TREE_CHUNK, SMALL_CHUNK = 64.0, 40.0
 TINTS = {("tree", "cards"): (1.55, 1.65, 1.25),
          ("coconut_palm", "palm"): (1.3, 1.35, 1.1), ("royal_palm", "palm"): (1.3, 1.35, 1.1),
          ("grass", "cards"): (1.7, 1.85, 1.2), ("flower", "cards"): (1.35, 1.4, 1.3),
-         ("tree", "wood"): (1.05, 1.0, 0.95), ("island_tree", "wood"): (0.62, 0.58, 0.52), ("rock", "rock"): (1.1, 1.08, 1.02)}
+         ("tree", "wood"): (1.05, 1.0, 0.95), ("island_tree", "wood"): (1.0, 0.96, 0.9), ("rock", "rock"): (1.1, 1.08, 1.02)}
 
 
 def _m():
@@ -87,7 +87,97 @@ vec3 isl_wind(vec3 wp, vec4 a){
 }
 """
 
+# Amplify-style hemi-octahedral impostors: n x n baked views; the 3 nearest views
+# are blended, each sampled where the view ray crosses that view's plane.
+_OCT_GLSL = """
+uniform int u_isl_imp;
+uniform int u_isl_imp_n;
+vec3 isl_oct_dir(vec2 g, float n){
+    vec2 q = g / (n - 1.0) * 2.0 - 1.0;
+    float px = (q.x + q.y) * 0.5; float pz = (q.x - q.y) * 0.5;
+    return normalize(vec3(px, max(0.0, 1.0 - abs(px) - abs(pz)), pz));
+}
+vec3 isl_oct_uv(vec2 frame, vec3 Pl, vec3 Vl, float R, float n){
+    vec3 d = isl_oct_dir(frame, n);
+    vec3 r = cross(vec3(0.0, 1.0, 0.0), d); float l = length(r);
+    r = l > 1e-3 ? r / l : vec3(1.0, 0.0, 0.0);
+    vec3 u = cross(d, r);
+    float dv = dot(Vl, d);
+    float t = abs(dv) > 1e-3 ? dot(Pl, d) / dv : 0.0;
+    vec3 Q = Pl - Vl * t;
+    vec2 uv = vec2(dot(Q, r), dot(Q, u)) / R * 0.5 + 0.5;
+    float inside = step(0.0, uv.x) * step(uv.x, 1.0) * step(0.0, uv.y) * step(uv.y, 1.0);
+    uv = clamp(uv, 0.004, 0.996);
+    return vec3((frame + uv) / n, inside);
+}
+void isl_oct_frames(vec2 f, float n, out vec2 f0, out vec2 f1, out vec2 f2, out vec3 w){
+    f = clamp(f, vec2(0.0), vec2(n - 1.0));
+    vec2 b = min(floor(f), vec2(n - 2.0));
+    vec2 fr = f - b;
+    if (fr.x + fr.y < 1.0){ f0 = b; f1 = b + vec2(1.0, 0.0); f2 = b + vec2(0.0, 1.0); w = vec3(1.0 - fr.x - fr.y, fr.x, fr.y); }
+    else { f0 = b + vec2(1.0); f1 = b + vec2(0.0, 1.0); f2 = b + vec2(1.0, 0.0); w = vec3(fr.x + fr.y - 1.0, 1.0 - fr.x, 1.0 - fr.y); }
+}
+vec3 isl_to_local(vec3 v, float yaw){ float c = cos(yaw), s = sin(yaw); return vec3(c * v.x - s * v.z, v.y, s * v.x + c * v.z); }
+vec3 isl_to_world(vec3 v, float yaw){ float c = cos(yaw), s = sin(yaw); return vec3(c * v.x + s * v.z, v.y, -s * v.x + c * v.z); }
+"""
+
+_IMP_VS = """
+    if (u_isl_imp == 1){
+        float iyaw = in_tangent.x; float iR = in_tangent.y;
+        vec3 iC = (u_model * vec4(in_position + vec3(0.0, in_tangent.z, 0.0), 1.0)).xyz;
+        vec3 iV = ISL_VIEWDIR;
+        vec3 ir = cross(vec3(0.0, 1.0, 0.0), iV); float irl = length(ir);
+        ir = irl > 1e-3 ? ir / irl : vec3(cos(iyaw), 0.0, -sin(iyaw));
+        vec3 iu = cross(iV, ir);
+        vec3 iP = iC + (in_uv.x * 2.0 - 1.0) * iR * ir + (in_uv.y * 2.0 - 1.0) * iR * iu;
+        vec3 iVl = isl_to_local(iV, iyaw);
+        iVl.y = max(iVl.y, 0.0);
+        iVl = normalize(iVl + vec3(0.0, 1e-4, 0.0));
+        vec2 ipx = iVl.xz / (abs(iVl.x) + abs(iVl.y) + abs(iVl.z));
+        vec2 ig = vec2(ipx.x + ipx.y, ipx.x - ipx.y) * 0.5 + 0.5;
+        ISL_OUT
+    }
+"""
+
+_IMP_FS = """
+void isl_impostor(){
+    float n = float(u_isl_imp_n);
+    vec3 P = v_world_pos; vec3 C = v_normal;
+    float yaw = v_tangent.z; float R = v_tangent.w;
+    vec3 Vl = normalize(v_h3d_color.xyz);
+    vec3 Pl = isl_to_local(P - C, yaw);
+    vec2 f0, f1, f2; vec3 w;
+    isl_oct_frames(v_tangent.xy, n, f0, f1, f2, w);
+    vec3 u0 = isl_oct_uv(f0, Pl, Vl, R, n), u1 = isl_oct_uv(f1, Pl, Vl, R, n), u2 = isl_oct_uv(f2, Pl, Vl, R, n);
+    vec4 a0 = texture(u_albedo_tex, u0.xy); a0.a *= u0.z;
+    vec4 a1 = texture(u_albedo_tex, u1.xy); a1.a *= u1.z;
+    vec4 a2 = texture(u_albedo_tex, u2.xy); a2.a *= u2.z;
+    float A = w.x * a0.a + w.y * a1.a + w.z * a2.a;
+    if (A < u_alpha_cutoff) discard;
+    vec3 col = (w.x * a0.a * a0.rgb + w.y * a1.a * a1.rgb + w.z * a2.a * a2.rgb) / max(A, 1e-4);
+    vec3 n0 = texture(u_normal_tex, u0.xy).xyz * 2.0 - 1.0;
+    vec3 n1 = texture(u_normal_tex, u1.xy).xyz * 2.0 - 1.0;
+    vec3 n2 = texture(u_normal_tex, u2.xy).xyz * 2.0 - 1.0;
+    vec3 N = normalize(w.x * a0.a * n0 + w.y * a1.a * n1 + w.z * a2.a * n2 + vec3(0.0, 1e-4, 0.0));
+    N = normalize(isl_to_world(N, yaw));
+    float tb = v_h3d_uv1.x > 0.0 ? v_h3d_uv1.x : 1.0; float tv = v_h3d_uv1.y;
+    col *= u_base_color.rgb * clamp(vec3(tb * (1.0 - 0.06 * tv), tb * (1.0 + 0.04 * tv), tb * (1.0 - 0.1 * tv)), 0.0, 1.0);
+    g_position = vec4(P, 1.0);
+    g_normal = vec4(N, 1.0);
+    g_albedo = vec4(pow(col, vec3(2.2)), 0.0);
+    g_material = vec4(0.82, 0.0, 1.0, 1.0);
+    g_emissive = vec4(0.0, 0.0, 0.0, 1.0);
+}
+"""
+
 _TERRAIN_GLSL = """
+uniform float u_isl_fade;             // 0 = off, >0 fading in (visible share), <0 fading out
+float isl_dither(){
+    ivec2 p = ivec2(mod(gl_FragCoord.xy, 4.0));
+    int i = p.x + p.y * 4;
+    int b[16] = int[16](0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5);
+    return (float(b[i]) + 0.5) / 16.0;
+}
 uniform int u_isl_terrain;
 uniform sampler2D u_isl_splat;
 uniform sampler2DArray u_isl_alb;
@@ -209,12 +299,34 @@ def _patch_shaders():
         else:
             ok.append(False)
         m.GEOMETRY_VERT = gv
-    # ---- geometry fragment: terrain material branch
+    # ---- geometry vertex: octahedral impostor billboards
+    gv = m.GEOMETRY_VERT
+    imp_ok = False
+    if "isl_oct_dir" not in gv and "v_h3d_color" in gv and "v_h3d_uv1" in gv and "in_normal" in gv and "u_view" in gv:
+        body = gv.rstrip()
+        if body.endswith("}"):
+            vs = _IMP_VS.replace("ISL_VIEWDIR", "normalize(inverse(u_view)[3].xyz - iC)").replace(
+                "ISL_OUT", "v_world_pos = iP; v_normal = iC; v_tangent = vec4(ig * (float(u_isl_imp_n) - 1.0), iyaw, iR);"
+                           " v_h3d_color = vec4(iVl, 1.0); v_h3d_uv1 = in_normal.xy; gl_Position = u_proj * u_view * vec4(iP, 1.0);")
+            gv = gv.replace("uniform mat4 u_model;", "uniform mat4 u_model;" + _OCT_GLSL, 1)
+            gv = gv.rstrip()[:-1] + vs + "}\n"
+            imp_ok = True
+        m.GEOMETRY_VERT = gv
+    # ---- geometry fragment: terrain material + impostor branches
     gf = m.GEOMETRY_FRAG
     if "isl_terrain" not in gf:
         a = "void main(){"
         if a in gf and "g_emissive" in gf:
-            gf = gf.replace(a, _TERRAIN_GLSL + "\n" + a + "\n    if (u_isl_terrain == 1) { isl_terrain(); return; }", 1)
+            extra = ""
+            if imp_ok and "v_h3d_color" in gf and "v_h3d_uv1" in gf and "u_normal_tex" in gf and "u_albedo_tex" in gf:
+                gf = gf.replace(a, _OCT_GLSL + _IMP_FS + "\n" + a, 1)
+                extra = "\n    if (u_isl_imp == 1) { isl_impostor(); return; }"
+            else:
+                imp_ok = False
+            gf = gf.replace(a, _TERRAIN_GLSL + "\n" + a +
+                            "\n    if (u_isl_fade != 0.0){ float isl_d = isl_dither();"
+                            " if (u_isl_fade > 0.0 ? isl_d >= u_isl_fade : isl_d < -u_isl_fade) discard; }"
+                            "\n    if (u_isl_terrain == 1) { isl_terrain(); return; }" + extra, 1)
             ok.append(True)
         else:
             ok.append(False)
@@ -224,12 +336,17 @@ def _patch_shaders():
     if "isl_wind" not in sv:
         a = "uniform mat4 u_light_space;"
         if a in sv and sv.rstrip().endswith("}"):
-            sv = sv.replace(a, a + "\nlayout (location = 3) in vec2 in_uv;\nlayout (location = 10) in vec4 in_isl;"
-                            "\nout vec2 v_isl_uv;" + _WIND_GLSL, 1)
+            sv = sv.replace(a, a + "\nlayout (location = 2) in vec4 in_tangent;\nlayout (location = 3) in vec2 in_uv;"
+                            "\nlayout (location = 10) in vec4 in_isl;"
+                            "\nout vec2 v_isl_uv;\nout vec3 v_isl_P;\nout vec3 v_isl_C;\nout vec4 v_isl_T;\nout vec3 v_isl_V;"
+                            "\nuniform vec3 u_isl_light_dir;" + _WIND_GLSL + _OCT_GLSL, 1)
             body = sv.rstrip()[:-1]
-            sv = body + ("    v_isl_uv = in_uv;\n"
+            svs = _IMP_VS.replace("ISL_VIEWDIR", "normalize(u_isl_light_dir)").replace(
+                "ISL_OUT", "v_isl_P = iP; v_isl_C = iC; v_isl_T = vec4(ig * (float(u_isl_imp_n) - 1.0), iyaw, iR);"
+                           " v_isl_V = iVl; gl_Position = u_light_space * vec4(iP, 1.0);")
+            sv = body + ("    v_isl_uv = in_uv;\n    v_isl_P = vec3(0.0); v_isl_C = vec3(0.0); v_isl_T = vec4(0.0); v_isl_V = vec3(0.0, 1.0, 0.0);\n"
                          "    if (in_isl.x > 0.0) { vec4 isl_w = u_model * vec4(in_position, 1.0);"
-                         " gl_Position += u_light_space * vec4(isl_wind(isl_w.xyz, in_isl), 0.0); }\n}\n")
+                         " gl_Position += u_light_space * vec4(isl_wind(isl_w.xyz, in_isl), 0.0); }\n" + svs + "}\n")
             ok.append(True)
         else:
             ok.append(False)
@@ -237,8 +354,20 @@ def _patch_shaders():
     sf = m.SHADOW_FRAG
     if "u_isl_alpha" not in sf:
         if "void main(){}" in sf:
-            sf = sf.replace("void main(){}", "in vec2 v_isl_uv;\nuniform int u_isl_alpha;\nuniform sampler2D u_isl_alpha_tex;\n"
-                            "void main(){ if (u_isl_alpha == 1 && texture(u_isl_alpha_tex, v_isl_uv).a < 0.5) discard; }")
+            sf = sf.replace("void main(){}", "in vec2 v_isl_uv;\nin vec3 v_isl_P;\nin vec3 v_isl_C;\nin vec4 v_isl_T;\nin vec3 v_isl_V;\n"
+                            "uniform int u_isl_alpha;\nuniform sampler2D u_isl_alpha_tex;\n" + _OCT_GLSL +
+                            "void main(){\n"
+                            "    if (u_isl_alpha == 1 && texture(u_isl_alpha_tex, v_isl_uv).a < 0.5) discard;\n"
+                            "    if (u_isl_alpha == 2){\n"
+                            "        float n = float(u_isl_imp_n); vec2 f0, f1, f2; vec3 w;\n"
+                            "        isl_oct_frames(v_isl_T.xy, n, f0, f1, f2, w);\n"
+                            "        vec3 Pl = isl_to_local(v_isl_P - v_isl_C, v_isl_T.z); vec3 Vl = normalize(v_isl_V);\n"
+                            "        vec3 u0 = isl_oct_uv(f0, Pl, Vl, v_isl_T.w, n), u1 = isl_oct_uv(f1, Pl, Vl, v_isl_T.w, n),"
+                            " u2 = isl_oct_uv(f2, Pl, Vl, v_isl_T.w, n);\n"
+                            "        float A = w.x * texture(u_isl_alpha_tex, u0.xy).a * u0.z + w.y * texture(u_isl_alpha_tex, u1.xy).a * u1.z"
+                            " + w.z * texture(u_isl_alpha_tex, u2.xy).a * u2.z;\n"
+                            "        if (A < 0.5) discard;\n"
+                            "    }\n}")
             ok.append(True)
         else:
             ok.append(False)
@@ -246,6 +375,7 @@ def _patch_shaders():
     for k in ("geometry", "shadow", "geometry_inst"):
         m.ShaderLib._cache.pop(k, None)
     STATE["shaders_ok"] = all(ok)
+    STATE["imp_ok"] = bool(locals().get("imp_ok")) and "isl_impostor" in m.GEOMETRY_FRAG and "isl_oct_dir" in m.SHADOW_FRAG
     if not all(ok):
         H3D.warn(f"tropical island shader hooks partially applied {ok}")
 
@@ -336,6 +466,8 @@ def _library():
             mat("palm", meta["albedo"], meta["normal"], meta["mr"], True, 1.0)
         if "imp" in meta:
             mat("imp", meta["imp"]["albedo"], meta["imp"]["normal"], None, True, 0.85)
+        for oi, om in enumerate((meta.get("oct") or {}).get("variants", [])):
+            mat(f"oct{oi}", om["albedo"], om["normal"], None, True, 0.82)
         if meta.get("kind") == "rock":
             mat("rock", meta["mat"].get("base"), meta["mat"].get("normal"), meta["mat"].get("mr"), False, 1.0)
         for wk, wm in (meta.get("wood") or {}).items():
@@ -394,11 +526,32 @@ def _mesh_classes():
             if self.shadow:
                 if not mesh.cast_shadow:
                     return None
+                fd = mesh.fade
+                if (fd > 0.0 and fd < 0.5) or (fd < 0.0 and -fd >= 0.5):
+                    return None                    # shadows switch LOD halfway through the fade
                 lim = mesh.shadow_limit
                 cam = STATE["cam"]
                 if lim > 0 and cam is not None:
                     c = mesh.center
                     if (c[0] - cam[0]) ** 2 + (c[2] - cam[2]) ** 2 > lim * lim:
+                        return None
+                if mesh.imp and mesh.alpha_tex is not None:
+                    try:
+                        tex = _renderer().get_texture(mesh.alpha_tex)
+                        tex.use(location=UNIT_ALPHA)
+                        prog["u_isl_alpha_tex"].value = UNIT_ALPHA
+                        prog["u_isl_alpha"].value = 2
+                        prog["u_isl_imp"].value = 1
+                        prog["u_isl_imp_n"].value = mesh.imp
+                        sun = getattr(STATE["engine"].scene, "sun", None)
+                        d = sun.direction if sun is not None else None
+                        prog["u_isl_light_dir"].value = (-float(d.x), -float(d.y), -float(d.z)) if d is not None else (0.3, 0.9, 0.2)
+                        try:
+                            return self.vao.render(*a, **kw)
+                        finally:
+                            prog["u_isl_alpha"].value = 0
+                            prog["u_isl_imp"].value = 0
+                    except KeyError:
                         return None
                 if mesh.alpha_tex is not None:
                     try:
@@ -413,6 +566,32 @@ def _mesh_classes():
                     except KeyError:
                         pass
                 return self.vao.render(*a, **kw)
+            if mesh.fade != 0.0:
+                try:
+                    prog["u_isl_fade"].value = float(mesh.fade)
+                except KeyError:
+                    pass
+                try:
+                    return self._draw(*a, **kw)
+                finally:
+                    try:
+                        prog["u_isl_fade"].value = 0.0
+                    except KeyError:
+                        pass
+            return self._draw(*a, **kw)
+
+        def _draw(self, *a, **kw):
+            mesh, prog = self.mesh, self.prog
+            if mesh.imp:
+                try:
+                    prog["u_isl_imp"].value = 1
+                    prog["u_isl_imp_n"].value = mesh.imp
+                except KeyError:
+                    return None                     # no impostor path in this program: draw nothing
+                try:
+                    return self.vao.render(*a, **kw)
+                finally:
+                    prog["u_isl_imp"].value = 0
             if mesh.terrain is not None:
                 isl = mesh.terrain
                 try:
@@ -456,6 +635,8 @@ def _mesh_classes():
             self.shadow_limit = 0.0
             self.alpha_tex = None
             self.terrain = None
+            self.imp = 0                       # octahedral impostor frames per side (0 = normal mesh)
+            self.fade = 0.0                    # LOD cross-fade state (see IslandRuntime.update_fades)
 
         def get_vao(self, program):
             key = ("isl", id(program))
@@ -509,6 +690,13 @@ def _renderer():
 
 
 # =========================================================================== merging
+def _inst_tint(inst):
+    """Per-instance colour variation from the instance position (stable across LODs)."""
+    h1 = np.sin(inst[:, 0:1] * 12.9898 + inst[:, 2:3] * 78.233) * 43758.5453
+    h2 = np.sin(inst[:, 0:1] * 39.3468 + inst[:, 2:3] * 11.135) * 24634.6345
+    return (h1 - np.floor(h1)) * 2.0 - 1.0, 0.86 + (h2 - np.floor(h2)) * 0.24
+
+
 def _merge_instances(parts_by_inst, amp, sink, group, seed):
     """parts_by_inst: list of (part, inst (k, 6)).  Returns interleaved arrays."""
     P_all, N_all, T_all, U_all, X_all, I_all = [], [], [], [], [], []
@@ -539,8 +727,7 @@ def _merge_instances(parts_by_inst, amp, sink, group, seed):
         X = np.stack([sway, np.broadcast_to(phase, (k, nv)), np.broadcast_to(jit, (k, nv)), flutter], -1).reshape(-1, 4)
         # colour variation (stored as 1 - rgb for the engine's vertex colour channel)
         if group in ("grass", "flower", "tree"):
-            v = rng.uniform(-1, 1, (k, 1))
-            br = rng.uniform(0.86, 1.1, (k, 1))
+            v, br = _inst_tint(inst)
             col = np.concatenate([br * (1.0 - 0.06 * v), br * (1.0 + 0.04 * v), br * (1.0 - 0.1 * v)], 1)
         else:
             col = rng.uniform(0.85, 1.05, (k, 1)) * np.ones((k, 3))
@@ -566,6 +753,12 @@ class IslandRuntime:
         self.isl = None
         self.key = None
         self.terrain_nodes = []
+        self._terrain_set = set()
+        self._fading, self._fade_chs = set(), {}
+        self._arr = None
+        self._last_cam = None
+        self._pending = True
+        self._snap = set()
         self.chunks = {}             # (species, cx, cz) -> chunk dict
         self.queue = []
         self.splat_tex = None
@@ -666,9 +859,14 @@ class IslandRuntime:
             self._drop(n)
         self.terrain_nodes = []
         for ch in self.chunks.values():
-            for n in ch["nodes"]:
+            for n in ch["nodes"] + ch.get("old", []):
                 self._drop(n)
         self.chunks = {}
+        self._fading, self._fade_chs = set(), {}
+        self._arr = None
+        self._last_cam = None
+        self._pending = True
+        self._snap = set()
         self.queue = []
         for n in self.col_pool:
             self._drop(n)
@@ -746,6 +944,7 @@ class IslandRuntime:
                                          cpu=(P.astype(np.float32), idx))
                 mesh.terrain = self
                 self.terrain_nodes.append(self._child(f"terrain {cx},{cz}", mesh, mat))
+        self._terrain_set = set(self.terrain_nodes)
 
     def bind_terrain(self, prog):
         tt = STATE["terrain_tex"]
@@ -808,55 +1007,151 @@ class IslandRuntime:
                                                "y": float(np.median(inst[grp][:, 1])),
                                                "want": -1, "nodes": [], "group": group, "name": name}
 
-    def _desired_lod(self, ch, cam):
+    def _chunk_arrays(self):
+        keys = list(self.chunks.keys())
+        chs = [self.chunks[k] for k in keys]
+        gid = {"tree": 0, "rock": 0, "grass": 1, "flower": 2}
+        self._arr = {"chs": chs,
+                     "cx": np.array([c["center"][0] for c in chs], np.float64),
+                     "cz": np.array([c["center"][1] for c in chs], np.float64),
+                     "cy": np.array([c.get("y", 0.0) for c in chs], np.float64),
+                     "half": np.array([c["size"] * 0.5 for c in chs], np.float64),
+                     "g": np.array([gid.get(c["group"], 0) for c in chs], np.int64)}
+
+    def _desired_lods(self, cam):
+        """All chunks at once (numpy); same rules as before: 3D distance to the
+        chunk, hysteresis around the current LOD, grass / flowers near only."""
+        a = getattr(self, "_arr", None)
+        if a is None or len(a["chs"]) != len(self.chunks):
+            self._chunk_arrays()
+            a = self._arr
+        if not a["chs"]:
+            return a["chs"], np.zeros(0, np.int64)
         wp = self.node.world_position()
-        dx = ch["center"][0] + wp.x - cam[0]
-        dz = ch["center"][1] + wp.z - cam[2]
-        dy = max(0.0, cam[1] - (ch.get("y", 0.0) + wp.y))            # height above the chunk counts too
-        d = max(0.0, math.sqrt(dx * dx + dz * dz) - ch["size"] * 0.5)
-        d = math.sqrt(d * d + dy * dy)
-        g = ch["group"]
-        near, far = float(self.view("detail_distance")), float(self.view("far_distance"))
-        if g in ("grass", "flower"):
-            lim = float(self.view("grass_distance")) * (1.25 if g == "flower" else 1.0)
-            return 0 if d < lim else 3
-        hyst = 8.0 if ch["lod"] >= 0 else 0.0
-        if ch["lod"] == 0:
-            near += hyst
-        if ch["lod"] == 1:
-            far += hyst
-        if d < near:
-            return 0
-        if d < far:
-            return 1
-        return 2
+        dx = a["cx"] + wp.x - cam[0]
+        dz = a["cz"] + wp.z - cam[2]
+        dy = np.maximum(0.0, cam[1] - (a["cy"] + wp.y))
+        d = np.maximum(0.0, np.sqrt(dx * dx + dz * dz) - a["half"])
+        d = np.sqrt(d * d + dy * dy)
+        cur = np.array([c["lod"] for c in a["chs"]], np.int64)
+        near = np.full(len(d), float(self.view("detail_distance")))
+        far = np.full(len(d), float(self.view("far_distance")))
+        near[cur == 0] += 8.0
+        far[cur == 1] += 8.0
+        want = np.where(d < near, 0, np.where(d < far, 1, 2))
+        gl = float(self.view("grass_distance"))
+        want = np.where(a["g"] == 1, np.where(d < gl, 0, 3), want)
+        want = np.where(a["g"] == 2, np.where(d < gl * 1.25, 0, 3), want)
+        return a["chs"], want
 
     def update_chunks(self, cam, budget=0.006):
         t0 = time.time()
-        for key, ch in self.chunks.items():
-            ch["want"] = self._desired_lod(ch, cam)
-        todo = [ch for ch in self.chunks.values() if ch["want"] != ch["lod"]]
+        last = getattr(self, "_last_cam", None)
+        view = tuple(float(self.view(k)) for k in ("detail_distance", "far_distance", "grass_distance"))
+        jump2 = 0.0 if last is None else (cam[0] - last[0]) ** 2 + (cam[1] - last[1]) ** 2 + (cam[2] - last[2]) ** 2
+        moved = last is None or jump2 > 0.25
+        if not moved and view == getattr(self, "_last_view", None) and not getattr(self, "_pending", True):
+            return 0
+        chs, want = self._desired_lods(cam)
+        for ch, w in zip(chs, want.tolist()):
+            ch["want"] = w
+        todo = [ch for ch in chs if ch["want"] != ch["lod"]]
+        if jump2 > 15.0 ** 2:
+            # a teleport (game start, respawn, editor focus): the chunks that are wrong
+            # right now show the right detail at once instead of cross-fading
+            self._snap = {id(ch) for ch in todo}
+        self._last_cam, self._last_view = cam, view
         if not todo:
+            self._pending = False
+            self._snap = set()
             return 0
         wp = self.node.world_position()
-
-        def dist(ch):
-            return (ch["center"][0] + wp.x - cam[0]) ** 2 + (ch["center"][1] + wp.z - cam[2]) ** 2
-        todo.sort(key=dist)
+        todo.sort(key=lambda ch: (ch["center"][0] + wp.x - cam[0]) ** 2 + (ch["center"][1] + wp.z - cam[2]) ** 2)
         n = 0
         for ch in todo:
             self._build_chunk(ch)
             n += 1
             if budget is not None and time.time() - t0 > budget:
                 break
+        self._pending = n < len(todo)
+        self._order_children()
         return n
+
+    def _order_children(self):
+        """Keep chunks that share a material next to each other in the scene
+        graph, so the renderer binds each material once per run of draws."""
+        ch = self.node.children
+        rank = {}
+
+        def key(n):
+            m = n.material
+            if m is None:
+                return (0, 0)
+            return (1, rank.setdefault(id(m), len(rank)))
+        for n in ch:
+            key(n)
+        if not self.terrain_nodes:
+            return
+        ch.sort(key=lambda n: (0, 0) if n in self._terrain_set else (2, 0) if n.name.startswith("_runtime_") else key(n))
+
+    FADE_TIME = 0.5
 
     def _build_chunk(self, ch):
         want = ch["want"]
-        for nd in ch["nodes"]:
+        for nd in ch.get("old", []):                      # a fade still running: finish it now
             self._drop(nd)
+        snap = getattr(self, "_snap", None)
+        fade = ch["lod"] >= 0 and bool(self.view("lod_crossfade")) and not (snap and id(ch) in snap)
+        if snap:
+            snap.discard(id(ch))
+        old = ch["nodes"]
+        if fade:
+            ch["old"] = old
+            for nd in old:
+                nd.mesh.fade = -1e-4                       # fully visible, fading out
+        else:
+            ch["old"] = []
+            for nd in old:
+                self._drop(nd)
         ch["nodes"] = []
         ch["lod"] = want
+        ch["t"] = 0.0 if fade else 1.0
+        self._build_chunk_nodes(ch)
+        if fade:
+            for nd in ch["nodes"]:
+                nd.mesh.fade = 1e-4                        # invisible, fading in
+            self._fading.add(id(ch))
+            self._fade_chs[id(ch)] = ch
+
+    def update_fades(self, dt):
+        if not self._fading:
+            return
+        done = []
+        for cid in list(self._fading):
+            ch = self._fade_chs.get(cid)
+            if ch is None:
+                done.append(cid)
+                continue
+            ch["t"] = min(1.0, ch.get("t", 1.0) + dt / self.FADE_TIME)
+            t = ch["t"]
+            if t >= 1.0:
+                for nd in ch.get("old", []):
+                    self._drop(nd)
+                ch["old"] = []
+                for nd in ch["nodes"]:
+                    nd.mesh.fade = 0.0
+                done.append(cid)
+            else:
+                for nd in ch["nodes"]:
+                    nd.mesh.fade = max(t, 1e-4)
+                for nd in ch.get("old", []):
+                    nd.mesh.fade = -max(t, 1e-4)
+        for cid in done:
+            self._fading.discard(cid)
+            self._fade_chs.pop(cid, None)
+
+    def _build_chunk_nodes(self, ch):
+        want = ch["want"]
         if want >= 3:
             return
         lib = _library()
@@ -865,6 +1160,10 @@ class IslandRuntime:
         inst = ch["inst"].copy()
         wp = self.node.world_position()
         inst[:, 0] += 0.0
+        octm = (sp.meta.get("oct") or {})
+        if want == 2 and STATE.get("imp_ok") and octm.get("variants"):
+            self._build_octahedral(ch, sp, octm, inst, sink if group != "rock" else 0.0, shadow)
+            return
         by_mat = {}
         nvar = len(sp.variants)
         var = np.clip(inst[:, 5].astype(np.int64), 0, nvar - 1)
@@ -881,6 +1180,8 @@ class IslandRuntime:
             if res is None:
                 continue
             inter, idx, extra, bbox = res
+            pad = 0.9 if amp > 0 else 0.0
+            bbox = (bbox[0] - pad, bbox[1] + pad)
             mesh = CLS["IslandMesh"](self.engine.ctx, f"island_{ch['name']}", inter, idx, extra, bbox)
             mat = sp.mats.get(mk) or sp.mats.get(mk.split(":")[0])
             mesh.cast_shadow = shadow and want < 2 and mk != "imp"
@@ -889,6 +1190,36 @@ class IslandRuntime:
                 mesh.alpha_tex = mat.base_color_tex
             nd = self._child(f"{ch['name']} {mk}", mesh, mat)
             ch["nodes"].append(nd)
+
+    def _build_octahedral(self, ch, sp, octm, inst, sink, shadow):
+        """One camera-facing quad per tree, drawn as a hemi-octahedral impostor."""
+        vs = octm["variants"]
+        var = np.clip(inst[:, 5].astype(np.int64), 0, len(vs) - 1)
+        for vi, vm in enumerate(vs):
+            sel = inst[var == vi]
+            k = len(sel)
+            if k == 0:
+                continue
+            sc = sel[:, 4]
+            R = float(vm["radius"]) * sc
+            base = np.column_stack([sel[:, 0], sel[:, 1] - sink * sc, sel[:, 2]])
+            P = np.repeat(base, 4, axis=0)
+            tv, tb = _inst_tint(sel)
+            N = np.repeat(np.column_stack([tb[:, 0], tv[:, 0], np.zeros(k)]), 4, axis=0)   # tint (brightness, hue)
+            T = np.repeat(np.column_stack([sel[:, 3], R, float(vm["cy"]) * sc, np.ones(k)]), 4, axis=0)
+            UV = np.tile([[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]], (k, 1))
+            I = (np.array([0, 1, 2, 0, 2, 3])[None, :] + (np.arange(k) * 4)[:, None]).reshape(-1)
+            inter = np.hstack([P, N, T, UV]).astype(np.float32)
+            rmax = float(R.max())
+            lo = base.min(0) - [rmax, 0.0, rmax]
+            hi = base.max(0) + [rmax, float(vm["cy"]) * float(sc.max()) + rmax, rmax]
+            mesh = CLS["IslandMesh"](self.engine.ctx, f"island_{ch['name']}", inter, I.astype(np.uint32), None, (lo, hi))
+            mat = sp.mats.get(f"oct{vi}")
+            mesh.imp = int(octm["n"])
+            mesh.cast_shadow = shadow
+            mesh.shadow_limit = float(self.view("shadow_distance"))
+            mesh.alpha_tex = mat.base_color_tex if mat is not None else None
+            ch["nodes"].append(self._child(f"{ch['name']} oct{vi}", mesh, mat))
 
     # ---------------------------------------------------------------- tree collision (Play)
     def update_colliders(self, player_pos, dt):
@@ -935,6 +1266,7 @@ class IslandRuntime:
             else:
                 n.visible = False
                 n.position = glm.vec3(0.0, -10000.0, 0.0)
+        self._sync_colliders()
 
     def drop_colliders(self):
         for n in self.col_pool:
@@ -944,14 +1276,40 @@ class IslandRuntime:
                 pass
             self._drop(n)
         self.col_pool = []
+
+    def ensure_ground(self):
+        """Keep the island's heightfield in the physics world.  The engine
+        collects colliders when Play starts; an island (re)built after that
+        (exported games build it on their first frame) must add itself."""
+        ph = getattr(self.engine, "physics", None)
+        col = getattr(self.node, "collider", None)
+        if ph is None or col is None:
+            return
+        ent = ph.entry_for(self.node)
+        if ent is not None and ent.collider is col:
+            return
+        try:
+            if ent is not None:                    # a stale collider from an earlier build
+                ph.remove_node(self.node)
+                self.col_t = 0.0                   # (that removed the capsules too: re-add them now)
+            ph.add_node(self.node)
+        except Exception as ex:
+            _warn_once("phys", f"island ground not added to physics: {ex}")
+
+    def _sync_colliders(self):
+        """Trunk / boulder capsules follow the player; re-register the pool
+        with the physics world so the moved ones collide where they are."""
+        ph = getattr(self.engine, "physics", None)
+        if ph is None:
+            return
         try:
             for n in self.col_pool:
-                e.physics.remove_node(n)
-            for n in self.col_pool:
+                if ph.entry_for(n) is not None:
+                    ph.remove_node(n)
                 if n.visible:
-                    e.physics.add_node(n)
-        except Exception:
-            pass
+                    ph.add_node(n)
+        except Exception as ex:
+            _warn_once("physc", f"tree colliders not added to physics: {ex}")
 
 
 def _tropical_water(engine):
@@ -1095,8 +1453,10 @@ def _on_update(engine, dt):
                     STATE["dirty"].pop(id(node), None)
                     ensure_island(engine, node, bp)
                     continue
+        rt.update_fades(min(dt, 0.5))
         rt.update_chunks(STATE["cam"], budget=0.008 if engine.mode == "editor" else 0.006)
         if playing:
+            rt.ensure_ground()
             pl = _player(engine)
             if pl is not None:
                 rt.update_colliders(pl.world_position(), dt)

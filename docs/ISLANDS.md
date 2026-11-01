@@ -22,7 +22,8 @@ Everything is **CC0 1.0** (public domain): free for commercial games, no credit 
 The Poly Haven plants are photo-scans with millions of triangles. `tools/build_assets.py` turns
 them into game-ready assets: leaves and twigs are clustered and rendered on the GPU into
 texture-atlas cards (3 levels of detail), trunks and rocks are decimated, every tree and palm gets
-an impostor (3 baked cards) for far away, and grass / flowers become crossed cards. See
+an octahedral impostor (the tree rendered from 64 directions over the upper hemisphere, colour +
+normals) for far away, and grass / flowers become crossed cards. See
 `packages/tropical_islands/ASSETS_LICENSE.md`.
 
 ## Getting started
@@ -69,6 +70,7 @@ View settings apply instantly:
 | `grass_distance` | grass and flowers are drawn up to this distance (default 70 m) |
 | `shadow_distance` | vegetation casts shadows up to this distance; the sun's shadow map follows the camera (default 120 m) |
 | `wind` | wind strength for all plants (0 = still) |
+| `lod_crossfade` | trees and rocks dissolve smoothly between levels of detail instead of popping (default on) |
 | `tree_collision` | the player bumps into trunks and boulders in Play |
 | `tropical_water` | tint the ocean turquoise |
 
@@ -86,6 +88,15 @@ View settings apply instantly:
   (64 m for trees and rocks, 40 m for grass), each switching between 3 levels of detail by
   distance; grass and flowers are only drawn near the camera. Chunks are rebuilt on a per-frame
   time budget, so moving around never stalls the editor or the game.
+- **Impostors** (like Amplify Impostors in Unity): far trees are single quads that pick the
+  3 nearest of 64 baked views (hemi-octahedral layout) for the current camera direction and blend
+  them, with per-pixel normals, so they light, shade and cast shadows like the real tree from any
+  angle, including from above.
+- **LOD cross-fade** (like Unity's LOD Group cross-fade / GPU Instancer): when a chunk changes
+  level of detail, the old and new meshes are both drawn for half a second with complementary
+  dither patterns, so trees never pop.
+- **Culling**: the level of detail of every chunk is computed in one vectorized pass, and only
+  when the camera moves; shadow casters outside the sun's view are skipped.
 - **Wind** sways every plant in the vertex shader (gusts, per-plant phase, leaf flutter); leaf
   cards cast alpha-tested shadows that sway too.
 - **Physics**: the island is a heightfield collider; in Play, capsule colliders follow the
