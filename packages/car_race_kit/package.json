@@ -1,0 +1,12 @@
+{
+  "id": "car_race_kit",
+  "name": "Car Race Kit",
+  "version": "1.1.0",
+  "author": "Heaven3D",
+  "category": "Gameplay",
+  "description": "Ready-made racing: an arcade car (W/S/A/D or arrows, Space handbrake, R reset) with chase camera and speedometer, checkpoint gates, and a race manager with countdown, laps, lap times and a saved best lap. Includes the 'Race Track' template.",
+  "heaven3d": ">=2.7.0",
+  "targets": ["editor", "game"],
+  "engine": "engine.py",
+  "requires": ["spline_roads"]
+}

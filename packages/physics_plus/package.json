@@ -1,0 +1,12 @@
+{
+  "id": "physics_plus",
+  "name": "Physics Plus",
+  "version": "1.0.0",
+  "author": "Heaven3D",
+  "category": "Physics",
+  "description": "Higher-quality physics: choose Normal, High or Ultra simulation quality (120 Hz steps, more solver iterations, steadier stacks and fast objects that don't tunnel), plus gravity presets (Earth, Moon, Mars, Low).",
+  "heaven3d": ">=2.7.0",
+  "targets": ["editor", "game"],
+  "engine": "engine.py",
+  "default_settings": {"quality": "High", "gravity": "Earth"}
+}

@@ -1,0 +1,8 @@
+{
+  "title": "Character Town",
+  "order": 6,
+  "desc": "A town square full of MakeHuman people walking NPC paths, zombies in the alley, a rifle soldier on patrol and stairs / a ramp that show off the foot IK. Press Play and walk around (WASD, mouse, click to shoot).",
+  "packages": [
+    "mh_characters"
+  ]
+}

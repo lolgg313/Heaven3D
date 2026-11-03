@@ -1,0 +1,5786 @@
+{
+  "version": "2.7.0",
+  "type": "heaven3d_project",
+  "scene": {
+    "name": "__root__",
+    "position": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "rotation_euler": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "scale": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "source_path": null,
+    "mesh_type": null,
+    "mesh_params": null,
+    "material": null,
+    "blueprint": null,
+    "blueprints": [],
+    "visible": true,
+    "tag": "",
+    "collider": null,
+    "rigidbody": null,
+    "spawn_kind": null,
+    "spawn_config": null,
+    "is_sun": false,
+    "sun_light": null,
+    "is_point_light": false,
+    "point_light": null,
+    "is_spot_light": false,
+    "spot_light": null,
+    "is_clouds": false,
+    "cloud_settings": null,
+    "is_ocean": false,
+    "ocean_settings": null,
+    "is_terrain": false,
+    "terrain_config": null,
+    "children": [
+      {
+        "name": "Sun",
+        "position": [
+          0.0,
+          50.0,
+          0.0
+        ],
+        "rotation_euler": [
+          -50.0,
+          -30.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "source_path": null,
+        "mesh_type": null,
+        "mesh_params": null,
+        "material": null,
+        "blueprint": null,
+        "blueprints": [],
+        "visible": true,
+        "tag": "",
+        "collider": null,
+        "rigidbody": null,
+        "spawn_kind": null,
+        "spawn_config": null,
+        "is_sun": true,
+        "sun_light": {
+          "direction": [
+            0.32139381766319275,
+            -0.7660444378852844,
+            -0.5566704273223877
+          ],
+          "color": [
+            1.0,
+            0.9599999785423279,
+            0.8999999761581421
+          ],
+          "intensity": 3.0,
+          "shadow_map_size": 2048,
+          "shadow_bias": 0.001
+        },
+        "is_point_light": false,
+        "point_light": null,
+        "is_spot_light": false,
+        "spot_light": null,
+        "is_clouds": false,
+        "cloud_settings": null,
+        "is_ocean": false,
+        "ocean_settings": null,
+        "is_terrain": false,
+        "terrain_config": null,
+        "children": []
+      },
+      {
+        "name": "Clouds",
+        "position": [
+          0.0,
+          80.0,
+          0.0
+        ],
+        "rotation_euler": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "source_path": null,
+        "mesh_type": null,
+        "mesh_params": null,
+        "material": null,
+        "blueprint": null,
+        "blueprints": [],
+        "visible": true,
+        "tag": "",
+        "collider": null,
+        "rigidbody": null,
+        "spawn_kind": null,
+        "spawn_config": null,
+        "is_sun": false,
+        "sun_light": null,
+        "is_point_light": false,
+        "point_light": null,
+        "is_spot_light": false,
+        "spot_light": null,
+        "is_clouds": true,
+        "cloud_settings": {
+          "enabled": true,
+          "coverage": 0.45,
+          "density": 0.85,
+          "scale": 1.0,
+          "altitude": 800.0,
+          "speed": 0.012,
+          "tint": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "wind_dir": [
+            0.8,
+            0.6
+          ]
+        },
+        "is_ocean": false,
+        "ocean_settings": null,
+        "is_terrain": false,
+        "terrain_config": null,
+        "children": []
+      },
+      {
+        "name": "Ocean",
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation_euler": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "source_path": null,
+        "mesh_type": null,
+        "mesh_params": null,
+        "material": null,
+        "blueprint": null,
+        "blueprints": [],
+        "visible": true,
+        "tag": "",
+        "collider": null,
+        "rigidbody": null,
+        "spawn_kind": null,
+        "spawn_config": null,
+        "is_sun": false,
+        "sun_light": null,
+        "is_point_light": false,
+        "point_light": null,
+        "is_spot_light": false,
+        "spot_light": null,
+        "is_clouds": false,
+        "cloud_settings": null,
+        "is_ocean": true,
+        "ocean_settings": {
+          "enabled": false,
+          "sea_level": -60.0,
+          "water_shallow": [
+            0.1599999964237213,
+            0.4399999976158142,
+            0.46000000834465027
+          ],
+          "water_deep": [
+            0.012000000104308128,
+            0.08500000089406967,
+            0.17000000178813934
+          ],
+          "wave_height": 0.45,
+          "wave_speed": 1.0,
+          "wind_dir": [
+            1.0,
+            0.35
+          ],
+          "wind_strength": 1.0,
+          "choppiness": 0.7,
+          "foam_amount": 1.0,
+          "buoyancy_enabled": true,
+          "buoyancy_strength": 1.0
+        },
+        "is_terrain": false,
+        "terrain_config": null,
+        "children": []
+      },
+      {
+        "name": "Ground",
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation_euler": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "source_path": null,
+        "mesh_type": "plane",
+        "mesh_params": {
+          "size": 700.0
+        },
+        "material": {
+          "name": "Ground_mat",
+          "base_color": [
+            0.3,
+            0.46,
+            0.25,
+            1.0
+          ],
+          "metallic": 0.0,
+          "roughness": 0.95,
+          "emissive": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "emissive_intensity": 1.0,
+          "alpha_cutoff": 0.5,
+          "base_color_tex": null,
+          "metallic_roughness_tex": null,
+          "normal_tex": null,
+          "emissive_tex": null,
+          "occlusion_tex": null,
+          "double_sided": false,
+          "alpha_mode": "OPAQUE"
+        },
+        "blueprint": null,
+        "blueprints": [],
+        "visible": true,
+        "tag": "",
+        "collider": {
+          "center": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "is_trigger": false,
+          "friction": 0.6,
+          "restitution": 0.0,
+          "type": "plane",
+          "size": 700.0
+        },
+        "rigidbody": null,
+        "spawn_kind": null,
+        "spawn_config": null,
+        "is_sun": false,
+        "sun_light": null,
+        "is_point_light": false,
+        "point_light": null,
+        "is_spot_light": false,
+        "spot_light": null,
+        "is_clouds": false,
+        "cloud_settings": null,
+        "is_ocean": false,
+        "ocean_settings": null,
+        "is_terrain": false,
+        "terrain_config": null,
+        "children": []
+      },
+      {
+        "name": "Race Road",
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation_euler": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "source_path": null,
+        "mesh_type": null,
+        "mesh_params": null,
+        "material": {
+          "name": "Asphalt",
+          "base_color": [
+            0.16,
+            0.165,
+            0.18,
+            1.0
+          ],
+          "metallic": 0.0,
+          "roughness": 0.88,
+          "emissive": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "emissive_intensity": 1.0,
+          "alpha_cutoff": 0.5,
+          "base_color_tex": null,
+          "metallic_roughness_tex": null,
+          "normal_tex": null,
+          "emissive_tex": null,
+          "occlusion_tex": null,
+          "double_sided": false,
+          "alpha_mode": "OPAQUE"
+        },
+        "blueprint": {
+          "class": "SplineRoad",
+          "properties": {
+            "width": 11.0,
+            "smoothness": 14,
+            "closed": true,
+            "markings": true,
+            "follow_ground": true
+          }
+        },
+        "blueprints": [
+          {
+            "class": "SplineRoad",
+            "properties": {
+              "width": 11.0,
+              "smoothness": 14,
+              "closed": true,
+              "markings": true,
+              "follow_ground": true
+            }
+          }
+        ],
+        "visible": true,
+        "tag": "",
+        "collider": {
+          "center": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "is_trigger": false,
+          "friction": 0.6,
+          "restitution": 0.0,
+          "type": "mesh"
+        },
+        "rigidbody": null,
+        "spawn_kind": null,
+        "spawn_config": null,
+        "is_sun": false,
+        "sun_light": null,
+        "is_point_light": false,
+        "point_light": null,
+        "is_spot_light": false,
+        "spot_light": null,
+        "is_clouds": false,
+        "cloud_settings": null,
+        "is_ocean": false,
+        "ocean_settings": null,
+        "is_terrain": false,
+        "terrain_config": null,
+        "children": [
+          {
+            "name": "Road Markings",
+            "position": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "rotation_euler": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": [
+              1.0,
+              1.0,
+              1.0
+            ],
+            "source_path": null,
+            "mesh_type": null,
+            "mesh_params": null,
+            "material": {
+              "name": "Paint",
+              "base_color": [
+                0.95,
+                0.93,
+                0.86,
+                1.0
+              ],
+              "metallic": 0.0,
+              "roughness": 0.6,
+              "emissive": [
+                0.12,
+                0.12,
+                0.1
+              ],
+              "emissive_intensity": 1.0,
+              "alpha_cutoff": 0.5,
+              "base_color_tex": null,
+              "metallic_roughness_tex": null,
+              "normal_tex": null,
+              "emissive_tex": null,
+              "occlusion_tex": null,
+              "double_sided": false,
+              "alpha_mode": "OPAQUE"
+            },
+            "blueprint": null,
+            "blueprints": [],
+            "visible": true,
+            "tag": "",
+            "collider": null,
+            "rigidbody": null,
+            "spawn_kind": null,
+            "spawn_config": null,
+            "is_sun": false,
+            "sun_light": null,
+            "is_point_light": false,
+            "point_light": null,
+            "is_spot_light": false,
+            "spot_light": null,
+            "is_clouds": false,
+            "cloud_settings": null,
+            "is_ocean": false,
+            "ocean_settings": null,
+            "is_terrain": false,
+            "terrain_config": null,
+            "children": []
+          }
+        ]
+      },
+      {
+        "name": "Race Road P1",
+        "position": [
+          0.0,
+          0.0,
+          120.0
+        ],
+        "rotation_euler": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "source_path": null,
+        "mesh_type": "sphere",
+        "mesh_params": {
+          "radius": 0.45
+        },
+        "material": {
+          "name": "Race Road P1_mat",
+          "base_color": [
+            1.0,
+            0.55,
+            0.12,
+            1.0
+          ],
+          "metallic": 0.0,
+          "roughness": 0.4,
+          "emissive": [
+            0.5,
+            0.22,
+            0.02
+          ],
+          "emissive_intensity": 1.0,
+          "alpha_cutoff": 0.5,
+          "base_color_tex": null,
+          "metallic_roughness_tex": null,
+          "normal_tex": null,
+          "emissive_tex": null,
+          "occlusion_tex": null,
+          "double_sided": false,
+          "alpha_mode": "OPAQUE"
+        },
+        "blueprint": {
+          "class": "SplinePoint",
+          "properties": {
+            "road": "Race Road",
+            "order": 0
+          }
+        },
+        "blueprints": [
+          {
+            "class": "SplinePoint",
+            "properties": {
+              "road": "Race Road",
+              "order": 0
+            }
+          }
+        ],
+        "visible": false,
+        "tag": "",
+        "collider": null,
+        "rigidbody": null,
+        "spawn_kind": null,
+        "spawn_config": null,
+        "is_sun": false,
+        "sun_light": null,
+        "is_point_light": false,
+        "point_light": null,
+        "is_spot_light": false,
+        "spot_light": null,
+        "is_clouds": false,
+        "cloud_settings": null,
+        "is_ocean": false,
+        "ocean_settings": null,
+        "is_terrain": false,
+        "terrain_config": null,
+        "children": []
+      },
+      {
+        "name": "Race Road P2",
+        "position": [
+          90.0,
+          0.0,
+          115.0
+        ],
+        "rotation_euler": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "source_path": null,
+        "mesh_type": "sphere",
+        "mesh_params": {
+          "radius": 0.45
+        },
+        "material": {
+          "name": "Race Road P2_mat",
+          "base_color": [
+            1.0,
+            0.55,
+            0.12,
+            1.0
+          ],
+          "metallic": 0.0,
+          "roughness": 0.4,
+          "emissive": [
+            0.5,
+            0.22,
+            0.02
+          ],
+          "emissive_intensity": 1.0,
+          "alpha_cutoff": 0.5,
+          "base_color_tex": null,
+          "metallic_roughness_tex": null,
+          "normal_tex": null,
+          "emissive_tex": null,
+          "occlusion_tex": null,
+          "double_sided": false,
+          "alpha_mode": "OPAQUE"
+        },
+        "blueprint": {
+          "class": "SplinePoint",
+          "properties": {
+            "road": "Race Road",
+            "order": 1
+          }
+        },
+        "blueprints": [
+          {
+            "class": "SplinePoint",
+            "properties": {
+              "road": "Race Road",
+              "order": 1
+            }
+          }
+        ],
+        "visible": false,
+        "tag": "",
+        "collider": null,
+        "rigidbody": null,
+        "spawn_kind": null,
+        "spawn_config": null,
+        "is_sun": false,
+        "sun_light": null,
+        "is_point_light": false,
+        "point_light": null,
+        "is_spot_light": false,
+        "spot_light": null,
+        "is_clouds": false,
+        "cloud_settings": null,
+        "is_ocean": false,
+        "ocean_settings": null,
+        "is_terrain": false,
+        "terrain_config": null,
+        "children": []
+      },
+      {
+        "name": "Race Road P3",
+        "position": [
+          150.0,
+          0.0,
+          70.0
+        ],
+        "rotation_euler": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "source_path": null,
+        "mesh_type": "sphere",
+        "mesh_params": {
+          "radius": 0.45
+        },
+        "material": {
+          "name": "Race Road P3_mat",
+          "base_color": [
+            1.0,
+            0.55,
+            0.12,
+            1.0
+          ],
+          "metallic": 0.0,
+          "roughness": 0.4,
+          "emissive": [
+            0.5,
+            0.22,
+            0.02
+          ],
+          "emissive_intensity": 1.0,
+          "alpha_cutoff": 0.5,
+          "base_color_tex": null,
+          "metallic_roughness_tex": null,
+          "normal_tex": null,
+          "emissive_tex": null,
+          "occlusion_tex": null,
+          "double_sided": false,
+          "alpha_mode": "OPAQUE"
+        },
+        "blueprint": {
+          "class": "SplinePoint",
+          "properties": {
+            "road": "Race Road",
+            "order": 2
+          }
+        },
+        "blueprints": [
+          {
+            "class": "SplinePoint",
+            "properties": {
+              "road": "Race Road",
+              "order": 2
+            }
+          }
+        ],
+        "visible": false,
+        "tag": "",
+        "collider": null,
+        "rigidbody": null,
+        "spawn_kind": null,
+        "spawn_config": null,
+        "is_sun": false,
+        "sun_light": null,
+        "is_point_light": false,
+        "point_light": null,
+        "is_spot_light": false,
+        "spot_light": null,
+        "is_clouds": false,
+        "cloud_settings": null,
+        "is_ocean": false,
+        "ocean_settings": null,
+        "is_terrain": false,
+        "terrain_config": null,
+        "children": []
+      },
+      {
+        "name": "Race Road P4",
+        "position": [
+          155.0,
+          0.0,
+          0.0
+        ],
+        "rotation_euler": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "source_path": null,
+        "mesh_type": "sphere",
+        "mesh_params": {
+          "radius": 0.45
+        },
+        "material": {
+          "name": "Race Road P4_mat",
+          "base_color": [
+            1.0,
+            0.55,
+            0.12,
+            1.0
+          ],
+          "metallic": 0.0,
+          "roughness": 0.4,
+          "emissive": [
+            0.5,
+            0.22,
+            0.02
+          ],
+          "emissive_intensity": 1.0,
+          "alpha_cutoff": 0.5,
+          "base_color_tex": null,
+          "metallic_roughness_tex": null,
+          "normal_tex": null,
+          "emissive_tex": null,
+          "occlusion_tex": null,
+          "double_sided": false,
+          "alpha_mode": "OPAQUE"
+        },
+        "blueprint": {
+          "class": "SplinePoint",
+          "properties": {
+            "road": "Race Road",
+            "order": 3
+          }
+        },
+        "blueprints": [
+          {
+            "class": "SplinePoint",
+            "properties": {
+              "road": "Race Road",
+              "order": 3
+            }
+          }
+        ],
+        "visible": false,
+        "tag": "",
+        "collider": null,
+        "rigidbody": null,
+        "spawn_kind": null,
+        "spawn_config": null,
+        "is_sun": false,
+        "sun_light": null,
+        "is_point_light": false,
+        "point_light": null,
+        "is_spot_light": false,
+        "spot_light": null,
+        "is_clouds": false,
+        "cloud_settings": null,
+        "is_ocean": false,
+        "ocean_settings": null,
+        "is_terrain": false,
+        "terrain_config": null,
+        "children": []
+      },
+      {
+        "name": "Race Road P5",
+        "position": [
+          120.0,
+          0.0,
+          -60.0
+        ],
+        "rotation_euler": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "source_path": null,
+        "mesh_type": "sphere",
+        "mesh_params": {
+          "radius": 0.45
+        },
+        "material": {
+          "name": "Race Road P5_mat",
+          "base_color": [
+            1.0,
+            0.55,
+            0.12,
+            1.0
+          ],
+          "metallic": 0.0,
+          "roughness": 0.4,
+          "emissive": [
+            0.5,
+            0.22,
+            0.02
+          ],
+          "emissive_intensity": 1.0,
+          "alpha_cutoff": 0.5,
+          "base_color_tex": null,
+          "metallic_roughness_tex": null,
+          "normal_tex": null,
+          "emissive_tex": null,
+          "occlusion_tex": null,
+          "double_sided": false,
+          "alpha_mode": "OPAQUE"
+        },
+        "blueprint": {
+          "class": "SplinePoint",
+          "properties": {
+            "road": "Race Road",
+            "order": 4
+          }
+        },
+        "blueprints": [
+          {
+            "class": "SplinePoint",
+            "properties": {
+              "road": "Race Road",
+              "order": 4
+            }
+          }
+        ],
+        "visible": false,
+        "tag": "",
+        "collider": null,
+        "rigidbody": null,
+        "spawn_kind": null,
+        "spawn_config": null,
+        "is_sun": false,
+        "sun_light": null,
+        "is_point_light": false,
+        "point_light": null,
+        "is_spot_light": false,
+        "spot_light": null,
+        "is_clouds": false,
+        "cloud_settings": null,
+        "is_ocean": false,
+        "ocean_settings": null,
+        "is_terrain": false,
+        "terrain_config": null,
+        "children": []
+      },
+      {
+        "name": "Race Road P6",
+        "position": [
+          40.0,
+          0.0,
+          -80.0
+        ],
+        "rotation_euler": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "source_path": null,
+        "mesh_type": "sphere",
+        "mesh_params": {
+          "radius": 0.45
+        },
+        "material": {
+          "name": "Race Road P6_mat",
+          "base_color": [
+            1.0,
+            0.55,
+            0.12,
+            1.0
+          ],
+          "metallic": 0.0,
+          "roughness": 0.4,
+          "emissive": [
+            0.5,
+            0.22,
+            0.02
+          ],
+          "emissive_intensity": 1.0,
+          "alpha_cutoff": 0.5,
+          "base_color_tex": null,
+          "metallic_roughness_tex": null,
+          "normal_tex": null,
+          "emissive_tex": null,
+          "occlusion_tex": null,
+          "double_sided": false,
+          "alpha_mode": "OPAQUE"
+        },
+        "blueprint": {
+          "class": "SplinePoint",
+          "properties": {
+            "road": "Race Road",
+            "order": 5
+          }
+        },
+        "blueprints": [
+          {
+            "class": "SplinePoint",
+            "properties": {
+              "road": "Race Road",
+              "order": 5
+            }
+          }
+        ],
+        "visible": false,
+        "tag": "",
+        "collider": null,
+        "rigidbody": null,
+        "spawn_kind": null,
+        "spawn_config": null,
+        "is_sun": false,
+        "sun_light": null,
+        "is_point_light": false,
+        "point_light": null,
+        "is_spot_light": false,
+        "spot_light": null,
+        "is_clouds": false,
+        "cloud_settings": null,
+        "is_ocean": false,
+        "ocean_settings": null,
+        "is_terrain": false,
+        "terrain_config": null,
+        "children": []
+      },
+      {
+        "name": "Race Road P7",
+        "position": [
+          -10.0,
+          0.0,
+          -40.0
+        ],
+        "rotation_euler": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "source_path": null,
+        "mesh_type": "sphere",
+        "mesh_params": {
+          "radius": 0.45
+        },
+        "material": {
+          "name": "Race Road P7_mat",
+          "base_color": [
+            1.0,
+            0.55,
+            0.12,
+            1.0
+          ],
+          "metallic": 0.0,
+          "roughness": 0.4,
+          "emissive": [
+            0.5,
+            0.22,
+            0.02
+          ],
+          "emissive_intensity": 1.0,
+          "alpha_cutoff": 0.5,
+          "base_color_tex": null,
+          "metallic_roughness_tex": null,
+          "normal_tex": null,
+          "emissive_tex": null,
+          "occlusion_tex": null,
+          "double_sided": false,
+          "alpha_mode": "OPAQUE"
+        },
+        "blueprint": {
+          "class": "SplinePoint",
+          "properties": {
+            "road": "Race Road",
+            "order": 6
+          }
+        },
+        "blueprints": [
+          {
+            "class": "SplinePoint",
+            "properties": {
+              "road": "Race Road",
+              "order": 6
+            }
+          }
+        ],
+        "visible": false,
+        "tag": "",
+        "collider": null,
+        "rigidbody": null,
+        "spawn_kind": null,
+        "spawn_config": null,
+        "is_sun": false,
+        "sun_light": null,
+        "is_point_light": false,
+        "point_light": null,
+        "is_spot_light": false,
+        "spot_light": null,
+        "is_clouds": false,
+        "cloud_settings": null,
+        "is_ocean": false,
+        "ocean_settings": null,
+        "is_terrain": false,
+        "terrain_config": null,
+        "children": []
+      },
+      {
+        "name": "Race Road P8",
+        "position": [
+          -60.0,
+          0.0,
+          -95.0
+        ],
+        "rotation_euler": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "source_path": null,
+        "mesh_type": "sphere",
+        "mesh_params": {
+          "radius": 0.45
+        },
+        "material": {
+          "name": "Race Road P8_mat",
+          "base_color": [
+            1.0,
+            0.55,
+            0.12,
+            1.0
+          ],
+          "metallic": 0.0,
+          "roughness": 0.4,
+          "emissive": [
+            0.5,
+            0.22,
+            0.02
+          ],
+          "emissive_intensity": 1.0,
+          "alpha_cutoff": 0.5,
+          "base_color_tex": null,
+          "metallic_roughness_tex": null,
+          "normal_tex": null,
+          "emissive_tex": null,
+          "occlusion_tex": null,
+          "double_sided": false,
+          "alpha_mode": "OPAQUE"
+        },
+        "blueprint": {
+          "class": "SplinePoint",
+          "properties": {
+            "road": "Race Road",
+            "order": 7
+          }
+        },
+        "blueprints": [
+          {
+            "class": "SplinePoint",
+            "properties": {
+              "road": "Race Road",
+              "order": 7
+            }
+          }
+        ],
+        "visible": false,
+        "tag": "",
+        "collider": null,
+        "rigidbody": null,
+        "spawn_kind": null,
+        "spawn_config": null,
+        "is_sun": false,
+        "sun_light": null,
+        "is_point_light": false,
+        "point_light": null,
+        "is_spot_light": false,
+        "spot_light": null,
+        "is_clouds": false,
+        "cloud_settings": null,
+        "is_ocean": false,
+        "ocean_settings": null,
+        "is_terrain": false,
+        "terrain_config": null,
+        "children": []
+      },
+      {
+        "name": "Race Road P9",
+        "position": [
+          -140.0,
+          0.0,
+          -70.0
+        ],
+        "rotation_euler": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "source_path": null,
+        "mesh_type": "sphere",
+        "mesh_params": {
+          "radius": 0.45
+        },
+        "material": {
+          "name": "Race Road P9_mat",
+          "base_color": [
+            1.0,
+            0.55,
+            0.12,
+            1.0
+          ],
+          "metallic": 0.0,
+          "roughness": 0.4,
+          "emissive": [
+            0.5,
+            0.22,
+            0.02
+          ],
+          "emissive_intensity": 1.0,
+          "alpha_cutoff": 0.5,
+          "base_color_tex": null,
+          "metallic_roughness_tex": null,
+          "normal_tex": null,
+          "emissive_tex": null,
+          "occlusion_tex": null,
+          "double_sided": false,
+          "alpha_mode": "OPAQUE"
+        },
+        "blueprint": {
+          "class": "SplinePoint",
+          "properties": {
+            "road": "Race Road",
+            "order": 8
+          }
+        },
+        "blueprints": [
+          {
+            "class": "SplinePoint",
+            "properties": {
+              "road": "Race Road",
+              "order": 8
+            }
+          }
+        ],
+        "visible": false,
+        "tag": "",
+        "collider": null,
+        "rigidbody": null,
+        "spawn_kind": null,
+        "spawn_config": null,
+        "is_sun": false,
+        "sun_light": null,
+        "is_point_light": false,
+        "point_light": null,
+        "is_spot_light": false,
+        "spot_light": null,
+        "is_clouds": false,
+        "cloud_settings": null,
+        "is_ocean": false,
+        "ocean_settings": null,
+        "is_terrain": false,
+        "terrain_config": null,
+        "children": []
+      },
+      {
+        "name": "Race Road P10",
+        "position": [
+          -160.0,
+          0.0,
+          10.0
+        ],
+        "rotation_euler": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "source_path": null,
+        "mesh_type": "sphere",
+        "mesh_params": {
+          "radius": 0.45
+        },
+        "material": {
+          "name": "Race Road P10_mat",
+          "base_color": [
+            1.0,
+            0.55,
+            0.12,
+            1.0
+          ],
+          "metallic": 0.0,
+          "roughness": 0.4,
+          "emissive": [
+            0.5,
+            0.22,
+            0.02
+          ],
+          "emissive_intensity": 1.0,
+          "alpha_cutoff": 0.5,
+          "base_color_tex": null,
+          "metallic_roughness_tex": null,
+          "normal_tex": null,
+          "emissive_tex": null,
+          "occlusion_tex": null,
+          "double_sided": false,
+          "alpha_mode": "OPAQUE"
+        },
+        "blueprint": {
+          "class": "SplinePoint",
+          "properties": {
+            "road": "Race Road",
+            "order": 9
+          }
+        },
+        "blueprints": [
+          {
+            "class": "SplinePoint",
+            "properties": {
+              "road": "Race Road",
+              "order": 9
+            }
+          }
+        ],
+        "visible": false,
+        "tag": "",
+        "collider": null,
+        "rigidbody": null,
+        "spawn_kind": null,
+        "spawn_config": null,
+        "is_sun": false,
+        "sun_light": null,
+        "is_point_light": false,
+        "point_light": null,
+        "is_spot_light": false,
+        "spot_light": null,
+        "is_clouds": false,
+        "cloud_settings": null,
+        "is_ocean": false,
+        "ocean_settings": null,
+        "is_terrain": false,
+        "terrain_config": null,
+        "children": []
+      },
+      {
+        "name": "Race Road P11",
+        "position": [
+          -120.0,
+          0.0,
+          90.0
+        ],
+        "rotation_euler": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "source_path": null,
+        "mesh_type": "sphere",
+        "mesh_params": {
+          "radius": 0.45
+        },
+        "material": {
+          "name": "Race Road P11_mat",
+          "base_color": [
+            1.0,
+            0.55,
+            0.12,
+            1.0
+          ],
+          "metallic": 0.0,
+          "roughness": 0.4,
+          "emissive": [
+            0.5,
+            0.22,
+            0.02
+          ],
+          "emissive_intensity": 1.0,
+          "alpha_cutoff": 0.5,
+          "base_color_tex": null,
+          "metallic_roughness_tex": null,
+          "normal_tex": null,
+          "emissive_tex": null,
+          "occlusion_tex": null,
+          "double_sided": false,
+          "alpha_mode": "OPAQUE"
+        },
+        "blueprint": {
+          "class": "SplinePoint",
+          "properties": {
+            "road": "Race Road",
+            "order": 10
+          }
+        },
+        "blueprints": [
+          {
+            "class": "SplinePoint",
+            "properties": {
+              "road": "Race Road",
+              "order": 10
+            }
+          }
+        ],
+        "visible": false,
+        "tag": "",
+        "collider": null,
+        "rigidbody": null,
+        "spawn_kind": null,
+        "spawn_config": null,
+        "is_sun": false,
+        "sun_light": null,
+        "is_point_light": false,
+        "point_light": null,
+        "is_spot_light": false,
+        "spot_light": null,
+        "is_clouds": false,
+        "cloud_settings": null,
+        "is_ocean": false,
+        "ocean_settings": null,
+        "is_terrain": false,
+        "terrain_config": null,
+        "children": []
+      },
+      {
+        "name": "Race Road P12",
+        "position": [
+          -60.0,
+          0.0,
+          125.0
+        ],
+        "rotation_euler": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "source_path": null,
+        "mesh_type": "sphere",
+        "mesh_params": {
+          "radius": 0.45
+        },
+        "material": {
+          "name": "Race Road P12_mat",
+          "base_color": [
+            1.0,
+            0.55,
+            0.12,
+            1.0
+          ],
+          "metallic": 0.0,
+          "roughness": 0.4,
+          "emissive": [
+            0.5,
+            0.22,
+            0.02
+          ],
+          "emissive_intensity": 1.0,
+          "alpha_cutoff": 0.5,
+          "base_color_tex": null,
+          "metallic_roughness_tex": null,
+          "normal_tex": null,
+          "emissive_tex": null,
+          "occlusion_tex": null,
+          "double_sided": false,
+          "alpha_mode": "OPAQUE"
+        },
+        "blueprint": {
+          "class": "SplinePoint",
+          "properties": {
+            "road": "Race Road",
+            "order": 11
+          }
+        },
+        "blueprints": [
+          {
+            "class": "SplinePoint",
+            "properties": {
+              "road": "Race Road",
+              "order": 11
+            }
+          }
+        ],
+        "visible": false,
+        "tag": "",
+        "collider": null,
+        "rigidbody": null,
+        "spawn_kind": null,
+        "spawn_config": null,
+        "is_sun": false,
+        "sun_light": null,
+        "is_point_light": false,
+        "point_light": null,
+        "is_spot_light": false,
+        "spot_light": null,
+        "is_clouds": false,
+        "cloud_settings": null,
+        "is_ocean": false,
+        "ocean_settings": null,
+        "is_terrain": false,
+        "terrain_config": null,
+        "children": []
+      },
+      {
+        "name": "Start Finish",
+        "position": [
+          5.986711,
+          0.0,
+          119.600883
+        ],
+        "rotation_euler": [
+          0.0,
+          -86.185928,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "source_path": null,
+        "mesh_type": null,
+        "mesh_params": null,
+        "material": null,
+        "blueprint": {
+          "class": "RaceCheckpoint",
+          "properties": {
+            "order": 0,
+            "radius": 11.25
+          }
+        },
+        "blueprints": [
+          {
+            "class": "RaceCheckpoint",
+            "properties": {
+              "order": 0,
+              "radius": 11.25
+            }
+          }
+        ],
+        "visible": true,
+        "tag": "",
+        "collider": null,
+        "rigidbody": null,
+        "spawn_kind": null,
+        "spawn_config": null,
+        "is_sun": false,
+        "sun_light": null,
+        "is_point_light": false,
+        "point_light": null,
+        "is_spot_light": false,
+        "spot_light": null,
+        "is_clouds": false,
+        "cloud_settings": null,
+        "is_ocean": false,
+        "ocean_settings": null,
+        "is_terrain": false,
+        "terrain_config": null,
+        "children": [
+          {
+            "name": "Post",
+            "position": [
+              -7.5,
+              2.5,
+              0.0
+            ],
+            "rotation_euler": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": [
+              0.4,
+              5.0,
+              0.4
+            ],
+            "source_path": null,
+            "mesh_type": "cube",
+            "mesh_params": {
+              "size": 1.0
+            },
+            "material": {
+              "name": "Post_mat",
+              "base_color": [
+                0.2,
+                0.22,
+                0.26,
+                1.0
+              ],
+              "metallic": 0.6,
+              "roughness": 0.4,
+              "emissive": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "emissive_intensity": 1.0,
+              "alpha_cutoff": 0.5,
+              "base_color_tex": null,
+              "metallic_roughness_tex": null,
+              "normal_tex": null,
+              "emissive_tex": null,
+              "occlusion_tex": null,
+              "double_sided": false,
+              "alpha_mode": "OPAQUE"
+            },
+            "blueprint": null,
+            "blueprints": [],
+            "visible": true,
+            "tag": "",
+            "collider": null,
+            "rigidbody": null,
+            "spawn_kind": null,
+            "spawn_config": null,
+            "is_sun": false,
+            "sun_light": null,
+            "is_point_light": false,
+            "point_light": null,
+            "is_spot_light": false,
+            "spot_light": null,
+            "is_clouds": false,
+            "cloud_settings": null,
+            "is_ocean": false,
+            "ocean_settings": null,
+            "is_terrain": false,
+            "terrain_config": null,
+            "children": []
+          },
+          {
+            "name": "Post",
+            "position": [
+              7.5,
+              2.5,
+              0.0
+            ],
+            "rotation_euler": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": [
+              0.4,
+              5.0,
+              0.4
+            ],
+            "source_path": null,
+            "mesh_type": "cube",
+            "mesh_params": {
+              "size": 1.0
+            },
+            "material": {
+              "name": "Post_mat",
+              "base_color": [
+                0.2,
+                0.22,
+                0.26,
+                1.0
+              ],
+              "metallic": 0.6,
+              "roughness": 0.4,
+              "emissive": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "emissive_intensity": 1.0,
+              "alpha_cutoff": 0.5,
+              "base_color_tex": null,
+              "metallic_roughness_tex": null,
+              "normal_tex": null,
+              "emissive_tex": null,
+              "occlusion_tex": null,
+              "double_sided": false,
+              "alpha_mode": "OPAQUE"
+            },
+            "blueprint": null,
+            "blueprints": [],
+            "visible": true,
+            "tag": "",
+            "collider": null,
+            "rigidbody": null,
+            "spawn_kind": null,
+            "spawn_config": null,
+            "is_sun": false,
+            "sun_light": null,
+            "is_point_light": false,
+            "point_light": null,
+            "is_spot_light": false,
+            "spot_light": null,
+            "is_clouds": false,
+            "cloud_settings": null,
+            "is_ocean": false,
+            "ocean_settings": null,
+            "is_terrain": false,
+            "terrain_config": null,
+            "children": []
+          },
+          {
+            "name": "Banner",
+            "position": [
+              0.0,
+              5.2,
+              0.0
+            ],
+            "rotation_euler": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": [
+              15.4,
+              0.9,
+              0.25
+            ],
+            "source_path": null,
+            "mesh_type": "cube",
+            "mesh_params": {
+              "size": 1.0
+            },
+            "material": {
+              "name": "Banner_mat",
+              "base_color": [
+                0.95,
+                0.95,
+                0.95,
+                1.0
+              ],
+              "metallic": 0.0,
+              "roughness": 0.5,
+              "emissive": [
+                0.6,
+                0.6,
+                0.6
+              ],
+              "emissive_intensity": 1.0,
+              "alpha_cutoff": 0.5,
+              "base_color_tex": null,
+              "metallic_roughness_tex": null,
+              "normal_tex": null,
+              "emissive_tex": null,
+              "occlusion_tex": null,
+              "double_sided": false,
+              "alpha_mode": "OPAQUE"
+            },
+            "blueprint": null,
+            "blueprints": [],
+            "visible": true,
+            "tag": "",
+            "collider": null,
+            "rigidbody": null,
+            "spawn_kind": null,
+            "spawn_config": null,
+            "is_sun": false,
+            "sun_light": null,
+            "is_point_light": false,
+            "point_light": null,
+            "is_spot_light": false,
+            "spot_light": null,
+            "is_clouds": false,
+            "cloud_settings": null,
+            "is_ocean": false,
+            "ocean_settings": null,
+            "is_terrain": false,
+            "terrain_config": null,
+            "children": []
+          }
+        ]
+      },
+      {
+        "name": "Checkpoint",
+        "position": [
+          155.0,
+          0.0,
+          0.0
+        ],
+        "rotation_euler": [
+          0.0,
+          12.994617,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "source_path": null,
+        "mesh_type": null,
+        "mesh_params": null,
+        "material": null,
+        "blueprint": {
+          "class": "RaceCheckpoint",
+          "properties": {
+            "order": 1,
+            "radius": 11.25
+          }
+        },
+        "blueprints": [
+          {
+            "class": "RaceCheckpoint",
+            "properties": {
+              "order": 1,
+              "radius": 11.25
+            }
+          }
+        ],
+        "visible": true,
+        "tag": "",
+        "collider": null,
+        "rigidbody": null,
+        "spawn_kind": null,
+        "spawn_config": null,
+        "is_sun": false,
+        "sun_light": null,
+        "is_point_light": false,
+        "point_light": null,
+        "is_spot_light": false,
+        "spot_light": null,
+        "is_clouds": false,
+        "cloud_settings": null,
+        "is_ocean": false,
+        "ocean_settings": null,
+        "is_terrain": false,
+        "terrain_config": null,
+        "children": [
+          {
+            "name": "Post",
+            "position": [
+              -7.5,
+              2.5,
+              0.0
+            ],
+            "rotation_euler": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": [
+              0.4,
+              5.0,
+              0.4
+            ],
+            "source_path": null,
+            "mesh_type": "cube",
+            "mesh_params": {
+              "size": 1.0
+            },
+            "material": {
+              "name": "Post_mat",
+              "base_color": [
+                0.2,
+                0.22,
+                0.26,
+                1.0
+              ],
+              "metallic": 0.6,
+              "roughness": 0.4,
+              "emissive": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "emissive_intensity": 1.0,
+              "alpha_cutoff": 0.5,
+              "base_color_tex": null,
+              "metallic_roughness_tex": null,
+              "normal_tex": null,
+              "emissive_tex": null,
+              "occlusion_tex": null,
+              "double_sided": false,
+              "alpha_mode": "OPAQUE"
+            },
+            "blueprint": null,
+            "blueprints": [],
+            "visible": true,
+            "tag": "",
+            "collider": null,
+            "rigidbody": null,
+            "spawn_kind": null,
+            "spawn_config": null,
+            "is_sun": false,
+            "sun_light": null,
+            "is_point_light": false,
+            "point_light": null,
+            "is_spot_light": false,
+            "spot_light": null,
+            "is_clouds": false,
+            "cloud_settings": null,
+            "is_ocean": false,
+            "ocean_settings": null,
+            "is_terrain": false,
+            "terrain_config": null,
+            "children": []
+          },
+          {
+            "name": "Post",
+            "position": [
+              7.5,
+              2.5,
+              0.0
+            ],
+            "rotation_euler": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": [
+              0.4,
+              5.0,
+              0.4
+            ],
+            "source_path": null,
+            "mesh_type": "cube",
+            "mesh_params": {
+              "size": 1.0
+            },
+            "material": {
+              "name": "Post_mat",
+              "base_color": [
+                0.2,
+                0.22,
+                0.26,
+                1.0
+              ],
+              "metallic": 0.6,
+              "roughness": 0.4,
+              "emissive": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "emissive_intensity": 1.0,
+              "alpha_cutoff": 0.5,
+              "base_color_tex": null,
+              "metallic_roughness_tex": null,
+              "normal_tex": null,
+              "emissive_tex": null,
+              "occlusion_tex": null,
+              "double_sided": false,
+              "alpha_mode": "OPAQUE"
+            },
+            "blueprint": null,
+            "blueprints": [],
+            "visible": true,
+            "tag": "",
+            "collider": null,
+            "rigidbody": null,
+            "spawn_kind": null,
+            "spawn_config": null,
+            "is_sun": false,
+            "sun_light": null,
+            "is_point_light": false,
+            "point_light": null,
+            "is_spot_light": false,
+            "spot_light": null,
+            "is_clouds": false,
+            "cloud_settings": null,
+            "is_ocean": false,
+            "ocean_settings": null,
+            "is_terrain": false,
+            "terrain_config": null,
+            "children": []
+          },
+          {
+            "name": "Banner",
+            "position": [
+              0.0,
+              5.2,
+              0.0
+            ],
+            "rotation_euler": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": [
+              15.4,
+              0.9,
+              0.25
+            ],
+            "source_path": null,
+            "mesh_type": "cube",
+            "mesh_params": {
+              "size": 1.0
+            },
+            "material": {
+              "name": "Banner_mat",
+              "base_color": [
+                1.0,
+                0.6,
+                0.1,
+                1.0
+              ],
+              "metallic": 0.0,
+              "roughness": 0.5,
+              "emissive": [
+                0.9,
+                0.45,
+                0.05
+              ],
+              "emissive_intensity": 1.0,
+              "alpha_cutoff": 0.5,
+              "base_color_tex": null,
+              "metallic_roughness_tex": null,
+              "normal_tex": null,
+              "emissive_tex": null,
+              "occlusion_tex": null,
+              "double_sided": false,
+              "alpha_mode": "OPAQUE"
+            },
+            "blueprint": null,
+            "blueprints": [],
+            "visible": true,
+            "tag": "",
+            "collider": null,
+            "rigidbody": null,
+            "spawn_kind": null,
+            "spawn_config": null,
+            "is_sun": false,
+            "sun_light": null,
+            "is_point_light": false,
+            "point_light": null,
+            "is_spot_light": false,
+            "spot_light": null,
+            "is_clouds": false,
+            "cloud_settings": null,
+            "is_ocean": false,
+            "ocean_settings": null,
+            "is_terrain": false,
+            "terrain_config": null,
+            "children": []
+          }
+        ]
+      },
+      {
+        "name": "Checkpoint (1)",
+        "position": [
+          -10.0,
+          0.0,
+          -40.0
+        ],
+        "rotation_euler": [
+          0.0,
+          81.469231,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "source_path": null,
+        "mesh_type": null,
+        "mesh_params": null,
+        "material": null,
+        "blueprint": {
+          "class": "RaceCheckpoint",
+          "properties": {
+            "order": 2,
+            "radius": 11.25
+          }
+        },
+        "blueprints": [
+          {
+            "class": "RaceCheckpoint",
+            "properties": {
+              "order": 2,
+              "radius": 11.25
+            }
+          }
+        ],
+        "visible": true,
+        "tag": "",
+        "collider": null,
+        "rigidbody": null,
+        "spawn_kind": null,
+        "spawn_config": null,
+        "is_sun": false,
+        "sun_light": null,
+        "is_point_light": false,
+        "point_light": null,
+        "is_spot_light": false,
+        "spot_light": null,
+        "is_clouds": false,
+        "cloud_settings": null,
+        "is_ocean": false,
+        "ocean_settings": null,
+        "is_terrain": false,
+        "terrain_config": null,
+        "children": [
+          {
+            "name": "Post",
+            "position": [
+              -7.5,
+              2.5,
+              0.0
+            ],
+            "rotation_euler": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": [
+              0.4,
+              5.0,
+              0.4
+            ],
+            "source_path": null,
+            "mesh_type": "cube",
+            "mesh_params": {
+              "size": 1.0
+            },
+            "material": {
+              "name": "Post_mat",
+              "base_color": [
+                0.2,
+                0.22,
+                0.26,
+                1.0
+              ],
+              "metallic": 0.6,
+              "roughness": 0.4,
+              "emissive": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "emissive_intensity": 1.0,
+              "alpha_cutoff": 0.5,
+              "base_color_tex": null,
+              "metallic_roughness_tex": null,
+              "normal_tex": null,
+              "emissive_tex": null,
+              "occlusion_tex": null,
+              "double_sided": false,
+              "alpha_mode": "OPAQUE"
+            },
+            "blueprint": null,
+            "blueprints": [],
+            "visible": true,
+            "tag": "",
+            "collider": null,
+            "rigidbody": null,
+            "spawn_kind": null,
+            "spawn_config": null,
+            "is_sun": false,
+            "sun_light": null,
+            "is_point_light": false,
+            "point_light": null,
+            "is_spot_light": false,
+            "spot_light": null,
+            "is_clouds": false,
+            "cloud_settings": null,
+            "is_ocean": false,
+            "ocean_settings": null,
+            "is_terrain": false,
+            "terrain_config": null,
+            "children": []
+          },
+          {
+            "name": "Post",
+            "position": [
+              7.5,
+              2.5,
+              0.0
+            ],
+            "rotation_euler": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": [
+              0.4,
+              5.0,
+              0.4
+            ],
+            "source_path": null,
+            "mesh_type": "cube",
+            "mesh_params": {
+              "size": 1.0
+            },
+            "material": {
+              "name": "Post_mat",
+              "base_color": [
+                0.2,
+                0.22,
+                0.26,
+                1.0
+              ],
+              "metallic": 0.6,
+              "roughness": 0.4,
+              "emissive": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "emissive_intensity": 1.0,
+              "alpha_cutoff": 0.5,
+              "base_color_tex": null,
+              "metallic_roughness_tex": null,
+              "normal_tex": null,
+              "emissive_tex": null,
+              "occlusion_tex": null,
+              "double_sided": false,
+              "alpha_mode": "OPAQUE"
+            },
+            "blueprint": null,
+            "blueprints": [],
+            "visible": true,
+            "tag": "",
+            "collider": null,
+            "rigidbody": null,
+            "spawn_kind": null,
+            "spawn_config": null,
+            "is_sun": false,
+            "sun_light": null,
+            "is_point_light": false,
+            "point_light": null,
+            "is_spot_light": false,
+            "spot_light": null,
+            "is_clouds": false,
+            "cloud_settings": null,
+            "is_ocean": false,
+            "ocean_settings": null,
+            "is_terrain": false,
+            "terrain_config": null,
+            "children": []
+          },
+          {
+            "name": "Banner",
+            "position": [
+              0.0,
+              5.2,
+              0.0
+            ],
+            "rotation_euler": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": [
+              15.4,
+              0.9,
+              0.25
+            ],
+            "source_path": null,
+            "mesh_type": "cube",
+            "mesh_params": {
+              "size": 1.0
+            },
+            "material": {
+              "name": "Banner_mat",
+              "base_color": [
+                1.0,
+                0.6,
+                0.1,
+                1.0
+              ],
+              "metallic": 0.0,
+              "roughness": 0.5,
+              "emissive": [
+                0.9,
+                0.45,
+                0.05
+              ],
+              "emissive_intensity": 1.0,
+              "alpha_cutoff": 0.5,
+              "base_color_tex": null,
+              "metallic_roughness_tex": null,
+              "normal_tex": null,
+              "emissive_tex": null,
+              "occlusion_tex": null,
+              "double_sided": false,
+              "alpha_mode": "OPAQUE"
+            },
+            "blueprint": null,
+            "blueprints": [],
+            "visible": true,
+            "tag": "",
+            "collider": null,
+            "rigidbody": null,
+            "spawn_kind": null,
+            "spawn_config": null,
+            "is_sun": false,
+            "sun_light": null,
+            "is_point_light": false,
+            "point_light": null,
+            "is_spot_light": false,
+            "spot_light": null,
+            "is_clouds": false,
+            "cloud_settings": null,
+            "is_ocean": false,
+            "ocean_settings": null,
+            "is_terrain": false,
+            "terrain_config": null,
+            "children": []
+          }
+        ]
+      },
+      {
+        "name": "Checkpoint (2)",
+        "position": [
+          -160.0,
+          0.0,
+          10.0
+        ],
+        "rotation_euler": [
+          0.0,
+          -172.874985,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "source_path": null,
+        "mesh_type": null,
+        "mesh_params": null,
+        "material": null,
+        "blueprint": {
+          "class": "RaceCheckpoint",
+          "properties": {
+            "order": 3,
+            "radius": 11.25
+          }
+        },
+        "blueprints": [
+          {
+            "class": "RaceCheckpoint",
+            "properties": {
+              "order": 3,
+              "radius": 11.25
+            }
+          }
+        ],
+        "visible": true,
+        "tag": "",
+        "collider": null,
+        "rigidbody": null,
+        "spawn_kind": null,
+        "spawn_config": null,
+        "is_sun": false,
+        "sun_light": null,
+        "is_point_light": false,
+        "point_light": null,
+        "is_spot_light": false,
+        "spot_light": null,
+        "is_clouds": false,
+        "cloud_settings": null,
+        "is_ocean": false,
+        "ocean_settings": null,
+        "is_terrain": false,
+        "terrain_config": null,
+        "children": [
+          {
+            "name": "Post",
+            "position": [
+              -7.5,
+              2.5,
+              0.0
+            ],
+            "rotation_euler": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": [
+              0.4,
+              5.0,
+              0.4
+            ],
+            "source_path": null,
+            "mesh_type": "cube",
+            "mesh_params": {
+              "size": 1.0
+            },
+            "material": {
+              "name": "Post_mat",
+              "base_color": [
+                0.2,
+                0.22,
+                0.26,
+                1.0
+              ],
+              "metallic": 0.6,
+              "roughness": 0.4,
+              "emissive": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "emissive_intensity": 1.0,
+              "alpha_cutoff": 0.5,
+              "base_color_tex": null,
+              "metallic_roughness_tex": null,
+              "normal_tex": null,
+              "emissive_tex": null,
+              "occlusion_tex": null,
+              "double_sided": false,
+              "alpha_mode": "OPAQUE"
+            },
+            "blueprint": null,
+            "blueprints": [],
+            "visible": true,
+            "tag": "",
+            "collider": null,
+            "rigidbody": null,
+            "spawn_kind": null,
+            "spawn_config": null,
+            "is_sun": false,
+            "sun_light": null,
+            "is_point_light": false,
+            "point_light": null,
+            "is_spot_light": false,
+            "spot_light": null,
+            "is_clouds": false,
+            "cloud_settings": null,
+            "is_ocean": false,
+            "ocean_settings": null,
+            "is_terrain": false,
+            "terrain_config": null,
+            "children": []
+          },
+          {
+            "name": "Post",
+            "position": [
+              7.5,
+              2.5,
+              0.0
+            ],
+            "rotation_euler": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": [
+              0.4,
+              5.0,
+              0.4
+            ],
+            "source_path": null,
+            "mesh_type": "cube",
+            "mesh_params": {
+              "size": 1.0
+            },
+            "material": {
+              "name": "Post_mat",
+              "base_color": [
+                0.2,
+                0.22,
+                0.26,
+                1.0
+              ],
+              "metallic": 0.6,
+              "roughness": 0.4,
+              "emissive": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "emissive_intensity": 1.0,
+              "alpha_cutoff": 0.5,
+              "base_color_tex": null,
+              "metallic_roughness_tex": null,
+              "normal_tex": null,
+              "emissive_tex": null,
+              "occlusion_tex": null,
+              "double_sided": false,
+              "alpha_mode": "OPAQUE"
+            },
+            "blueprint": null,
+            "blueprints": [],
+            "visible": true,
+            "tag": "",
+            "collider": null,
+            "rigidbody": null,
+            "spawn_kind": null,
+            "spawn_config": null,
+            "is_sun": false,
+            "sun_light": null,
+            "is_point_light": false,
+            "point_light": null,
+            "is_spot_light": false,
+            "spot_light": null,
+            "is_clouds": false,
+            "cloud_settings": null,
+            "is_ocean": false,
+            "ocean_settings": null,
+            "is_terrain": false,
+            "terrain_config": null,
+            "children": []
+          },
+          {
+            "name": "Banner",
+            "position": [
+              0.0,
+              5.2,
+              0.0
+            ],
+            "rotation_euler": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": [
+              15.4,
+              0.9,
+              0.25
+            ],
+            "source_path": null,
+            "mesh_type": "cube",
+            "mesh_params": {
+              "size": 1.0
+            },
+            "material": {
+              "name": "Banner_mat",
+              "base_color": [
+                1.0,
+                0.6,
+                0.1,
+                1.0
+              ],
+              "metallic": 0.0,
+              "roughness": 0.5,
+              "emissive": [
+                0.9,
+                0.45,
+                0.05
+              ],
+              "emissive_intensity": 1.0,
+              "alpha_cutoff": 0.5,
+              "base_color_tex": null,
+              "metallic_roughness_tex": null,
+              "normal_tex": null,
+              "emissive_tex": null,
+              "occlusion_tex": null,
+              "double_sided": false,
+              "alpha_mode": "OPAQUE"
+            },
+            "blueprint": null,
+            "blueprints": [],
+            "visible": true,
+            "tag": "",
+            "collider": null,
+            "rigidbody": null,
+            "spawn_kind": null,
+            "spawn_config": null,
+            "is_sun": false,
+            "sun_light": null,
+            "is_point_light": false,
+            "point_light": null,
+            "is_spot_light": false,
+            "spot_light": null,
+            "is_clouds": false,
+            "cloud_settings": null,
+            "is_ocean": false,
+            "ocean_settings": null,
+            "is_terrain": false,
+            "terrain_config": null,
+            "children": []
+          }
+        ]
+      },
+      {
+        "name": "Race Car",
+        "position": [
+          -5.986711,
+          0.6,
+          120.399117
+        ],
+        "rotation_euler": [
+          0.0,
+          -86.185928,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "source_path": null,
+        "mesh_type": null,
+        "mesh_params": null,
+        "material": null,
+        "blueprint": {
+          "class": "ArcadeCar",
+          "properties": {
+            "max_speed_kmh": 160.0,
+            "acceleration": 14.0,
+            "brake": 30.0,
+            "steering": 75.0,
+            "ride_height": 0.55,
+            "camera_distance": 8.0,
+            "camera_height": 3.0
+          }
+        },
+        "blueprints": [
+          {
+            "class": "ArcadeCar",
+            "properties": {
+              "max_speed_kmh": 160.0,
+              "acceleration": 14.0,
+              "brake": 30.0,
+              "steering": 75.0,
+              "ride_height": 0.55,
+              "camera_distance": 8.0,
+              "camera_height": 3.0
+            }
+          }
+        ],
+        "visible": true,
+        "tag": "",
+        "collider": null,
+        "rigidbody": null,
+        "spawn_kind": null,
+        "spawn_config": null,
+        "is_sun": false,
+        "sun_light": null,
+        "is_point_light": false,
+        "point_light": null,
+        "is_spot_light": false,
+        "spot_light": null,
+        "is_clouds": false,
+        "cloud_settings": null,
+        "is_ocean": false,
+        "ocean_settings": null,
+        "is_terrain": false,
+        "terrain_config": null,
+        "children": [
+          {
+            "name": "Body",
+            "position": [
+              0.0,
+              0.15,
+              0.0
+            ],
+            "rotation_euler": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": [
+              1.9,
+              0.55,
+              4.2
+            ],
+            "source_path": null,
+            "mesh_type": "cube",
+            "mesh_params": {
+              "size": 1.0
+            },
+            "material": {
+              "name": "Body_mat",
+              "base_color": [
+                0.85,
+                0.12,
+                0.1,
+                1.0
+              ],
+              "metallic": 0.6,
+              "roughness": 0.25,
+              "emissive": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "emissive_intensity": 1.0,
+              "alpha_cutoff": 0.5,
+              "base_color_tex": null,
+              "metallic_roughness_tex": null,
+              "normal_tex": null,
+              "emissive_tex": null,
+              "occlusion_tex": null,
+              "double_sided": false,
+              "alpha_mode": "OPAQUE"
+            },
+            "blueprint": null,
+            "blueprints": [],
+            "visible": true,
+            "tag": "",
+            "collider": null,
+            "rigidbody": null,
+            "spawn_kind": null,
+            "spawn_config": null,
+            "is_sun": false,
+            "sun_light": null,
+            "is_point_light": false,
+            "point_light": null,
+            "is_spot_light": false,
+            "spot_light": null,
+            "is_clouds": false,
+            "cloud_settings": null,
+            "is_ocean": false,
+            "ocean_settings": null,
+            "is_terrain": false,
+            "terrain_config": null,
+            "children": []
+          },
+          {
+            "name": "Cabin",
+            "position": [
+              0.0,
+              0.62,
+              0.35
+            ],
+            "rotation_euler": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": [
+              1.55,
+              0.5,
+              1.9
+            ],
+            "source_path": null,
+            "mesh_type": "cube",
+            "mesh_params": {
+              "size": 1.0
+            },
+            "material": {
+              "name": "Cabin_mat",
+              "base_color": [
+                0.08,
+                0.1,
+                0.14,
+                1.0
+              ],
+              "metallic": 0.3,
+              "roughness": 0.1,
+              "emissive": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "emissive_intensity": 1.0,
+              "alpha_cutoff": 0.5,
+              "base_color_tex": null,
+              "metallic_roughness_tex": null,
+              "normal_tex": null,
+              "emissive_tex": null,
+              "occlusion_tex": null,
+              "double_sided": false,
+              "alpha_mode": "OPAQUE"
+            },
+            "blueprint": null,
+            "blueprints": [],
+            "visible": true,
+            "tag": "",
+            "collider": null,
+            "rigidbody": null,
+            "spawn_kind": null,
+            "spawn_config": null,
+            "is_sun": false,
+            "sun_light": null,
+            "is_point_light": false,
+            "point_light": null,
+            "is_spot_light": false,
+            "spot_light": null,
+            "is_clouds": false,
+            "cloud_settings": null,
+            "is_ocean": false,
+            "ocean_settings": null,
+            "is_terrain": false,
+            "terrain_config": null,
+            "children": []
+          },
+          {
+            "name": "Spoiler",
+            "position": [
+              0.0,
+              0.72,
+              1.95
+            ],
+            "rotation_euler": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": [
+              1.8,
+              0.08,
+              0.4
+            ],
+            "source_path": null,
+            "mesh_type": "cube",
+            "mesh_params": {
+              "size": 1.0
+            },
+            "material": {
+              "name": "Spoiler_mat",
+              "base_color": [
+                0.85,
+                0.12,
+                0.1,
+                1.0
+              ],
+              "metallic": 0.5,
+              "roughness": 0.3,
+              "emissive": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "emissive_intensity": 1.0,
+              "alpha_cutoff": 0.5,
+              "base_color_tex": null,
+              "metallic_roughness_tex": null,
+              "normal_tex": null,
+              "emissive_tex": null,
+              "occlusion_tex": null,
+              "double_sided": false,
+              "alpha_mode": "OPAQUE"
+            },
+            "blueprint": null,
+            "blueprints": [],
+            "visible": true,
+            "tag": "",
+            "collider": null,
+            "rigidbody": null,
+            "spawn_kind": null,
+            "spawn_config": null,
+            "is_sun": false,
+            "sun_light": null,
+            "is_point_light": false,
+            "point_light": null,
+            "is_spot_light": false,
+            "spot_light": null,
+            "is_clouds": false,
+            "cloud_settings": null,
+            "is_ocean": false,
+            "ocean_settings": null,
+            "is_terrain": false,
+            "terrain_config": null,
+            "children": []
+          },
+          {
+            "name": "Wheel 1",
+            "position": [
+              -0.95,
+              -0.18,
+              -1.35
+            ],
+            "rotation_euler": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": [
+              0.36,
+              0.72,
+              0.72
+            ],
+            "source_path": null,
+            "mesh_type": "sphere",
+            "mesh_params": {
+              "radius": 0.5
+            },
+            "material": {
+              "name": "Wheel 1_mat",
+              "base_color": [
+                0.05,
+                0.05,
+                0.06,
+                1.0
+              ],
+              "metallic": 0.0,
+              "roughness": 0.8,
+              "emissive": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "emissive_intensity": 1.0,
+              "alpha_cutoff": 0.5,
+              "base_color_tex": null,
+              "metallic_roughness_tex": null,
+              "normal_tex": null,
+              "emissive_tex": null,
+              "occlusion_tex": null,
+              "double_sided": false,
+              "alpha_mode": "OPAQUE"
+            },
+            "blueprint": null,
+            "blueprints": [],
+            "visible": true,
+            "tag": "",
+            "collider": null,
+            "rigidbody": null,
+            "spawn_kind": null,
+            "spawn_config": null,
+            "is_sun": false,
+            "sun_light": null,
+            "is_point_light": false,
+            "point_light": null,
+            "is_spot_light": false,
+            "spot_light": null,
+            "is_clouds": false,
+            "cloud_settings": null,
+            "is_ocean": false,
+            "ocean_settings": null,
+            "is_terrain": false,
+            "terrain_config": null,
+            "children": []
+          },
+          {
+            "name": "Wheel 2",
+            "position": [
+              0.95,
+              -0.18,
+              -1.35
+            ],
+            "rotation_euler": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": [
+              0.36,
+              0.72,
+              0.72
+            ],
+            "source_path": null,
+            "mesh_type": "sphere",
+            "mesh_params": {
+              "radius": 0.5
+            },
+            "material": {
+              "name": "Wheel 2_mat",
+              "base_color": [
+                0.05,
+                0.05,
+                0.06,
+                1.0
+              ],
+              "metallic": 0.0,
+              "roughness": 0.8,
+              "emissive": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "emissive_intensity": 1.0,
+              "alpha_cutoff": 0.5,
+              "base_color_tex": null,
+              "metallic_roughness_tex": null,
+              "normal_tex": null,
+              "emissive_tex": null,
+              "occlusion_tex": null,
+              "double_sided": false,
+              "alpha_mode": "OPAQUE"
+            },
+            "blueprint": null,
+            "blueprints": [],
+            "visible": true,
+            "tag": "",
+            "collider": null,
+            "rigidbody": null,
+            "spawn_kind": null,
+            "spawn_config": null,
+            "is_sun": false,
+            "sun_light": null,
+            "is_point_light": false,
+            "point_light": null,
+            "is_spot_light": false,
+            "spot_light": null,
+            "is_clouds": false,
+            "cloud_settings": null,
+            "is_ocean": false,
+            "ocean_settings": null,
+            "is_terrain": false,
+            "terrain_config": null,
+            "children": []
+          },
+          {
+            "name": "Wheel 3",
+            "position": [
+              -0.95,
+              -0.18,
+              1.35
+            ],
+            "rotation_euler": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": [
+              0.36,
+              0.72,
+              0.72
+            ],
+            "source_path": null,
+            "mesh_type": "sphere",
+            "mesh_params": {
+              "radius": 0.5
+            },
+            "material": {
+              "name": "Wheel 3_mat",
+              "base_color": [
+                0.05,
+                0.05,
+                0.06,
+                1.0
+              ],
+              "metallic": 0.0,
+              "roughness": 0.8,
+              "emissive": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "emissive_intensity": 1.0,
+              "alpha_cutoff": 0.5,
+              "base_color_tex": null,
+              "metallic_roughness_tex": null,
+              "normal_tex": null,
+              "emissive_tex": null,
+              "occlusion_tex": null,
+              "double_sided": false,
+              "alpha_mode": "OPAQUE"
+            },
+            "blueprint": null,
+            "blueprints": [],
+            "visible": true,
+            "tag": "",
+            "collider": null,
+            "rigidbody": null,
+            "spawn_kind": null,
+            "spawn_config": null,
+            "is_sun": false,
+            "sun_light": null,
+            "is_point_light": false,
+            "point_light": null,
+            "is_spot_light": false,
+            "spot_light": null,
+            "is_clouds": false,
+            "cloud_settings": null,
+            "is_ocean": false,
+            "ocean_settings": null,
+            "is_terrain": false,
+            "terrain_config": null,
+            "children": []
+          },
+          {
+            "name": "Wheel 4",
+            "position": [
+              0.95,
+              -0.18,
+              1.35
+            ],
+            "rotation_euler": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": [
+              0.36,
+              0.72,
+              0.72
+            ],
+            "source_path": null,
+            "mesh_type": "sphere",
+            "mesh_params": {
+              "radius": 0.5
+            },
+            "material": {
+              "name": "Wheel 4_mat",
+              "base_color": [
+                0.05,
+                0.05,
+                0.06,
+                1.0
+              ],
+              "metallic": 0.0,
+              "roughness": 0.8,
+              "emissive": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "emissive_intensity": 1.0,
+              "alpha_cutoff": 0.5,
+              "base_color_tex": null,
+              "metallic_roughness_tex": null,
+              "normal_tex": null,
+              "emissive_tex": null,
+              "occlusion_tex": null,
+              "double_sided": false,
+              "alpha_mode": "OPAQUE"
+            },
+            "blueprint": null,
+            "blueprints": [],
+            "visible": true,
+            "tag": "",
+            "collider": null,
+            "rigidbody": null,
+            "spawn_kind": null,
+            "spawn_config": null,
+            "is_sun": false,
+            "sun_light": null,
+            "is_point_light": false,
+            "point_light": null,
+            "is_spot_light": false,
+            "spot_light": null,
+            "is_clouds": false,
+            "cloud_settings": null,
+            "is_ocean": false,
+            "ocean_settings": null,
+            "is_terrain": false,
+            "terrain_config": null,
+            "children": []
+          },
+          {
+            "name": "Headlight",
+            "position": [
+              -0.6,
+              0.2,
+              -2.11
+            ],
+            "rotation_euler": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": [
+              0.4,
+              0.14,
+              0.04
+            ],
+            "source_path": null,
+            "mesh_type": "cube",
+            "mesh_params": {
+              "size": 1.0
+            },
+            "material": {
+              "name": "Headlight_mat",
+              "base_color": [
+                1,
+                1,
+                0.9,
+                1
+              ],
+              "metallic": 0.0,
+              "roughness": 0.2,
+              "emissive": [
+                2.5,
+                2.4,
+                2.0
+              ],
+              "emissive_intensity": 1.0,
+              "alpha_cutoff": 0.5,
+              "base_color_tex": null,
+              "metallic_roughness_tex": null,
+              "normal_tex": null,
+              "emissive_tex": null,
+              "occlusion_tex": null,
+              "double_sided": false,
+              "alpha_mode": "OPAQUE"
+            },
+            "blueprint": null,
+            "blueprints": [],
+            "visible": true,
+            "tag": "",
+            "collider": null,
+            "rigidbody": null,
+            "spawn_kind": null,
+            "spawn_config": null,
+            "is_sun": false,
+            "sun_light": null,
+            "is_point_light": false,
+            "point_light": null,
+            "is_spot_light": false,
+            "spot_light": null,
+            "is_clouds": false,
+            "cloud_settings": null,
+            "is_ocean": false,
+            "ocean_settings": null,
+            "is_terrain": false,
+            "terrain_config": null,
+            "children": []
+          },
+          {
+            "name": "Taillight",
+            "position": [
+              -0.6,
+              0.25,
+              2.11
+            ],
+            "rotation_euler": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": [
+              0.45,
+              0.12,
+              0.04
+            ],
+            "source_path": null,
+            "mesh_type": "cube",
+            "mesh_params": {
+              "size": 1.0
+            },
+            "material": {
+              "name": "Taillight_mat",
+              "base_color": [
+                0.9,
+                0.05,
+                0.05,
+                1
+              ],
+              "metallic": 0.0,
+              "roughness": 0.3,
+              "emissive": [
+                1.6,
+                0.05,
+                0.05
+              ],
+              "emissive_intensity": 1.0,
+              "alpha_cutoff": 0.5,
+              "base_color_tex": null,
+              "metallic_roughness_tex": null,
+              "normal_tex": null,
+              "emissive_tex": null,
+              "occlusion_tex": null,
+              "double_sided": false,
+              "alpha_mode": "OPAQUE"
+            },
+            "blueprint": null,
+            "blueprints": [],
+            "visible": true,
+            "tag": "",
+            "collider": null,
+            "rigidbody": null,
+            "spawn_kind": null,
+            "spawn_config": null,
+            "is_sun": false,
+            "sun_light": null,
+            "is_point_light": false,
+            "point_light": null,
+            "is_spot_light": false,
+            "spot_light": null,
+            "is_clouds": false,
+            "cloud_settings": null,
+            "is_ocean": false,
+            "ocean_settings": null,
+            "is_terrain": false,
+            "terrain_config": null,
+            "children": []
+          },
+          {
+            "name": "Headlight",
+            "position": [
+              0.6,
+              0.2,
+              -2.11
+            ],
+            "rotation_euler": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": [
+              0.4,
+              0.14,
+              0.04
+            ],
+            "source_path": null,
+            "mesh_type": "cube",
+            "mesh_params": {
+              "size": 1.0
+            },
+            "material": {
+              "name": "Headlight_mat",
+              "base_color": [
+                1,
+                1,
+                0.9,
+                1
+              ],
+              "metallic": 0.0,
+              "roughness": 0.2,
+              "emissive": [
+                2.5,
+                2.4,
+                2.0
+              ],
+              "emissive_intensity": 1.0,
+              "alpha_cutoff": 0.5,
+              "base_color_tex": null,
+              "metallic_roughness_tex": null,
+              "normal_tex": null,
+              "emissive_tex": null,
+              "occlusion_tex": null,
+              "double_sided": false,
+              "alpha_mode": "OPAQUE"
+            },
+            "blueprint": null,
+            "blueprints": [],
+            "visible": true,
+            "tag": "",
+            "collider": null,
+            "rigidbody": null,
+            "spawn_kind": null,
+            "spawn_config": null,
+            "is_sun": false,
+            "sun_light": null,
+            "is_point_light": false,
+            "point_light": null,
+            "is_spot_light": false,
+            "spot_light": null,
+            "is_clouds": false,
+            "cloud_settings": null,
+            "is_ocean": false,
+            "ocean_settings": null,
+            "is_terrain": false,
+            "terrain_config": null,
+            "children": []
+          },
+          {
+            "name": "Taillight",
+            "position": [
+              0.6,
+              0.25,
+              2.11
+            ],
+            "rotation_euler": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "scale": [
+              0.45,
+              0.12,
+              0.04
+            ],
+            "source_path": null,
+            "mesh_type": "cube",
+            "mesh_params": {
+              "size": 1.0
+            },
+            "material": {
+              "name": "Taillight_mat",
+              "base_color": [
+                0.9,
+                0.05,
+                0.05,
+                1
+              ],
+              "metallic": 0.0,
+              "roughness": 0.3,
+              "emissive": [
+                1.6,
+                0.05,
+                0.05
+              ],
+              "emissive_intensity": 1.0,
+              "alpha_cutoff": 0.5,
+              "base_color_tex": null,
+              "metallic_roughness_tex": null,
+              "normal_tex": null,
+              "emissive_tex": null,
+              "occlusion_tex": null,
+              "double_sided": false,
+              "alpha_mode": "OPAQUE"
+            },
+            "blueprint": null,
+            "blueprints": [],
+            "visible": true,
+            "tag": "",
+            "collider": null,
+            "rigidbody": null,
+            "spawn_kind": null,
+            "spawn_config": null,
+            "is_sun": false,
+            "sun_light": null,
+            "is_point_light": false,
+            "point_light": null,
+            "is_spot_light": false,
+            "spot_light": null,
+            "is_clouds": false,
+            "cloud_settings": null,
+            "is_ocean": false,
+            "ocean_settings": null,
+            "is_terrain": false,
+            "terrain_config": null,
+            "children": []
+          }
+        ]
+      },
+      {
+        "name": "Race Manager",
+        "position": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "rotation_euler": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "source_path": null,
+        "mesh_type": null,
+        "mesh_params": null,
+        "material": null,
+        "blueprint": {
+          "class": "RaceManager",
+          "properties": {
+            "laps": 3,
+            "countdown": 3
+          }
+        },
+        "blueprints": [
+          {
+            "class": "RaceManager",
+            "properties": {
+              "laps": 3,
+              "countdown": 3
+            }
+          }
+        ],
+        "visible": true,
+        "tag": "",
+        "collider": null,
+        "rigidbody": null,
+        "spawn_kind": null,
+        "spawn_config": null,
+        "is_sun": false,
+        "sun_light": null,
+        "is_point_light": false,
+        "point_light": null,
+        "is_spot_light": false,
+        "spot_light": null,
+        "is_clouds": false,
+        "cloud_settings": null,
+        "is_ocean": false,
+        "ocean_settings": null,
+        "is_terrain": false,
+        "terrain_config": null,
+        "children": []
+      },
+      {
+        "name": "Tyre Wall",
+        "position": [
+          156.328613,
+          0.6,
+          81.15834
+        ],
+        "rotation_euler": [
+          0.0,
+          -29.475889,
+          0.0
+        ],
+        "scale": [
+          2.0,
+          1.2,
+          1.2
+        ],
+        "source_path": null,
+        "mesh_type": "cube",
+        "mesh_params": {
+          "size": 1.0
+        },
+        "material": {
+          "name": "Tyre Wall_mat",
+          "base_color": [
+            0.9,
+            0.12,
+            0.1,
+            1.0
+          ],
+          "metallic": 0.1,
+          "roughness": 0.5,
+          "emissive": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "emissive_intensity": 1.0,
+          "alpha_cutoff": 0.5,
+          "base_color_tex": null,
+          "metallic_roughness_tex": null,
+          "normal_tex": null,
+          "emissive_tex": null,
+          "occlusion_tex": null,
+          "double_sided": false,
+          "alpha_mode": "OPAQUE"
+        },
+        "blueprint": null,
+        "blueprints": [],
+        "visible": true,
+        "tag": "",
+        "collider": {
+          "center": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "is_trigger": false,
+          "friction": 0.6,
+          "restitution": 0.0,
+          "type": "box",
+          "size": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "rigidbody": null,
+        "spawn_kind": null,
+        "spawn_config": null,
+        "is_sun": false,
+        "sun_light": null,
+        "is_point_light": false,
+        "point_light": null,
+        "is_spot_light": false,
+        "spot_light": null,
+        "is_clouds": false,
+        "cloud_settings": null,
+        "is_ocean": false,
+        "ocean_settings": null,
+        "is_terrain": false,
+        "terrain_config": null,
+        "children": []
+      },
+      {
+        "name": "Tyre Wall",
+        "position": [
+          157.411133,
+          0.6,
+          79.243103
+        ],
+        "rotation_euler": [
+          0.0,
+          -29.475889,
+          0.0
+        ],
+        "scale": [
+          2.0,
+          1.2,
+          1.2
+        ],
+        "source_path": null,
+        "mesh_type": "cube",
+        "mesh_params": {
+          "size": 1.0
+        },
+        "material": {
+          "name": "Tyre Wall_mat",
+          "base_color": [
+            0.95,
+            0.95,
+            0.95,
+            1.0
+          ],
+          "metallic": 0.1,
+          "roughness": 0.5,
+          "emissive": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "emissive_intensity": 1.0,
+          "alpha_cutoff": 0.5,
+          "base_color_tex": null,
+          "metallic_roughness_tex": null,
+          "normal_tex": null,
+          "emissive_tex": null,
+          "occlusion_tex": null,
+          "double_sided": false,
+          "alpha_mode": "OPAQUE"
+        },
+        "blueprint": null,
+        "blueprints": [],
+        "visible": true,
+        "tag": "",
+        "collider": {
+          "center": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "is_trigger": false,
+          "friction": 0.6,
+          "restitution": 0.0,
+          "type": "box",
+          "size": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "rigidbody": null,
+        "spawn_kind": null,
+        "spawn_config": null,
+        "is_sun": false,
+        "sun_light": null,
+        "is_point_light": false,
+        "point_light": null,
+        "is_spot_light": false,
+        "spot_light": null,
+        "is_clouds": false,
+        "cloud_settings": null,
+        "is_ocean": false,
+        "ocean_settings": null,
+        "is_terrain": false,
+        "terrain_config": null,
+        "children": []
+      },
+      {
+        "name": "Tyre Wall",
+        "position": [
+          158.493668,
+          0.6,
+          77.327866
+        ],
+        "rotation_euler": [
+          0.0,
+          -29.475889,
+          0.0
+        ],
+        "scale": [
+          2.0,
+          1.2,
+          1.2
+        ],
+        "source_path": null,
+        "mesh_type": "cube",
+        "mesh_params": {
+          "size": 1.0
+        },
+        "material": {
+          "name": "Tyre Wall_mat",
+          "base_color": [
+            0.9,
+            0.12,
+            0.1,
+            1.0
+          ],
+          "metallic": 0.1,
+          "roughness": 0.5,
+          "emissive": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "emissive_intensity": 1.0,
+          "alpha_cutoff": 0.5,
+          "base_color_tex": null,
+          "metallic_roughness_tex": null,
+          "normal_tex": null,
+          "emissive_tex": null,
+          "occlusion_tex": null,
+          "double_sided": false,
+          "alpha_mode": "OPAQUE"
+        },
+        "blueprint": null,
+        "blueprints": [],
+        "visible": true,
+        "tag": "",
+        "collider": {
+          "center": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "is_trigger": false,
+          "friction": 0.6,
+          "restitution": 0.0,
+          "type": "box",
+          "size": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "rigidbody": null,
+        "spawn_kind": null,
+        "spawn_config": null,
+        "is_sun": false,
+        "sun_light": null,
+        "is_point_light": false,
+        "point_light": null,
+        "is_spot_light": false,
+        "spot_light": null,
+        "is_clouds": false,
+        "cloud_settings": null,
+        "is_ocean": false,
+        "ocean_settings": null,
+        "is_terrain": false,
+        "terrain_config": null,
+        "children": []
+      },
+      {
+        "name": "Tyre Wall",
+        "position": [
+          159.576187,
+          0.6,
+          75.412628
+        ],
+        "rotation_euler": [
+          0.0,
+          -29.475889,
+          0.0
+        ],
+        "scale": [
+          2.0,
+          1.2,
+          1.2
+        ],
+        "source_path": null,
+        "mesh_type": "cube",
+        "mesh_params": {
+          "size": 1.0
+        },
+        "material": {
+          "name": "Tyre Wall_mat",
+          "base_color": [
+            0.95,
+            0.95,
+            0.95,
+            1.0
+          ],
+          "metallic": 0.1,
+          "roughness": 0.5,
+          "emissive": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "emissive_intensity": 1.0,
+          "alpha_cutoff": 0.5,
+          "base_color_tex": null,
+          "metallic_roughness_tex": null,
+          "normal_tex": null,
+          "emissive_tex": null,
+          "occlusion_tex": null,
+          "double_sided": false,
+          "alpha_mode": "OPAQUE"
+        },
+        "blueprint": null,
+        "blueprints": [],
+        "visible": true,
+        "tag": "",
+        "collider": {
+          "center": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "is_trigger": false,
+          "friction": 0.6,
+          "restitution": 0.0,
+          "type": "box",
+          "size": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "rigidbody": null,
+        "spawn_kind": null,
+        "spawn_config": null,
+        "is_sun": false,
+        "sun_light": null,
+        "is_point_light": false,
+        "point_light": null,
+        "is_spot_light": false,
+        "spot_light": null,
+        "is_clouds": false,
+        "cloud_settings": null,
+        "is_ocean": false,
+        "ocean_settings": null,
+        "is_terrain": false,
+        "terrain_config": null,
+        "children": []
+      },
+      {
+        "name": "Tyre Wall",
+        "position": [
+          160.658707,
+          0.6,
+          73.497391
+        ],
+        "rotation_euler": [
+          0.0,
+          -29.475889,
+          0.0
+        ],
+        "scale": [
+          2.0,
+          1.2,
+          1.2
+        ],
+        "source_path": null,
+        "mesh_type": "cube",
+        "mesh_params": {
+          "size": 1.0
+        },
+        "material": {
+          "name": "Tyre Wall_mat",
+          "base_color": [
+            0.9,
+            0.12,
+            0.1,
+            1.0
+          ],
+          "metallic": 0.1,
+          "roughness": 0.5,
+          "emissive": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "emissive_intensity": 1.0,
+          "alpha_cutoff": 0.5,
+          "base_color_tex": null,
+          "metallic_roughness_tex": null,
+          "normal_tex": null,
+          "emissive_tex": null,
+          "occlusion_tex": null,
+          "double_sided": false,
+          "alpha_mode": "OPAQUE"
+        },
+        "blueprint": null,
+        "blueprints": [],
+        "visible": true,
+        "tag": "",
+        "collider": {
+          "center": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "is_trigger": false,
+          "friction": 0.6,
+          "restitution": 0.0,
+          "type": "box",
+          "size": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "rigidbody": null,
+        "spawn_kind": null,
+        "spawn_config": null,
+        "is_sun": false,
+        "sun_light": null,
+        "is_point_light": false,
+        "point_light": null,
+        "is_spot_light": false,
+        "spot_light": null,
+        "is_clouds": false,
+        "cloud_settings": null,
+        "is_ocean": false,
+        "ocean_settings": null,
+        "is_terrain": false,
+        "terrain_config": null,
+        "children": []
+      },
+      {
+        "name": "Tyre Wall",
+        "position": [
+          161.741241,
+          0.6,
+          71.582153
+        ],
+        "rotation_euler": [
+          0.0,
+          -29.475889,
+          0.0
+        ],
+        "scale": [
+          2.0,
+          1.2,
+          1.2
+        ],
+        "source_path": null,
+        "mesh_type": "cube",
+        "mesh_params": {
+          "size": 1.0
+        },
+        "material": {
+          "name": "Tyre Wall_mat",
+          "base_color": [
+            0.95,
+            0.95,
+            0.95,
+            1.0
+          ],
+          "metallic": 0.1,
+          "roughness": 0.5,
+          "emissive": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "emissive_intensity": 1.0,
+          "alpha_cutoff": 0.5,
+          "base_color_tex": null,
+          "metallic_roughness_tex": null,
+          "normal_tex": null,
+          "emissive_tex": null,
+          "occlusion_tex": null,
+          "double_sided": false,
+          "alpha_mode": "OPAQUE"
+        },
+        "blueprint": null,
+        "blueprints": [],
+        "visible": true,
+        "tag": "",
+        "collider": {
+          "center": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "is_trigger": false,
+          "friction": 0.6,
+          "restitution": 0.0,
+          "type": "box",
+          "size": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "rigidbody": null,
+        "spawn_kind": null,
+        "spawn_config": null,
+        "is_sun": false,
+        "sun_light": null,
+        "is_point_light": false,
+        "point_light": null,
+        "is_spot_light": false,
+        "spot_light": null,
+        "is_clouds": false,
+        "cloud_settings": null,
+        "is_ocean": false,
+        "ocean_settings": null,
+        "is_terrain": false,
+        "terrain_config": null,
+        "children": []
+      },
+      {
+        "name": "Tyre Wall",
+        "position": [
+          162.823761,
+          0.6,
+          69.666916
+        ],
+        "rotation_euler": [
+          0.0,
+          -29.475889,
+          0.0
+        ],
+        "scale": [
+          2.0,
+          1.2,
+          1.2
+        ],
+        "source_path": null,
+        "mesh_type": "cube",
+        "mesh_params": {
+          "size": 1.0
+        },
+        "material": {
+          "name": "Tyre Wall_mat",
+          "base_color": [
+            0.9,
+            0.12,
+            0.1,
+            1.0
+          ],
+          "metallic": 0.1,
+          "roughness": 0.5,
+          "emissive": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "emissive_intensity": 1.0,
+          "alpha_cutoff": 0.5,
+          "base_color_tex": null,
+          "metallic_roughness_tex": null,
+          "normal_tex": null,
+          "emissive_tex": null,
+          "occlusion_tex": null,
+          "double_sided": false,
+          "alpha_mode": "OPAQUE"
+        },
+        "blueprint": null,
+        "blueprints": [],
+        "visible": true,
+        "tag": "",
+        "collider": {
+          "center": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "is_trigger": false,
+          "friction": 0.6,
+          "restitution": 0.0,
+          "type": "box",
+          "size": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "rigidbody": null,
+        "spawn_kind": null,
+        "spawn_config": null,
+        "is_sun": false,
+        "sun_light": null,
+        "is_point_light": false,
+        "point_light": null,
+        "is_spot_light": false,
+        "spot_light": null,
+        "is_clouds": false,
+        "cloud_settings": null,
+        "is_ocean": false,
+        "ocean_settings": null,
+        "is_terrain": false,
+        "terrain_config": null,
+        "children": []
+      },
+      {
+        "name": "Tyre Wall",
+        "position": [
+          131.699677,
+          0.6,
+          -65.260925
+        ],
+        "rotation_euler": [
+          0.0,
+          55.17551,
+          0.0
+        ],
+        "scale": [
+          2.0,
+          1.2,
+          1.2
+        ],
+        "source_path": null,
+        "mesh_type": "cube",
+        "mesh_params": {
+          "size": 1.0
+        },
+        "material": {
+          "name": "Tyre Wall_mat",
+          "base_color": [
+            0.9,
+            0.12,
+            0.1,
+            1.0
+          ],
+          "metallic": 0.1,
+          "roughness": 0.5,
+          "emissive": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "emissive_intensity": 1.0,
+          "alpha_cutoff": 0.5,
+          "base_color_tex": null,
+          "metallic_roughness_tex": null,
+          "normal_tex": null,
+          "emissive_tex": null,
+          "occlusion_tex": null,
+          "double_sided": false,
+          "alpha_mode": "OPAQUE"
+        },
+        "blueprint": null,
+        "blueprints": [],
+        "visible": true,
+        "tag": "",
+        "collider": {
+          "center": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "is_trigger": false,
+          "friction": 0.6,
+          "restitution": 0.0,
+          "type": "box",
+          "size": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "rigidbody": null,
+        "spawn_kind": null,
+        "spawn_config": null,
+        "is_sun": false,
+        "sun_light": null,
+        "is_point_light": false,
+        "point_light": null,
+        "is_spot_light": false,
+        "spot_light": null,
+        "is_clouds": false,
+        "cloud_settings": null,
+        "is_ocean": false,
+        "ocean_settings": null,
+        "is_terrain": false,
+        "terrain_config": null,
+        "children": []
+      },
+      {
+        "name": "Tyre Wall",
+        "position": [
+          129.893692,
+          0.6,
+          -66.517273
+        ],
+        "rotation_euler": [
+          0.0,
+          55.17551,
+          0.0
+        ],
+        "scale": [
+          2.0,
+          1.2,
+          1.2
+        ],
+        "source_path": null,
+        "mesh_type": "cube",
+        "mesh_params": {
+          "size": 1.0
+        },
+        "material": {
+          "name": "Tyre Wall_mat",
+          "base_color": [
+            0.95,
+            0.95,
+            0.95,
+            1.0
+          ],
+          "metallic": 0.1,
+          "roughness": 0.5,
+          "emissive": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "emissive_intensity": 1.0,
+          "alpha_cutoff": 0.5,
+          "base_color_tex": null,
+          "metallic_roughness_tex": null,
+          "normal_tex": null,
+          "emissive_tex": null,
+          "occlusion_tex": null,
+          "double_sided": false,
+          "alpha_mode": "OPAQUE"
+        },
+        "blueprint": null,
+        "blueprints": [],
+        "visible": true,
+        "tag": "",
+        "collider": {
+          "center": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "is_trigger": false,
+          "friction": 0.6,
+          "restitution": 0.0,
+          "type": "box",
+          "size": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "rigidbody": null,
+        "spawn_kind": null,
+        "spawn_config": null,
+        "is_sun": false,
+        "sun_light": null,
+        "is_point_light": false,
+        "point_light": null,
+        "is_spot_light": false,
+        "spot_light": null,
+        "is_clouds": false,
+        "cloud_settings": null,
+        "is_ocean": false,
+        "ocean_settings": null,
+        "is_terrain": false,
+        "terrain_config": null,
+        "children": []
+      },
+      {
+        "name": "Tyre Wall",
+        "position": [
+          128.087692,
+          0.6,
+          -67.773613
+        ],
+        "rotation_euler": [
+          0.0,
+          55.17551,
+          0.0
+        ],
+        "scale": [
+          2.0,
+          1.2,
+          1.2
+        ],
+        "source_path": null,
+        "mesh_type": "cube",
+        "mesh_params": {
+          "size": 1.0
+        },
+        "material": {
+          "name": "Tyre Wall_mat",
+          "base_color": [
+            0.9,
+            0.12,
+            0.1,
+            1.0
+          ],
+          "metallic": 0.1,
+          "roughness": 0.5,
+          "emissive": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "emissive_intensity": 1.0,
+          "alpha_cutoff": 0.5,
+          "base_color_tex": null,
+          "metallic_roughness_tex": null,
+          "normal_tex": null,
+          "emissive_tex": null,
+          "occlusion_tex": null,
+          "double_sided": false,
+          "alpha_mode": "OPAQUE"
+        },
+        "blueprint": null,
+        "blueprints": [],
+        "visible": true,
+        "tag": "",
+        "collider": {
+          "center": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "is_trigger": false,
+          "friction": 0.6,
+          "restitution": 0.0,
+          "type": "box",
+          "size": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "rigidbody": null,
+        "spawn_kind": null,
+        "spawn_config": null,
+        "is_sun": false,
+        "sun_light": null,
+        "is_point_light": false,
+        "point_light": null,
+        "is_spot_light": false,
+        "spot_light": null,
+        "is_clouds": false,
+        "cloud_settings": null,
+        "is_ocean": false,
+        "ocean_settings": null,
+        "is_terrain": false,
+        "terrain_config": null,
+        "children": []
+      },
+      {
+        "name": "Tyre Wall",
+        "position": [
+          126.281708,
+          0.6,
+          -69.029953
+        ],
+        "rotation_euler": [
+          0.0,
+          55.17551,
+          0.0
+        ],
+        "scale": [
+          2.0,
+          1.2,
+          1.2
+        ],
+        "source_path": null,
+        "mesh_type": "cube",
+        "mesh_params": {
+          "size": 1.0
+        },
+        "material": {
+          "name": "Tyre Wall_mat",
+          "base_color": [
+            0.95,
+            0.95,
+            0.95,
+            1.0
+          ],
+          "metallic": 0.1,
+          "roughness": 0.5,
+          "emissive": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "emissive_intensity": 1.0,
+          "alpha_cutoff": 0.5,
+          "base_color_tex": null,
+          "metallic_roughness_tex": null,
+          "normal_tex": null,
+          "emissive_tex": null,
+          "occlusion_tex": null,
+          "double_sided": false,
+          "alpha_mode": "OPAQUE"
+        },
+        "blueprint": null,
+        "blueprints": [],
+        "visible": true,
+        "tag": "",
+        "collider": {
+          "center": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "is_trigger": false,
+          "friction": 0.6,
+          "restitution": 0.0,
+          "type": "box",
+          "size": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "rigidbody": null,
+        "spawn_kind": null,
+        "spawn_config": null,
+        "is_sun": false,
+        "sun_light": null,
+        "is_point_light": false,
+        "point_light": null,
+        "is_spot_light": false,
+        "spot_light": null,
+        "is_clouds": false,
+        "cloud_settings": null,
+        "is_ocean": false,
+        "ocean_settings": null,
+        "is_terrain": false,
+        "terrain_config": null,
+        "children": []
+      },
+      {
+        "name": "Tyre Wall",
+        "position": [
+          124.475716,
+          0.6,
+          -70.286293
+        ],
+        "rotation_euler": [
+          0.0,
+          55.17551,
+          0.0
+        ],
+        "scale": [
+          2.0,
+          1.2,
+          1.2
+        ],
+        "source_path": null,
+        "mesh_type": "cube",
+        "mesh_params": {
+          "size": 1.0
+        },
+        "material": {
+          "name": "Tyre Wall_mat",
+          "base_color": [
+            0.9,
+            0.12,
+            0.1,
+            1.0
+          ],
+          "metallic": 0.1,
+          "roughness": 0.5,
+          "emissive": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "emissive_intensity": 1.0,
+          "alpha_cutoff": 0.5,
+          "base_color_tex": null,
+          "metallic_roughness_tex": null,
+          "normal_tex": null,
+          "emissive_tex": null,
+          "occlusion_tex": null,
+          "double_sided": false,
+          "alpha_mode": "OPAQUE"
+        },
+        "blueprint": null,
+        "blueprints": [],
+        "visible": true,
+        "tag": "",
+        "collider": {
+          "center": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "is_trigger": false,
+          "friction": 0.6,
+          "restitution": 0.0,
+          "type": "box",
+          "size": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "rigidbody": null,
+        "spawn_kind": null,
+        "spawn_config": null,
+        "is_sun": false,
+        "sun_light": null,
+        "is_point_light": false,
+        "point_light": null,
+        "is_spot_light": false,
+        "spot_light": null,
+        "is_clouds": false,
+        "cloud_settings": null,
+        "is_ocean": false,
+        "ocean_settings": null,
+        "is_terrain": false,
+        "terrain_config": null,
+        "children": []
+      },
+      {
+        "name": "Tyre Wall",
+        "position": [
+          122.669724,
+          0.6,
+          -71.542633
+        ],
+        "rotation_euler": [
+          0.0,
+          55.17551,
+          0.0
+        ],
+        "scale": [
+          2.0,
+          1.2,
+          1.2
+        ],
+        "source_path": null,
+        "mesh_type": "cube",
+        "mesh_params": {
+          "size": 1.0
+        },
+        "material": {
+          "name": "Tyre Wall_mat",
+          "base_color": [
+            0.95,
+            0.95,
+            0.95,
+            1.0
+          ],
+          "metallic": 0.1,
+          "roughness": 0.5,
+          "emissive": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "emissive_intensity": 1.0,
+          "alpha_cutoff": 0.5,
+          "base_color_tex": null,
+          "metallic_roughness_tex": null,
+          "normal_tex": null,
+          "emissive_tex": null,
+          "occlusion_tex": null,
+          "double_sided": false,
+          "alpha_mode": "OPAQUE"
+        },
+        "blueprint": null,
+        "blueprints": [],
+        "visible": true,
+        "tag": "",
+        "collider": {
+          "center": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "is_trigger": false,
+          "friction": 0.6,
+          "restitution": 0.0,
+          "type": "box",
+          "size": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "rigidbody": null,
+        "spawn_kind": null,
+        "spawn_config": null,
+        "is_sun": false,
+        "sun_light": null,
+        "is_point_light": false,
+        "point_light": null,
+        "is_spot_light": false,
+        "spot_light": null,
+        "is_clouds": false,
+        "cloud_settings": null,
+        "is_ocean": false,
+        "ocean_settings": null,
+        "is_terrain": false,
+        "terrain_config": null,
+        "children": []
+      },
+      {
+        "name": "Tyre Wall",
+        "position": [
+          120.863731,
+          0.6,
+          -72.798981
+        ],
+        "rotation_euler": [
+          0.0,
+          55.17551,
+          0.0
+        ],
+        "scale": [
+          2.0,
+          1.2,
+          1.2
+        ],
+        "source_path": null,
+        "mesh_type": "cube",
+        "mesh_params": {
+          "size": 1.0
+        },
+        "material": {
+          "name": "Tyre Wall_mat",
+          "base_color": [
+            0.9,
+            0.12,
+            0.1,
+            1.0
+          ],
+          "metallic": 0.1,
+          "roughness": 0.5,
+          "emissive": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "emissive_intensity": 1.0,
+          "alpha_cutoff": 0.5,
+          "base_color_tex": null,
+          "metallic_roughness_tex": null,
+          "normal_tex": null,
+          "emissive_tex": null,
+          "occlusion_tex": null,
+          "double_sided": false,
+          "alpha_mode": "OPAQUE"
+        },
+        "blueprint": null,
+        "blueprints": [],
+        "visible": true,
+        "tag": "",
+        "collider": {
+          "center": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "is_trigger": false,
+          "friction": 0.6,
+          "restitution": 0.0,
+          "type": "box",
+          "size": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "rigidbody": null,
+        "spawn_kind": null,
+        "spawn_config": null,
+        "is_sun": false,
+        "sun_light": null,
+        "is_point_light": false,
+        "point_light": null,
+        "is_spot_light": false,
+        "spot_light": null,
+        "is_clouds": false,
+        "cloud_settings": null,
+        "is_ocean": false,
+        "ocean_settings": null,
+        "is_terrain": false,
+        "terrain_config": null,
+        "children": []
+      },
+      {
+        "name": "Tyre Wall",
+        "position": [
+          -143.413788,
+          0.6,
+          -82.365517
+        ],
+        "rotation_euler": [
+          0.0,
+          136.397186,
+          0.0
+        ],
+        "scale": [
+          2.0,
+          1.2,
+          1.2
+        ],
+        "source_path": null,
+        "mesh_type": "cube",
+        "mesh_params": {
+          "size": 1.0
+        },
+        "material": {
+          "name": "Tyre Wall_mat",
+          "base_color": [
+            0.9,
+            0.12,
+            0.1,
+            1.0
+          ],
+          "metallic": 0.1,
+          "roughness": 0.5,
+          "emissive": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "emissive_intensity": 1.0,
+          "alpha_cutoff": 0.5,
+          "base_color_tex": null,
+          "metallic_roughness_tex": null,
+          "normal_tex": null,
+          "emissive_tex": null,
+          "occlusion_tex": null,
+          "double_sided": false,
+          "alpha_mode": "OPAQUE"
+        },
+        "blueprint": null,
+        "blueprints": [],
+        "visible": true,
+        "tag": "",
+        "collider": {
+          "center": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "is_trigger": false,
+          "friction": 0.6,
+          "restitution": 0.0,
+          "type": "box",
+          "size": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "rigidbody": null,
+        "spawn_kind": null,
+        "spawn_config": null,
+        "is_sun": false,
+        "sun_light": null,
+        "is_point_light": false,
+        "point_light": null,
+        "is_spot_light": false,
+        "spot_light": null,
+        "is_clouds": false,
+        "cloud_settings": null,
+        "is_ocean": false,
+        "ocean_settings": null,
+        "is_terrain": false,
+        "terrain_config": null,
+        "children": []
+      },
+      {
+        "name": "Tyre Wall",
+        "position": [
+          -144.93103,
+          0.6,
+          -80.772415
+        ],
+        "rotation_euler": [
+          0.0,
+          136.397186,
+          0.0
+        ],
+        "scale": [
+          2.0,
+          1.2,
+          1.2
+        ],
+        "source_path": null,
+        "mesh_type": "cube",
+        "mesh_params": {
+          "size": 1.0
+        },
+        "material": {
+          "name": "Tyre Wall_mat",
+          "base_color": [
+            0.95,
+            0.95,
+            0.95,
+            1.0
+          ],
+          "metallic": 0.1,
+          "roughness": 0.5,
+          "emissive": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "emissive_intensity": 1.0,
+          "alpha_cutoff": 0.5,
+          "base_color_tex": null,
+          "metallic_roughness_tex": null,
+          "normal_tex": null,
+          "emissive_tex": null,
+          "occlusion_tex": null,
+          "double_sided": false,
+          "alpha_mode": "OPAQUE"
+        },
+        "blueprint": null,
+        "blueprints": [],
+        "visible": true,
+        "tag": "",
+        "collider": {
+          "center": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "is_trigger": false,
+          "friction": 0.6,
+          "restitution": 0.0,
+          "type": "box",
+          "size": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "rigidbody": null,
+        "spawn_kind": null,
+        "spawn_config": null,
+        "is_sun": false,
+        "sun_light": null,
+        "is_point_light": false,
+        "point_light": null,
+        "is_spot_light": false,
+        "spot_light": null,
+        "is_clouds": false,
+        "cloud_settings": null,
+        "is_ocean": false,
+        "ocean_settings": null,
+        "is_terrain": false,
+        "terrain_config": null,
+        "children": []
+      },
+      {
+        "name": "Tyre Wall",
+        "position": [
+          -146.448273,
+          0.6,
+          -79.179306
+        ],
+        "rotation_euler": [
+          0.0,
+          136.397186,
+          0.0
+        ],
+        "scale": [
+          2.0,
+          1.2,
+          1.2
+        ],
+        "source_path": null,
+        "mesh_type": "cube",
+        "mesh_params": {
+          "size": 1.0
+        },
+        "material": {
+          "name": "Tyre Wall_mat",
+          "base_color": [
+            0.9,
+            0.12,
+            0.1,
+            1.0
+          ],
+          "metallic": 0.1,
+          "roughness": 0.5,
+          "emissive": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "emissive_intensity": 1.0,
+          "alpha_cutoff": 0.5,
+          "base_color_tex": null,
+          "metallic_roughness_tex": null,
+          "normal_tex": null,
+          "emissive_tex": null,
+          "occlusion_tex": null,
+          "double_sided": false,
+          "alpha_mode": "OPAQUE"
+        },
+        "blueprint": null,
+        "blueprints": [],
+        "visible": true,
+        "tag": "",
+        "collider": {
+          "center": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "is_trigger": false,
+          "friction": 0.6,
+          "restitution": 0.0,
+          "type": "box",
+          "size": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "rigidbody": null,
+        "spawn_kind": null,
+        "spawn_config": null,
+        "is_sun": false,
+        "sun_light": null,
+        "is_point_light": false,
+        "point_light": null,
+        "is_spot_light": false,
+        "spot_light": null,
+        "is_clouds": false,
+        "cloud_settings": null,
+        "is_ocean": false,
+        "ocean_settings": null,
+        "is_terrain": false,
+        "terrain_config": null,
+        "children": []
+      },
+      {
+        "name": "Tyre Wall",
+        "position": [
+          -147.965515,
+          0.6,
+          -77.586205
+        ],
+        "rotation_euler": [
+          0.0,
+          136.397186,
+          0.0
+        ],
+        "scale": [
+          2.0,
+          1.2,
+          1.2
+        ],
+        "source_path": null,
+        "mesh_type": "cube",
+        "mesh_params": {
+          "size": 1.0
+        },
+        "material": {
+          "name": "Tyre Wall_mat",
+          "base_color": [
+            0.95,
+            0.95,
+            0.95,
+            1.0
+          ],
+          "metallic": 0.1,
+          "roughness": 0.5,
+          "emissive": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "emissive_intensity": 1.0,
+          "alpha_cutoff": 0.5,
+          "base_color_tex": null,
+          "metallic_roughness_tex": null,
+          "normal_tex": null,
+          "emissive_tex": null,
+          "occlusion_tex": null,
+          "double_sided": false,
+          "alpha_mode": "OPAQUE"
+        },
+        "blueprint": null,
+        "blueprints": [],
+        "visible": true,
+        "tag": "",
+        "collider": {
+          "center": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "is_trigger": false,
+          "friction": 0.6,
+          "restitution": 0.0,
+          "type": "box",
+          "size": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "rigidbody": null,
+        "spawn_kind": null,
+        "spawn_config": null,
+        "is_sun": false,
+        "sun_light": null,
+        "is_point_light": false,
+        "point_light": null,
+        "is_spot_light": false,
+        "spot_light": null,
+        "is_clouds": false,
+        "cloud_settings": null,
+        "is_ocean": false,
+        "ocean_settings": null,
+        "is_terrain": false,
+        "terrain_config": null,
+        "children": []
+      },
+      {
+        "name": "Tyre Wall",
+        "position": [
+          -149.482758,
+          0.6,
+          -75.993103
+        ],
+        "rotation_euler": [
+          0.0,
+          136.397186,
+          0.0
+        ],
+        "scale": [
+          2.0,
+          1.2,
+          1.2
+        ],
+        "source_path": null,
+        "mesh_type": "cube",
+        "mesh_params": {
+          "size": 1.0
+        },
+        "material": {
+          "name": "Tyre Wall_mat",
+          "base_color": [
+            0.9,
+            0.12,
+            0.1,
+            1.0
+          ],
+          "metallic": 0.1,
+          "roughness": 0.5,
+          "emissive": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "emissive_intensity": 1.0,
+          "alpha_cutoff": 0.5,
+          "base_color_tex": null,
+          "metallic_roughness_tex": null,
+          "normal_tex": null,
+          "emissive_tex": null,
+          "occlusion_tex": null,
+          "double_sided": false,
+          "alpha_mode": "OPAQUE"
+        },
+        "blueprint": null,
+        "blueprints": [],
+        "visible": true,
+        "tag": "",
+        "collider": {
+          "center": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "is_trigger": false,
+          "friction": 0.6,
+          "restitution": 0.0,
+          "type": "box",
+          "size": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "rigidbody": null,
+        "spawn_kind": null,
+        "spawn_config": null,
+        "is_sun": false,
+        "sun_light": null,
+        "is_point_light": false,
+        "point_light": null,
+        "is_spot_light": false,
+        "spot_light": null,
+        "is_clouds": false,
+        "cloud_settings": null,
+        "is_ocean": false,
+        "ocean_settings": null,
+        "is_terrain": false,
+        "terrain_config": null,
+        "children": []
+      },
+      {
+        "name": "Tyre Wall",
+        "position": [
+          -151.0,
+          0.6,
+          -74.399994
+        ],
+        "rotation_euler": [
+          0.0,
+          136.397186,
+          0.0
+        ],
+        "scale": [
+          2.0,
+          1.2,
+          1.2
+        ],
+        "source_path": null,
+        "mesh_type": "cube",
+        "mesh_params": {
+          "size": 1.0
+        },
+        "material": {
+          "name": "Tyre Wall_mat",
+          "base_color": [
+            0.95,
+            0.95,
+            0.95,
+            1.0
+          ],
+          "metallic": 0.1,
+          "roughness": 0.5,
+          "emissive": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "emissive_intensity": 1.0,
+          "alpha_cutoff": 0.5,
+          "base_color_tex": null,
+          "metallic_roughness_tex": null,
+          "normal_tex": null,
+          "emissive_tex": null,
+          "occlusion_tex": null,
+          "double_sided": false,
+          "alpha_mode": "OPAQUE"
+        },
+        "blueprint": null,
+        "blueprints": [],
+        "visible": true,
+        "tag": "",
+        "collider": {
+          "center": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "is_trigger": false,
+          "friction": 0.6,
+          "restitution": 0.0,
+          "type": "box",
+          "size": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "rigidbody": null,
+        "spawn_kind": null,
+        "spawn_config": null,
+        "is_sun": false,
+        "sun_light": null,
+        "is_point_light": false,
+        "point_light": null,
+        "is_spot_light": false,
+        "spot_light": null,
+        "is_clouds": false,
+        "cloud_settings": null,
+        "is_ocean": false,
+        "ocean_settings": null,
+        "is_terrain": false,
+        "terrain_config": null,
+        "children": []
+      },
+      {
+        "name": "Tyre Wall",
+        "position": [
+          -152.517242,
+          0.6,
+          -72.806892
+        ],
+        "rotation_euler": [
+          0.0,
+          136.397186,
+          0.0
+        ],
+        "scale": [
+          2.0,
+          1.2,
+          1.2
+        ],
+        "source_path": null,
+        "mesh_type": "cube",
+        "mesh_params": {
+          "size": 1.0
+        },
+        "material": {
+          "name": "Tyre Wall_mat",
+          "base_color": [
+            0.9,
+            0.12,
+            0.1,
+            1.0
+          ],
+          "metallic": 0.1,
+          "roughness": 0.5,
+          "emissive": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "emissive_intensity": 1.0,
+          "alpha_cutoff": 0.5,
+          "base_color_tex": null,
+          "metallic_roughness_tex": null,
+          "normal_tex": null,
+          "emissive_tex": null,
+          "occlusion_tex": null,
+          "double_sided": false,
+          "alpha_mode": "OPAQUE"
+        },
+        "blueprint": null,
+        "blueprints": [],
+        "visible": true,
+        "tag": "",
+        "collider": {
+          "center": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "is_trigger": false,
+          "friction": 0.6,
+          "restitution": 0.0,
+          "type": "box",
+          "size": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "rigidbody": null,
+        "spawn_kind": null,
+        "spawn_config": null,
+        "is_sun": false,
+        "sun_light": null,
+        "is_point_light": false,
+        "point_light": null,
+        "is_spot_light": false,
+        "spot_light": null,
+        "is_clouds": false,
+        "cloud_settings": null,
+        "is_ocean": false,
+        "ocean_settings": null,
+        "is_terrain": false,
+        "terrain_config": null,
+        "children": []
+      },
+      {
+        "name": "Tyre Wall",
+        "position": [
+          -132.631439,
+          0.6,
+          92.237564
+        ],
+        "rotation_euler": [
+          0.0,
+          -138.990921,
+          0.0
+        ],
+        "scale": [
+          2.0,
+          1.2,
+          1.2
+        ],
+        "source_path": null,
+        "mesh_type": "cube",
+        "mesh_params": {
+          "size": 1.0
+        },
+        "material": {
+          "name": "Tyre Wall_mat",
+          "base_color": [
+            0.9,
+            0.12,
+            0.1,
+            1.0
+          ],
+          "metallic": 0.1,
+          "roughness": 0.5,
+          "emissive": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "emissive_intensity": 1.0,
+          "alpha_cutoff": 0.5,
+          "base_color_tex": null,
+          "metallic_roughness_tex": null,
+          "normal_tex": null,
+          "emissive_tex": null,
+          "occlusion_tex": null,
+          "double_sided": false,
+          "alpha_mode": "OPAQUE"
+        },
+        "blueprint": null,
+        "blueprints": [],
+        "visible": true,
+        "tag": "",
+        "collider": {
+          "center": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "is_trigger": false,
+          "friction": 0.6,
+          "restitution": 0.0,
+          "type": "box",
+          "size": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "rigidbody": null,
+        "spawn_kind": null,
+        "spawn_config": null,
+        "is_sun": false,
+        "sun_light": null,
+        "is_point_light": false,
+        "point_light": null,
+        "is_spot_light": false,
+        "spot_light": null,
+        "is_clouds": false,
+        "cloud_settings": null,
+        "is_ocean": false,
+        "ocean_settings": null,
+        "is_terrain": false,
+        "terrain_config": null,
+        "children": []
+      },
+      {
+        "name": "Tyre Wall",
+        "position": [
+          -131.187851,
+          0.6,
+          93.897697
+        ],
+        "rotation_euler": [
+          0.0,
+          -138.990921,
+          0.0
+        ],
+        "scale": [
+          2.0,
+          1.2,
+          1.2
+        ],
+        "source_path": null,
+        "mesh_type": "cube",
+        "mesh_params": {
+          "size": 1.0
+        },
+        "material": {
+          "name": "Tyre Wall_mat",
+          "base_color": [
+            0.95,
+            0.95,
+            0.95,
+            1.0
+          ],
+          "metallic": 0.1,
+          "roughness": 0.5,
+          "emissive": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "emissive_intensity": 1.0,
+          "alpha_cutoff": 0.5,
+          "base_color_tex": null,
+          "metallic_roughness_tex": null,
+          "normal_tex": null,
+          "emissive_tex": null,
+          "occlusion_tex": null,
+          "double_sided": false,
+          "alpha_mode": "OPAQUE"
+        },
+        "blueprint": null,
+        "blueprints": [],
+        "visible": true,
+        "tag": "",
+        "collider": {
+          "center": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "is_trigger": false,
+          "friction": 0.6,
+          "restitution": 0.0,
+          "type": "box",
+          "size": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "rigidbody": null,
+        "spawn_kind": null,
+        "spawn_config": null,
+        "is_sun": false,
+        "sun_light": null,
+        "is_point_light": false,
+        "point_light": null,
+        "is_spot_light": false,
+        "spot_light": null,
+        "is_clouds": false,
+        "cloud_settings": null,
+        "is_ocean": false,
+        "ocean_settings": null,
+        "is_terrain": false,
+        "terrain_config": null,
+        "children": []
+      },
+      {
+        "name": "Tyre Wall",
+        "position": [
+          -129.744247,
+          0.6,
+          95.557831
+        ],
+        "rotation_euler": [
+          0.0,
+          -138.990921,
+          0.0
+        ],
+        "scale": [
+          2.0,
+          1.2,
+          1.2
+        ],
+        "source_path": null,
+        "mesh_type": "cube",
+        "mesh_params": {
+          "size": 1.0
+        },
+        "material": {
+          "name": "Tyre Wall_mat",
+          "base_color": [
+            0.9,
+            0.12,
+            0.1,
+            1.0
+          ],
+          "metallic": 0.1,
+          "roughness": 0.5,
+          "emissive": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "emissive_intensity": 1.0,
+          "alpha_cutoff": 0.5,
+          "base_color_tex": null,
+          "metallic_roughness_tex": null,
+          "normal_tex": null,
+          "emissive_tex": null,
+          "occlusion_tex": null,
+          "double_sided": false,
+          "alpha_mode": "OPAQUE"
+        },
+        "blueprint": null,
+        "blueprints": [],
+        "visible": true,
+        "tag": "",
+        "collider": {
+          "center": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "is_trigger": false,
+          "friction": 0.6,
+          "restitution": 0.0,
+          "type": "box",
+          "size": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "rigidbody": null,
+        "spawn_kind": null,
+        "spawn_config": null,
+        "is_sun": false,
+        "sun_light": null,
+        "is_point_light": false,
+        "point_light": null,
+        "is_spot_light": false,
+        "spot_light": null,
+        "is_clouds": false,
+        "cloud_settings": null,
+        "is_ocean": false,
+        "ocean_settings": null,
+        "is_terrain": false,
+        "terrain_config": null,
+        "children": []
+      },
+      {
+        "name": "Tyre Wall",
+        "position": [
+          -128.300659,
+          0.6,
+          97.217964
+        ],
+        "rotation_euler": [
+          0.0,
+          -138.990921,
+          0.0
+        ],
+        "scale": [
+          2.0,
+          1.2,
+          1.2
+        ],
+        "source_path": null,
+        "mesh_type": "cube",
+        "mesh_params": {
+          "size": 1.0
+        },
+        "material": {
+          "name": "Tyre Wall_mat",
+          "base_color": [
+            0.95,
+            0.95,
+            0.95,
+            1.0
+          ],
+          "metallic": 0.1,
+          "roughness": 0.5,
+          "emissive": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "emissive_intensity": 1.0,
+          "alpha_cutoff": 0.5,
+          "base_color_tex": null,
+          "metallic_roughness_tex": null,
+          "normal_tex": null,
+          "emissive_tex": null,
+          "occlusion_tex": null,
+          "double_sided": false,
+          "alpha_mode": "OPAQUE"
+        },
+        "blueprint": null,
+        "blueprints": [],
+        "visible": true,
+        "tag": "",
+        "collider": {
+          "center": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "is_trigger": false,
+          "friction": 0.6,
+          "restitution": 0.0,
+          "type": "box",
+          "size": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "rigidbody": null,
+        "spawn_kind": null,
+        "spawn_config": null,
+        "is_sun": false,
+        "sun_light": null,
+        "is_point_light": false,
+        "point_light": null,
+        "is_spot_light": false,
+        "spot_light": null,
+        "is_clouds": false,
+        "cloud_settings": null,
+        "is_ocean": false,
+        "ocean_settings": null,
+        "is_terrain": false,
+        "terrain_config": null,
+        "children": []
+      },
+      {
+        "name": "Tyre Wall",
+        "position": [
+          -126.857063,
+          0.6,
+          98.878098
+        ],
+        "rotation_euler": [
+          0.0,
+          -138.990921,
+          0.0
+        ],
+        "scale": [
+          2.0,
+          1.2,
+          1.2
+        ],
+        "source_path": null,
+        "mesh_type": "cube",
+        "mesh_params": {
+          "size": 1.0
+        },
+        "material": {
+          "name": "Tyre Wall_mat",
+          "base_color": [
+            0.9,
+            0.12,
+            0.1,
+            1.0
+          ],
+          "metallic": 0.1,
+          "roughness": 0.5,
+          "emissive": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "emissive_intensity": 1.0,
+          "alpha_cutoff": 0.5,
+          "base_color_tex": null,
+          "metallic_roughness_tex": null,
+          "normal_tex": null,
+          "emissive_tex": null,
+          "occlusion_tex": null,
+          "double_sided": false,
+          "alpha_mode": "OPAQUE"
+        },
+        "blueprint": null,
+        "blueprints": [],
+        "visible": true,
+        "tag": "",
+        "collider": {
+          "center": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "is_trigger": false,
+          "friction": 0.6,
+          "restitution": 0.0,
+          "type": "box",
+          "size": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "rigidbody": null,
+        "spawn_kind": null,
+        "spawn_config": null,
+        "is_sun": false,
+        "sun_light": null,
+        "is_point_light": false,
+        "point_light": null,
+        "is_spot_light": false,
+        "spot_light": null,
+        "is_clouds": false,
+        "cloud_settings": null,
+        "is_ocean": false,
+        "ocean_settings": null,
+        "is_terrain": false,
+        "terrain_config": null,
+        "children": []
+      },
+      {
+        "name": "Tyre Wall",
+        "position": [
+          -125.413475,
+          0.6,
+          100.538231
+        ],
+        "rotation_euler": [
+          0.0,
+          -138.990921,
+          0.0
+        ],
+        "scale": [
+          2.0,
+          1.2,
+          1.2
+        ],
+        "source_path": null,
+        "mesh_type": "cube",
+        "mesh_params": {
+          "size": 1.0
+        },
+        "material": {
+          "name": "Tyre Wall_mat",
+          "base_color": [
+            0.95,
+            0.95,
+            0.95,
+            1.0
+          ],
+          "metallic": 0.1,
+          "roughness": 0.5,
+          "emissive": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "emissive_intensity": 1.0,
+          "alpha_cutoff": 0.5,
+          "base_color_tex": null,
+          "metallic_roughness_tex": null,
+          "normal_tex": null,
+          "emissive_tex": null,
+          "occlusion_tex": null,
+          "double_sided": false,
+          "alpha_mode": "OPAQUE"
+        },
+        "blueprint": null,
+        "blueprints": [],
+        "visible": true,
+        "tag": "",
+        "collider": {
+          "center": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "is_trigger": false,
+          "friction": 0.6,
+          "restitution": 0.0,
+          "type": "box",
+          "size": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "rigidbody": null,
+        "spawn_kind": null,
+        "spawn_config": null,
+        "is_sun": false,
+        "sun_light": null,
+        "is_point_light": false,
+        "point_light": null,
+        "is_spot_light": false,
+        "spot_light": null,
+        "is_clouds": false,
+        "cloud_settings": null,
+        "is_ocean": false,
+        "ocean_settings": null,
+        "is_terrain": false,
+        "terrain_config": null,
+        "children": []
+      },
+      {
+        "name": "Tyre Wall",
+        "position": [
+          -123.969879,
+          0.6,
+          102.198364
+        ],
+        "rotation_euler": [
+          0.0,
+          -138.990921,
+          0.0
+        ],
+        "scale": [
+          2.0,
+          1.2,
+          1.2
+        ],
+        "source_path": null,
+        "mesh_type": "cube",
+        "mesh_params": {
+          "size": 1.0
+        },
+        "material": {
+          "name": "Tyre Wall_mat",
+          "base_color": [
+            0.9,
+            0.12,
+            0.1,
+            1.0
+          ],
+          "metallic": 0.1,
+          "roughness": 0.5,
+          "emissive": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "emissive_intensity": 1.0,
+          "alpha_cutoff": 0.5,
+          "base_color_tex": null,
+          "metallic_roughness_tex": null,
+          "normal_tex": null,
+          "emissive_tex": null,
+          "occlusion_tex": null,
+          "double_sided": false,
+          "alpha_mode": "OPAQUE"
+        },
+        "blueprint": null,
+        "blueprints": [],
+        "visible": true,
+        "tag": "",
+        "collider": {
+          "center": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "is_trigger": false,
+          "friction": 0.6,
+          "restitution": 0.0,
+          "type": "box",
+          "size": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "rigidbody": null,
+        "spawn_kind": null,
+        "spawn_config": null,
+        "is_sun": false,
+        "sun_light": null,
+        "is_point_light": false,
+        "point_light": null,
+        "is_spot_light": false,
+        "spot_light": null,
+        "is_clouds": false,
+        "cloud_settings": null,
+        "is_ocean": false,
+        "ocean_settings": null,
+        "is_terrain": false,
+        "terrain_config": null,
+        "children": []
+      }
+    ]
+  },
+  "camera": {
+    "position": [
+      -29.95127296447754,
+      9.0,
+      121.46341705322266
+    ],
+    "yaw": -87.45708323671073,
+    "pitch": -19.29884442502716
+  },
+  "settings": {
+    "shadows": true,
+    "ssao": true,
+    "bloom": true,
+    "fxaa": true,
+    "msaa": true,
+    "msaa_samples": 4
+  },
+  "saved_at": "2026-10-27 05:53:04"
+}

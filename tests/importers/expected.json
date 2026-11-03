@@ -1,0 +1,642 @@
+{
+ "blend/b1_hierarchy_multimat_v50.blend": {
+  "tris": 622,
+  "parts": 3,
+  "lights": 0,
+  "bbox": [
+   [
+    -3.9802,
+    -0.3596,
+    -4.5
+   ],
+   [
+    4.5881,
+    4.0881,
+    1.366
+   ]
+  ],
+  "features": [],
+  "verified": "Blender 5.0.1 evaluated scene (bpy): identical triangle count, world bounding box within 0.001; per-vertex positions/normals identical to Blender's own glTF export (parent inverse, quaternion/axis-angle/ZXY rotations, negative scale, n-gons, 3 material slots)"
+ },
+ "blend/b2_modifiers_v50.blend": {
+  "tris": 532,
+  "parts": 2,
+  "lights": 0,
+  "bbox": [
+   [
+    -4.3674,
+    0.0,
+    -4.2992
+   ],
+   [
+    5.5,
+    1.8,
+    4.6
+   ]
+  ],
+  "features": [],
+  "verified": "Blender 5.0.1 evaluated scene (bpy): identical triangle count, world bounding box within 0.001; Mirror(+merge)+Subdivision(limit surface), Array, Solidify, Mirror-Y+Triangulate match Blender vertex-for-vertex (max error 0.0000)"
+ },
+ "blend/b3_textures_packed_v50.blend": {
+  "tris": 974,
+  "parts": 3,
+  "lights": 0,
+  "bbox": [
+   [
+    -3.0,
+    0.0,
+    -1.0
+   ],
+   [
+    3.8,
+    2.0,
+    7.0
+   ]
+  ],
+  "features": [
+   "uv0"
+  ],
+  "verified": "Blender 5.0.1 evaluated scene (bpy): identical triangle count, world bounding box within 0.001; packed albedo+alpha clip, packed normal map, external relative texture with a space in its name, emission, blended glass; UVs identical"
+ },
+ "blend/b4_color_attributes_uv2_v50.blend": {
+  "tris": 460,
+  "parts": 3,
+  "lights": 0,
+  "bbox": [
+   [
+    -3.75,
+    0.0,
+    -2.0
+   ],
+   [
+    4.0,
+    2.0,
+    2.0
+   ]
+  ],
+  "features": [
+   "colors",
+   "uv0",
+   "uv1"
+  ],
+  "verified": "Blender 5.0.1 evaluated scene (bpy): identical triangle count, world bounding box within 0.001; byte corner colours + float point colours + 2 UV maps identical to Blender export; render matches"
+ },
+ "blend/b5_big_zstd_compressed_v50.blend": {
+  "tris": 62996,
+  "parts": 2,
+  "lights": 0,
+  "bbox": [
+   [
+    -1.3288,
+    0.0,
+    -0.7783
+   ],
+   [
+    3.1261,
+    1.9392,
+    0.8226
+   ]
+  ],
+  "features": [
+   "uv0"
+  ],
+  "verified": "Blender 5.0.1 evaluated scene (bpy): identical triangle count, world bounding box within 0.001; zstd-compressed file, 63k triangles, sharp-edge split normals identical (40,115 vertices like Blender)"
+ },
+ "blend/b6_instances_lights_v42.blend": {
+  "tris": 864,
+  "parts": 3,
+  "lights": 3,
+  "bbox": [
+   [
+    -3.3,
+    -0.5,
+    -3.3
+   ],
+   [
+    3.2974,
+    3.4,
+    0.6984
+   ]
+  ],
+  "features": [],
+  "verified": "Blender 4.2 file checked in Blender 5.0.1: linked duplicates, 3 collection instances, point/spot/sun lights; identical triangles, bbox and per-vertex data"
+ },
+ "blend/b7_suzanne_subsurf_gzip_v252.blend": {
+  "tris": 251904,
+  "parts": 1,
+  "lights": 1,
+  "bbox": [
+   [
+    -1.8064,
+    -0.2693,
+    -0.809
+   ],
+   [
+    0.91,
+    1.4133,
+    1.1095
+   ]
+  ],
+  "features": [],
+  "verified": "Blender 2.52 gzip file checked in Blender 5.0.1: subdivision level 4 = 251,904 triangles exactly, bbox exact, positions within 0.009 (0.3%), normals median error 0.00 deg"
+ },
+ "blend/b8_big_endian_32bit_v260.blend": {
+  "tris": 115712,
+  "parts": 2,
+  "lights": 1,
+  "bbox": [
+   [
+    -0.4142,
+    -0.004,
+    -0.8194
+   ],
+   [
+    1.3917,
+    5.0959,
+    -0.181
+   ]
+  ],
+  "features": [],
+  "verified": "Blender 2.60 BIG-ENDIAN 32-bit file (Blender 5 itself refuses it) checked in Blender 4.2.23: 115,712 triangles exactly, bbox within 0.0006, normals 100%"
+ },
+ "gltf/Box With Spaces/Box With Spaces.gltf": {
+  "tris": 12,
+  "parts": 1,
+  "lights": 0,
+  "bbox": [
+   [
+    -1.0,
+    -1.0,
+    -1.0
+   ],
+   [
+    1.0,
+    1.0,
+    1.0
+   ]
+  ],
+  "features": [
+   "uv0"
+  ],
+  "verified": "Blender glTF importer + Khronos screenshot: percent-encoded URIs with spaces"
+ },
+ "gltf/CesiumMan/CesiumMan.gltf": {
+  "tris": 4672,
+  "parts": 1,
+  "lights": 0,
+  "bbox": [
+   [
+    -0.5691,
+    -0.0,
+    -0.131
+   ],
+   [
+    0.5691,
+    1.5066,
+    0.181
+   ]
+  ],
+  "features": [
+   "uv0"
+  ],
+  "verified": "skinned: default pose = bind pose verified (skinned positions == mesh-node world * raw, error 0); Blender shows animation frame 1 instead"
+ },
+ "gltf/MeshPrimitiveModes/MeshPrimitiveModes.gltf": {
+  "tris": 224,
+  "parts": 1,
+  "lights": 0,
+  "bbox": [
+   [
+    -2.8758,
+    -4.0,
+    -0.059
+   ],
+   [
+    2.8857,
+    4.059,
+    0.059
+   ]
+  ],
+  "features": [],
+  "verified": "all 7 primitive modes; 16 triangle-mode triangles as in Blender + POINTS/LINES/LINE_LOOP/LINE_STRIP rendered as thin geometry; matches Khronos screenshot"
+ },
+ "gltf/MultiUVTest/MultiUVTest.gltf": {
+  "tris": 12,
+  "parts": 1,
+  "lights": 0,
+  "bbox": [
+   [
+    -1.0,
+    -1.0,
+    -1.0
+   ],
+   [
+    1.0,
+    1.0,
+    1.0
+   ]
+  ],
+  "features": [
+   "tangents",
+   "uv0",
+   "uv1"
+  ],
+  "verified": "Blender glTF importer + Khronos screenshot: TEXCOORD_1 drives the second texture"
+ },
+ "gltf/NegativeScaleTest/NegativeScaleTest.gltf": {
+  "tris": 7724,
+  "parts": 6,
+  "lights": 0,
+  "bbox": [
+   [
+    -5.1617,
+    -4.4535,
+    -0.5
+   ],
+   [
+    5.1617,
+    4.4535,
+    0.5
+   ]
+  ],
+  "features": [
+   "uv0"
+  ],
+  "verified": "Blender glTF importer + Khronos screenshot: every check green (mirrored nodes, winding, back-face culling)"
+ },
+ "gltf/SimpleSparseAccessor/SimpleSparseAccessor.gltf": {
+  "tris": 12,
+  "parts": 1,
+  "lights": 0,
+  "bbox": [
+   [
+    0.0,
+    0.0,
+    0.0
+   ],
+   [
+    6.0,
+    4.0,
+    0.0
+   ]
+  ],
+  "features": [],
+  "verified": "Blender glTF importer + Khronos screenshot: sparse accessor"
+ },
+ "gltf/TextureTransformMultiTest/TextureTransformMultiTest.gltf": {
+  "tris": 3956,
+  "parts": 29,
+  "lights": 0,
+  "bbox": [
+   [
+    -1.0,
+    -1.4,
+    -0.025
+   ],
+   [
+    1.0,
+    1.0,
+    0.0351
+   ]
+  ],
+  "features": [
+   "tangents",
+   "uv0",
+   "uv1"
+  ],
+  "verified": "Blender glTF importer + Khronos screenshot: KHR_texture_transform on every slot, texCoord override"
+ },
+ "gltf/Unicode❤♻Test/Unicode❤♻Test.gltf": {
+  "tris": 2,
+  "parts": 1,
+  "lights": 0,
+  "bbox": [
+   [
+    0.0,
+    0.0,
+    0.0
+   ],
+   [
+    1.0,
+    1.0,
+    0.0
+   ]
+  ],
+  "features": [
+   "uv0"
+  ],
+  "verified": "Blender glTF importer + Khronos screenshot: unicode file names"
+ },
+ "glb/AlphaBlendModeTest.glb": {
+  "tris": 61,
+  "parts": 6,
+  "lights": 0,
+  "bbox": [
+   [
+    -4.3,
+    -0.1,
+    -0.75
+   ],
+   [
+    4.3,
+    2.2995,
+    0.55
+   ]
+  ],
+  "features": [
+   "tangents",
+   "uv0"
+  ],
+  "verified": "Blender glTF importer + Khronos screenshot: OPAQUE / MASK (cutoffs) / BLEND"
+ },
+ "glb/BrainStem.glb": {
+  "tris": 61666,
+  "parts": 59,
+  "lights": 0,
+  "bbox": [
+   [
+    -1.2521,
+    -0.0005,
+    -0.3414
+   ],
+   [
+    1.1625,
+    1.8344,
+    0.2557
+   ]
+  ],
+  "features": [],
+  "verified": "skinned (many skins): bind-pose check exact; identical result to the Draco and meshopt variants"
+ },
+ "glb/CesiumMilkTruck.glb": {
+  "tris": 3624,
+  "parts": 4,
+  "lights": 0,
+  "bbox": [
+   [
+    -1.396,
+    0.0015,
+    -2.4309
+   ],
+   [
+    1.396,
+    2.5844,
+    2.438
+   ]
+  ],
+  "features": [
+   "uv0"
+  ],
+  "verified": "Blender glTF importer (bbox 0.0015) + Khronos screenshot: hierarchy, shared meshes; editor lock test (18/18)"
+ },
+ "glb/DamagedHelmet.glb": {
+  "tris": 15452,
+  "parts": 1,
+  "lights": 0,
+  "bbox": [
+   [
+    -0.9475,
+    -0.901,
+    -1.1872
+   ],
+   [
+    0.9425,
+    0.901,
+    0.8128
+   ]
+  ],
+  "features": [
+   "uv0"
+  ],
+  "verified": "Blender glTF importer + Khronos screenshot: embedded PBR maps (albedo, MR, normal, emissive, AO)"
+ },
+ "glb/Fox.glb": {
+  "tris": 576,
+  "parts": 1,
+  "lights": 0,
+  "bbox": [
+   [
+    -12.5927,
+    -0.1217,
+    -88.095
+   ],
+   [
+    12.5927,
+    78.9072,
+    66.6249
+   ]
+  ],
+  "features": [
+   "uv0"
+  ],
+  "verified": "skinned: bind-pose check (error 1e-5); Blender shows animation frame 1 instead"
+ },
+ "glb/MorphPrimitivesTest.glb": {
+  "tris": 32,
+  "parts": 2,
+  "lights": 0,
+  "bbox": [
+   [
+    -0.5,
+    0.0,
+    -0.5
+   ],
+   [
+    0.5,
+    0.1,
+    0.5
+   ]
+  ],
+  "features": [
+   "uv0"
+  ],
+  "verified": "Blender glTF importer: morph target default weights"
+ },
+ "glb/SimpleInstancing.glb": {
+  "tris": 1500,
+  "parts": 1,
+  "lights": 0,
+  "bbox": [
+   [
+    -1.6667,
+    -1.6667,
+    -1.6667
+   ],
+   [
+    12.7317,
+    12.7317,
+    12.7317
+   ]
+  ],
+  "features": [],
+  "verified": "Blender glTF importer: EXT_mesh_gpu_instancing, 125 instances = 1500 triangles"
+ },
+ "glb/VertexColorTest.glb": {
+  "tris": 36,
+  "parts": 2,
+  "lights": 0,
+  "bbox": [
+   [
+    -1.0,
+    -1.0,
+    -0.0127
+   ],
+   [
+    1.0,
+    1.0,
+    0.0614
+   ]
+  ],
+  "features": [
+   "colors",
+   "tangents",
+   "uv0"
+  ],
+  "verified": "Blender glTF importer + Khronos screenshot: every vertex-colour check passes"
+ },
+ "extra/EmissiveStrengthTest.glb": {
+  "tris": 90,
+  "parts": 6,
+  "lights": 0,
+  "bbox": [
+   [
+    -8.0026,
+    -6.0011,
+    -2.0
+   ],
+   [
+    8.0011,
+    4.0094,
+    1.9989
+   ]
+  ],
+  "features": [
+   "uv0"
+  ],
+  "verified": "Blender glTF importer + Khronos screenshot: KHR_materials_emissive_strength"
+ },
+ "extra/MeshoptCubeTest/MeshoptCubeTest.gltf": {
+  "tris": 320,
+  "parts": 11,
+  "lights": 0,
+  "bbox": [
+   [
+    -6.1,
+    -0.8,
+    -0.5
+   ],
+   [
+    17.6,
+    19.8,
+    0.5
+   ]
+  ],
+  "features": [
+   "colors",
+   "uv0"
+  ],
+  "verified": "KHR_meshopt_compression v0+v1 codecs and all filters: all 60 buffer views byte-identical to the meshoptimizer C library"
+ },
+ "extra/OrientationTest.glb": {
+  "tris": 524,
+  "parts": 7,
+  "lights": 0,
+  "bbox": [
+   [
+    -5.3307,
+    -5.3307,
+    -5.3307
+   ],
+   [
+    5.3307,
+    5.3307,
+    5.3307
+   ]
+  ],
+  "features": [],
+  "verified": "Blender glTF importer: node rotations"
+ },
+ "extra/SpecGlossVsMetalRough.glb": {
+  "tris": 9028,
+  "parts": 4,
+  "lights": 0,
+  "bbox": [
+   [
+    -0.155,
+    -0.1302,
+    -0.0545
+   ],
+   [
+    0.155,
+    0.1896,
+    0.0545
+   ]
+  ],
+  "features": [
+   "tangents",
+   "uv0"
+  ],
+  "verified": "Blender glTF importer + Khronos screenshot: KHR_materials_pbrSpecularGlossiness converted per texel; both bottles identical"
+ },
+ "extra/TextureCoordinateTest.glb": {
+  "tris": 10,
+  "parts": 5,
+  "lights": 0,
+  "bbox": [
+   [
+    -1.2,
+    -1.2,
+    -0.0526
+   ],
+   [
+    1.2,
+    1.2,
+    0.0
+   ]
+  ],
+  "features": [
+   "uv0"
+  ],
+  "verified": "Blender glTF importer + Khronos screenshot: UV orientation"
+ },
+ "extra/TextureSettingsTest.glb": {
+  "tris": 72,
+  "parts": 10,
+  "lights": 0,
+  "bbox": [
+   [
+    -5.1617,
+    -5.6186,
+    -0.15
+   ],
+   [
+    5.1617,
+    4.4535,
+    0.1
+   ]
+  ],
+  "features": [
+   "uv0"
+  ],
+  "verified": "Blender glTF importer + Khronos screenshot: wrap modes repeat/clamp/mirror + single/double sided, all checks pass"
+ },
+ "extra/UnlitTest.glb": {
+  "tris": 88,
+  "parts": 2,
+  "lights": 0,
+  "bbox": [
+   [
+    -2.2,
+    -1.0,
+    -1.0
+   ],
+   [
+    2.2,
+    1.0,
+    1.0
+   ]
+  ],
+  "features": [],
+  "verified": "Blender glTF importer + Khronos screenshot: KHR_materials_unlit"
+ }
+}

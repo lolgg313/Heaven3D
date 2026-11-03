@@ -1,0 +1,8 @@
+{
+  "title": "Tropical Island",
+  "order": 7,
+  "desc": "A procedural tropical island with beaches, jungle, flowers, rocks and dirt roads in a turquoise sea. Press Play to explore it on foot, or select the island and change its shape (volcano, atoll, mountains ...), size, seed and densities in the Inspector.",
+  "packages": [
+    "tropical_islands"
+  ]
+}

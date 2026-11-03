@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+dist/
+tests/importers/output/
+.heaven3d_logs/
+*.heaven3d.bak
