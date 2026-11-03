@@ -1,0 +1,371 @@
+{
+  "AKM": {
+    "bones": 44,
+    "bytes": 1116684,
+    "clips": [
+      "Draw",
+      "EmptyReload",
+      "Fire",
+      "FireAim",
+      "Hold",
+      "Holster",
+      "Idle",
+      "Reload"
+    ],
+    "glb": "AKM.glb",
+    "meshes": [
+      "Arm_Standard.l",
+      "Arm_Standard.r"
+    ]
+  },
+  "BaseballBat": {
+    "bones": 44,
+    "bytes": 938468,
+    "clips": [
+      "ComboAttack",
+      "Draw",
+      "Hold",
+      "Holster",
+      "Idle",
+      "StrongAttack"
+    ],
+    "glb": "BaseballBat.glb",
+    "meshes": [
+      "Arm_Standard,r",
+      "Arm_Standard.l"
+    ]
+  },
+  "CombatKnife": {
+    "bones": 44,
+    "bytes": 845972,
+    "clips": [
+      "Draw",
+      "Hold",
+      "Holster",
+      "Idle",
+      "Stab1",
+      "Stab2"
+    ],
+    "glb": "CombatKnife.glb",
+    "meshes": [
+      "Arm_Standard,r",
+      "Arm_Standard.l"
+    ]
+  },
+  "Compass": {
+    "bones": 44,
+    "bytes": 755120,
+    "clips": [
+      "Draw",
+      "Hold",
+      "Holster",
+      "Idle"
+    ],
+    "glb": "Compass.glb",
+    "meshes": [
+      "Arm_Standard.l",
+      "Arm_Standard.r"
+    ]
+  },
+  "Crossbow": {
+    "bones": 44,
+    "bytes": 1033016,
+    "clips": [
+      "AimFire",
+      "Draw",
+      "Fire",
+      "Hold",
+      "Holster",
+      "Idle",
+      "Reload"
+    ],
+    "glb": "Crossbow.glb",
+    "meshes": [
+      "Arm_Standard.l",
+      "Arm_Standard.r"
+    ]
+  },
+  "DoubleBarrelShotgun": {
+    "bones": 44,
+    "bytes": 1071672,
+    "clips": [
+      "AimFire",
+      "Draw",
+      "Fire",
+      "Hold",
+      "Holster",
+      "Idle",
+      "Reload",
+      "ReloadEmpty"
+    ],
+    "glb": "DoubleBarrelShotgun.glb",
+    "meshes": [
+      "Arm_Standard.l",
+      "Arm_Standard.r"
+    ]
+  },
+  "F1": {
+    "bones": 44,
+    "bytes": 1176300,
+    "clips": [
+      "AimFire",
+      "Draw",
+      "Fire",
+      "Hold",
+      "Holster",
+      "Idle",
+      "PickUp",
+      "Reload",
+      "ReloadEmpty"
+    ],
+    "glb": "F1.glb",
+    "meshes": [
+      "Arm_Standard,r",
+      "Arm_Standard.l"
+    ]
+  },
+  "FireAxe": {
+    "bones": 44,
+    "bytes": 906428,
+    "clips": [
+      "Draw",
+      "Hold",
+      "Holster",
+      "Idle",
+      "StrongAttack"
+    ],
+    "glb": "FireAxe.glb",
+    "meshes": [
+      "Arm_Standard,r",
+      "Arm_Standard.l"
+    ]
+  },
+  "FlareGun": {
+    "bones": 44,
+    "bytes": 908588,
+    "clips": [
+      "AimFire",
+      "Draw",
+      "Fire",
+      "Hold",
+      "Holster",
+      "Idle",
+      "Reload"
+    ],
+    "glb": "FlareGun.glb",
+    "meshes": [
+      "Arm_Standard,r",
+      "Arm_Standard.l"
+    ]
+  },
+  "Flashlight": {
+    "bones": 59,
+    "bytes": 882520,
+    "clips": [
+      "Draw",
+      "Hold",
+      "Holster",
+      "Idle",
+      "Switch"
+    ],
+    "glb": "Flashlight.glb",
+    "meshes": [
+      "Arm_Standard,r",
+      "Arm_Standard.l"
+    ]
+  },
+  "FragGrenade": {
+    "bones": 44,
+    "bytes": 873080,
+    "clips": [
+      "Draw",
+      "Hold",
+      "Holster",
+      "Idle",
+      "LongThrow",
+      "ShortThrow"
+    ],
+    "glb": "FragGrenade.glb",
+    "meshes": [
+      "Arm_Standard,r",
+      "Arm_Standard.l"
+    ]
+  },
+  "HuntingRifle": {
+    "bones": 44,
+    "bytes": 1304664,
+    "clips": [
+      "AimFire",
+      "Draw",
+      "Fire",
+      "Hold",
+      "Holster",
+      "Idle",
+      "ReloadEmpty",
+      "ReloadPart1",
+      "ReloadPart2",
+      "ReloadPart3"
+    ],
+    "glb": "HuntingRifle.glb",
+    "meshes": [
+      "Arm_Standard,r",
+      "Arm_Standard.l"
+    ]
+  },
+  "M1911": {
+    "bones": 44,
+    "bytes": 1086828,
+    "clips": [
+      "AimFire",
+      "Draw",
+      "Fire",
+      "Hold",
+      "Holster",
+      "Idle",
+      "Reload",
+      "ReloadEmpty"
+    ],
+    "glb": "M1911.glb",
+    "meshes": [
+      "Arm_Standard,r",
+      "Arm_Standard.l"
+    ]
+  },
+  "M1A": {
+    "bones": 44,
+    "bytes": 1134148,
+    "clips": [
+      "AimFire",
+      "Draw",
+      "Fire",
+      "Hold",
+      "Holster",
+      "Idle",
+      "Reload",
+      "ReloadEmpty"
+    ],
+    "glb": "M1A.glb",
+    "meshes": [
+      "Arm_Standard,r",
+      "Arm_Standard.l"
+    ]
+  },
+  "MP5": {
+    "bones": 44,
+    "bytes": 1137992,
+    "clips": [
+      "AimFire",
+      "Draw",
+      "Fire",
+      "Hold",
+      "Holster",
+      "Idle",
+      "Reload",
+      "ReloadEmpty"
+    ],
+    "glb": "MP5.glb",
+    "meshes": [
+      "Arm_Standard,r",
+      "Arm_Standard.l"
+    ]
+  },
+  "MolotovCocktail": {
+    "bones": 44,
+    "bytes": 958064,
+    "clips": [
+      "Draw",
+      "Hold",
+      "Holster",
+      "Idle",
+      "LongThrow",
+      "ShortThrow"
+    ],
+    "glb": "MolotovCocktail.glb",
+    "meshes": [
+      "Arm_Standard,r",
+      "Arm_Standard.l"
+    ]
+  },
+  "R870": {
+    "bones": 44,
+    "bytes": 1184012,
+    "clips": [
+      "AimFire",
+      "AltFire",
+      "Draw",
+      "Fire",
+      "Hold",
+      "Holster",
+      "Idle",
+      "ReloadEmpty",
+      "ReloadPart1",
+      "ReloadPart2",
+      "ReloadPart3"
+    ],
+    "glb": "R870.glb",
+    "meshes": [
+      "Arm_Standard,r",
+      "Arm_Standard.l"
+    ]
+  },
+  "Revolver": {
+    "bones": 44,
+    "bytes": 1046924,
+    "clips": [
+      "Draw",
+      "DryFire",
+      "Fire",
+      "FireAim",
+      "Hold",
+      "Holster",
+      "Idle",
+      "Reload"
+    ],
+    "glb": "Revolver.glb",
+    "meshes": [
+      "Arm_Standard.l",
+      "Arm_Standard.r"
+    ]
+  },
+  "Syringe": {
+    "bones": 44,
+    "bytes": 688912,
+    "clips": [
+      "Hold",
+      "Use"
+    ],
+    "glb": "Syringe.glb",
+    "meshes": [
+      "Arm_Standard,r",
+      "Arm_Standard.l"
+    ]
+  },
+  "Unarmed": {
+    "bones": 44,
+    "bytes": 2674108,
+    "clips": [
+      "Fall",
+      "FingerIdle",
+      "FingerShoot",
+      "Hide",
+      "Hold",
+      "Idle",
+      "Jump",
+      "LeftPunch",
+      "RightPunch",
+      "Run",
+      "Show"
+    ],
+    "glb": "Unarmed.glb",
+    "meshes": [
+      "Arm_Shirt&Gloves_l",
+      "Arm_Shirt&Gloves_r",
+      "Arm_Standard&Gloves_l",
+      "Arm_Standard&Gloves_r",
+      "Arm_Standard&Shirt.l",
+      "Arm_Standard&Shirt.r",
+      "Arm_Standard.l",
+      "Arm_Standard.r"
+    ]
+  }
+}

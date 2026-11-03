@@ -1,0 +1,578 @@
+[
+  {
+    "src": "AKM_01.png",
+    "weapon": "AKM",
+    "out": "AKM_01.jpg",
+    "bytes": 936972
+  },
+  {
+    "src": "AKM_01_MASK.png",
+    "weapon": "AKM",
+    "out": "AKM_01_MASK.png",
+    "bytes": 1763692
+  },
+  {
+    "src": "AKM_01_NRM.png",
+    "weapon": "AKM",
+    "out": "AKM_01_NRM.jpg",
+    "bytes": 831739
+  },
+  {
+    "src": "F1_01.png",
+    "weapon": "F1",
+    "out": "F1_01.jpg",
+    "bytes": 822363
+  },
+  {
+    "src": "F1_01_MASK.png",
+    "weapon": "F1",
+    "out": "F1_01_MASK.png",
+    "bytes": 1624876
+  },
+  {
+    "src": "F1_01_NRM.png",
+    "weapon": "F1",
+    "out": "F1_01_NRM.jpg",
+    "bytes": 796658
+  },
+  {
+    "src": "M1A_01.png",
+    "weapon": "M1A",
+    "out": "M1A_01.jpg",
+    "bytes": 832194
+  },
+  {
+    "src": "M1A_01_MASK.png",
+    "weapon": "M1A",
+    "out": "M1A_01_MASK.png",
+    "bytes": 1559538
+  },
+  {
+    "src": "M1A_01_NRM.png",
+    "weapon": "M1A",
+    "out": "M1A_01_NRM.jpg",
+    "bytes": 876839
+  },
+  {
+    "src": "Crossbow_01.png",
+    "weapon": "Crossbow",
+    "out": "Crossbow_01.jpg",
+    "bytes": 1068419
+  },
+  {
+    "src": "Crossbow_01_MASK.png",
+    "weapon": "Crossbow",
+    "out": "Crossbow_01_MASK.png",
+    "bytes": 1714432
+  },
+  {
+    "src": "Crossbow_01_NRM.png",
+    "weapon": "Crossbow",
+    "out": "Crossbow_01_NRM.jpg",
+    "bytes": 926253
+  },
+  {
+    "src": "M1911_01.png",
+    "weapon": "M1911",
+    "out": "M1911_01.jpg",
+    "bytes": 1192307
+  },
+  {
+    "src": "M1911_01_MASK.png",
+    "weapon": "M1911",
+    "out": "M1911_01_MASK.png",
+    "bytes": 1822277
+  },
+  {
+    "src": "M1911_01_NRM.png",
+    "weapon": "M1911",
+    "out": "M1911_01_NRM.jpg",
+    "bytes": 1073603
+  },
+  {
+    "src": "M1911_02.png",
+    "weapon": "M1911",
+    "out": "M1911_02.jpg",
+    "bytes": 958210
+  },
+  {
+    "src": "M1911_02_MASK.png",
+    "weapon": "M1911",
+    "out": "M1911_02_MASK.png",
+    "bytes": 1718848
+  },
+  {
+    "src": "M1911_02_NRM.png",
+    "weapon": "M1911",
+    "out": "M1911_02_NRM.jpg",
+    "bytes": 839056
+  },
+  {
+    "src": "M1911_EMM.png",
+    "weapon": "M1911",
+    "out": "M1911_EMM.jpg",
+    "bytes": 25877
+  },
+  {
+    "src": "Revolver_01.png",
+    "weapon": "Revolver",
+    "out": "Revolver_01.jpg",
+    "bytes": 1163794
+  },
+  {
+    "src": "Revolver_01_MASK.png",
+    "weapon": "Revolver",
+    "out": "Revolver_01_MASK.png",
+    "bytes": 1817855
+  },
+  {
+    "src": "Revolver_01_NRM.png",
+    "weapon": "Revolver",
+    "out": "Revolver_01_NRM.jpg",
+    "bytes": 949239
+  },
+  {
+    "src": "Revolver_02.png",
+    "weapon": "Revolver",
+    "out": "Revolver_02.jpg",
+    "bytes": 911920
+  },
+  {
+    "src": "Revolver_02_MASK.png",
+    "weapon": "Revolver",
+    "out": "Revolver_02_MASK.png",
+    "bytes": 1924629
+  },
+  {
+    "src": "Revolver_02_NRM.png",
+    "weapon": "Revolver",
+    "out": "Revolver_02_NRM.jpg",
+    "bytes": 792820
+  },
+  {
+    "src": "Syringe.png",
+    "weapon": "Syringe",
+    "out": "Syringe.jpg",
+    "bytes": 1235414
+  },
+  {
+    "src": "Syringe_MASK.png",
+    "weapon": "Syringe",
+    "out": "Syringe_MASK.png",
+    "bytes": 1709236
+  },
+  {
+    "src": "Syringe_NRM.png",
+    "weapon": "Syringe",
+    "out": "Syringe_NRM.jpg",
+    "bytes": 806833
+  },
+  {
+    "src": "BaseballBat_01.png",
+    "weapon": "BaseballBat",
+    "out": "BaseballBat_01.jpg",
+    "bytes": 1109751
+  },
+  {
+    "src": "BaseballBat_01_MASK.png",
+    "weapon": "BaseballBat",
+    "out": "BaseballBat_01_MASK.png",
+    "bytes": 1579069
+  },
+  {
+    "src": "BaseballBat_01_NRM.png",
+    "weapon": "BaseballBat",
+    "out": "BaseballBat_01_NRM.jpg",
+    "bytes": 1557192
+  },
+  {
+    "src": "BaseballBat_02.png",
+    "weapon": "BaseballBat",
+    "out": "BaseballBat_02.jpg",
+    "bytes": 1359536
+  },
+  {
+    "src": "BaseballBat_02_MASK.png",
+    "weapon": "BaseballBat",
+    "out": "BaseballBat_02_MASK.png",
+    "bytes": 1591129
+  },
+  {
+    "src": "BaseballBat_02_NRM.png",
+    "weapon": "BaseballBat",
+    "out": "BaseballBat_02_NRM.jpg",
+    "bytes": 1464423
+  },
+  {
+    "src": "CombatKnife_01.png",
+    "weapon": "CombatKnife",
+    "out": "CombatKnife_01.jpg",
+    "bytes": 884903
+  },
+  {
+    "src": "CombatKnife_01_MASK.png",
+    "weapon": "CombatKnife",
+    "out": "CombatKnife_01_MASK.png",
+    "bytes": 1574633
+  },
+  {
+    "src": "CombatKnife_01_NRM.png",
+    "weapon": "CombatKnife",
+    "out": "CombatKnife_01_NRM.jpg",
+    "bytes": 919882
+  },
+  {
+    "src": "CombatKnife_02.png",
+    "weapon": "CombatKnife",
+    "out": "CombatKnife_02.jpg",
+    "bytes": 704886
+  },
+  {
+    "src": "CombatKnife_02_MASK.png",
+    "weapon": "CombatKnife",
+    "out": "CombatKnife_02_MASK.png",
+    "bytes": 1672692
+  },
+  {
+    "src": "CombatKnife_02_NRM.png",
+    "weapon": "CombatKnife",
+    "out": "CombatKnife_02_NRM.jpg",
+    "bytes": 892652
+  },
+  {
+    "src": "OldFireAxe_01.png",
+    "weapon": "FireAxe",
+    "out": "OldFireAxe_01.jpg",
+    "bytes": 1046378
+  },
+  {
+    "src": "OldFireAxe_01_MASK.png",
+    "weapon": "FireAxe",
+    "out": "OldFireAxe_01_MASK.png",
+    "bytes": 1566486
+  },
+  {
+    "src": "OldFireAxe_01_NRM.png",
+    "weapon": "FireAxe",
+    "out": "OldFireAxe_01_NRM.jpg",
+    "bytes": 1316027
+  },
+  {
+    "src": "OldFireAxe_02.png",
+    "weapon": "FireAxe",
+    "out": "OldFireAxe_02.jpg",
+    "bytes": 1198995
+  },
+  {
+    "src": "OldFireAxe_02_MASK.png",
+    "weapon": "FireAxe",
+    "out": "OldFireAxe_02_MASK.png",
+    "bytes": 1694746
+  },
+  {
+    "src": "OldFireAxe_02_NRM.png",
+    "weapon": "FireAxe",
+    "out": "OldFireAxe_02_NRM.jpg",
+    "bytes": 1387222
+  },
+  {
+    "src": "MP5_01.png",
+    "weapon": "MP5",
+    "out": "MP5_01.jpg",
+    "bytes": 594068
+  },
+  {
+    "src": "MP5_01_MASK.png",
+    "weapon": "MP5",
+    "out": "MP5_01_MASK.png",
+    "bytes": 1506647
+  },
+  {
+    "src": "MP5_01_NRM.png",
+    "weapon": "MP5",
+    "out": "MP5_01_NRM.jpg",
+    "bytes": 1020724
+  },
+  {
+    "src": "DoubleBarrelShotgun_01.png",
+    "weapon": "DoubleBarrelShotgun",
+    "out": "DoubleBarrelShotgun_01.jpg",
+    "bytes": 1119928
+  },
+  {
+    "src": "DoubleBarrelShotgun_01_MASK.png",
+    "weapon": "DoubleBarrelShotgun",
+    "out": "DoubleBarrelShotgun_01_MASK.png",
+    "bytes": 1842718
+  },
+  {
+    "src": "DoubleBarrelShotgun_01_NRM.png",
+    "weapon": "DoubleBarrelShotgun",
+    "out": "DoubleBarrelShotgun_01_NRM.jpg",
+    "bytes": 1129055
+  },
+  {
+    "src": "DoubleBarrelShotgun_02.png",
+    "weapon": "DoubleBarrelShotgun",
+    "out": "DoubleBarrelShotgun_02.jpg",
+    "bytes": 1186679
+  },
+  {
+    "src": "DoubleBarrelShotgun_02_MASK.png",
+    "weapon": "DoubleBarrelShotgun",
+    "out": "DoubleBarrelShotgun_02_MASK.png",
+    "bytes": 2070940
+  },
+  {
+    "src": "DoubleBarrelShotgun_02_NRM.png",
+    "weapon": "DoubleBarrelShotgun",
+    "out": "DoubleBarrelShotgun_02_NRM.jpg",
+    "bytes": 903662
+  },
+  {
+    "src": "R870_01.png",
+    "weapon": "R870",
+    "out": "R870_01.jpg",
+    "bytes": 1054409
+  },
+  {
+    "src": "R870_01_MASK.png",
+    "weapon": "R870",
+    "out": "R870_01_MASK.png",
+    "bytes": 1667499
+  },
+  {
+    "src": "R870_01_NRM.png",
+    "weapon": "R870",
+    "out": "R870_01_NRM.jpg",
+    "bytes": 1154002
+  },
+  {
+    "src": "R870_02.png",
+    "weapon": "R870",
+    "out": "R870_02.jpg",
+    "bytes": 748367
+  },
+  {
+    "src": "R870_02_MASK.png",
+    "weapon": "R870",
+    "out": "R870_02_MASK.png",
+    "bytes": 1642118
+  },
+  {
+    "src": "R870_02_NRM.png",
+    "weapon": "R870",
+    "out": "R870_02_NRM.jpg",
+    "bytes": 1196497
+  },
+  {
+    "src": "HuntingRifle_01.png",
+    "weapon": "HuntingRifle",
+    "out": "HuntingRifle_01.jpg",
+    "bytes": 1147473
+  },
+  {
+    "src": "HuntingRifle_01_MASK.png",
+    "weapon": "HuntingRifle",
+    "out": "HuntingRifle_01_MASK.png",
+    "bytes": 1537629
+  },
+  {
+    "src": "HuntingRifle_01_NRM.png",
+    "weapon": "HuntingRifle",
+    "out": "HuntingRifle_01_NRM.jpg",
+    "bytes": 1226179
+  },
+  {
+    "src": "HuntingRifle_02.png",
+    "weapon": "HuntingRifle",
+    "out": "HuntingRifle_02.jpg",
+    "bytes": 1151410
+  },
+  {
+    "src": "HuntingRifle_02_MASK.png",
+    "weapon": "HuntingRifle",
+    "out": "HuntingRifle_02_MASK.png",
+    "bytes": 1875770
+  },
+  {
+    "src": "HuntingRifle_02_NRM.png",
+    "weapon": "HuntingRifle",
+    "out": "HuntingRifle_02_NRM.jpg",
+    "bytes": 1272715
+  },
+  {
+    "src": "HuntingRifle_Clip.png",
+    "weapon": "HuntingRifle",
+    "out": "HuntingRifle_Clip.jpg",
+    "bytes": 96531
+  },
+  {
+    "src": "HuntingRifle_Clip_MASK.png",
+    "weapon": "HuntingRifle",
+    "out": "HuntingRifle_Clip_MASK.png",
+    "bytes": 402981
+  },
+  {
+    "src": "HuntingRifle_Clip_NRM.png",
+    "weapon": "HuntingRifle",
+    "out": "HuntingRifle_Clip_NRM.jpg",
+    "bytes": 33061
+  },
+  {
+    "src": "FlareGun_01.png",
+    "weapon": "FlareGun",
+    "out": "FlareGun_01.jpg",
+    "bytes": 1007783
+  },
+  {
+    "src": "FlareGun_01_MASK.png",
+    "weapon": "FlareGun",
+    "out": "FlareGun_01_MASK.png",
+    "bytes": 1836999
+  },
+  {
+    "src": "FlareGun_01_NRM.png",
+    "weapon": "FlareGun",
+    "out": "FlareGun_01_NRM.jpg",
+    "bytes": 782046
+  },
+  {
+    "src": "FlareGun_02.png",
+    "weapon": "FlareGun",
+    "out": "FlareGun_02.jpg",
+    "bytes": 977256
+  },
+  {
+    "src": "FlareGun_02_MASK.png",
+    "weapon": "FlareGun",
+    "out": "FlareGun_02_MASK.png",
+    "bytes": 1808652
+  },
+  {
+    "src": "FlareGun_02_NRM.png",
+    "weapon": "FlareGun",
+    "out": "FlareGun_02_NRM.jpg",
+    "bytes": 511896
+  },
+  {
+    "src": "FragGrenade.png",
+    "weapon": "FragGrenade",
+    "out": "FragGrenade.jpg",
+    "bytes": 978832
+  },
+  {
+    "src": "FragGrenade_MASK.png",
+    "weapon": "FragGrenade",
+    "out": "FragGrenade_MASK.png",
+    "bytes": 1686791
+  },
+  {
+    "src": "FragGrenade_NRM.png",
+    "weapon": "FragGrenade",
+    "out": "FragGrenade_NRM.jpg",
+    "bytes": 1302263
+  },
+  {
+    "src": "Lighter.png",
+    "weapon": "MolotovCocktail",
+    "out": "Lighter.jpg",
+    "bytes": 977031
+  },
+  {
+    "src": "Lighter_MASK.png",
+    "weapon": "MolotovCocktail",
+    "out": "Lighter_MASK.png",
+    "bytes": 1188788
+  },
+  {
+    "src": "Lighter_NRM.png",
+    "weapon": "MolotovCocktail",
+    "out": "Lighter_NRM.jpg",
+    "bytes": 1838280
+  },
+  {
+    "src": "MolotovCocktail.png",
+    "weapon": "MolotovCocktail",
+    "out": "MolotovCocktail.png",
+    "bytes": 6193386
+  },
+  {
+    "src": "MolotovCocktail_MASK.png",
+    "weapon": "MolotovCocktail",
+    "out": "MolotovCocktail_MASK.png",
+    "bytes": 1677870
+  },
+  {
+    "src": "MolotovCocktail_NRM.png",
+    "weapon": "MolotovCocktail",
+    "out": "MolotovCocktail_NRM.jpg",
+    "bytes": 1109173
+  },
+  {
+    "src": "Compass.png",
+    "weapon": "Compass",
+    "out": "Compass.jpg",
+    "bytes": 1311331
+  },
+  {
+    "src": "CompassGlass.png",
+    "weapon": "Compass",
+    "out": "CompassGlass.png",
+    "bytes": 1153997
+  },
+  {
+    "src": "CompassGlass_MASK.png",
+    "weapon": "Compass",
+    "out": "CompassGlass_MASK.png",
+    "bytes": 720329
+  },
+  {
+    "src": "CompassGlass_NRM.png",
+    "weapon": "Compass",
+    "out": "CompassGlass_NRM.jpg",
+    "bytes": 90259
+  },
+  {
+    "src": "Compass_EMM.png",
+    "weapon": "Compass",
+    "out": "Compass_EMM.jpg",
+    "bytes": 26871
+  },
+  {
+    "src": "Compass_MASK.png",
+    "weapon": "Compass",
+    "out": "Compass_MASK.png",
+    "bytes": 1241688
+  },
+  {
+    "src": "Compass_NRM.png",
+    "weapon": "Compass",
+    "out": "Compass_NRM.jpg",
+    "bytes": 655257
+  },
+  {
+    "src": "Flashlight.png",
+    "weapon": "Flashlight",
+    "out": "Flashlight.png",
+    "bytes": 5273729
+  },
+  {
+    "src": "Flashlight_EMM.png",
+    "weapon": "Flashlight",
+    "out": "Flashlight_EMM.jpg",
+    "bytes": 29424
+  },
+  {
+    "src": "Flashlight_MASK.png",
+    "weapon": "Flashlight",
+    "out": "Flashlight_MASK.png",
+    "bytes": 1421835
+  },
+  {
+    "src": "Flashlight_NRM.png",
+    "weapon": "Flashlight",
+    "out": "Flashlight_NRM.jpg",
+    "bytes": 956652
+  }
+]
