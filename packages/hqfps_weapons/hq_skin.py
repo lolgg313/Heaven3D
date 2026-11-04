@@ -320,6 +320,58 @@ class SkinnedModel:
             out[bi] = (g[nidx] @ self.inverse_bind[bi]).astype(np.float32)
         return out
 
+    # ------------------------------------------------------------ geometry
+    def primitives(self):
+        """Every skinned primitive as GPU-ready arrays.
+
+        A skinned mesh's vertices already live in the skin's space, so the
+        mesh node's own transform is ignored (glTF 2.0, "Skins"), and
+        JOINTS_0 indexes straight into `skin.joints` -- the same row order
+        `palette()` writes.  So these arrays and that palette line up with
+        no remapping.
+        """
+        g = self.glb.json
+        mats = g.get("materials", [])
+        out = []
+        for node in g.get("nodes", []):
+            if "mesh" not in node or "skin" not in node:
+                continue
+            for pi, prim in enumerate(g["meshes"][node["mesh"]].get("primitives", [])):
+                at = prim.get("attributes", {})
+                if "POSITION" not in at or "JOINTS_0" not in at:
+                    continue
+                pos = self.glb.accessor(at["POSITION"]).astype(np.float32).reshape(-1, 3)
+                n = len(pos)
+
+                def opt(key, width, _at=at, _n=n):
+                    if key not in _at:
+                        a = np.zeros((_n, width), dtype=np.float32)
+                        if key == "NORMAL":
+                            a[:, 2] = 1.0
+                        return a
+                    return self.glb.accessor(_at[key]).astype(np.float32).reshape(_n, width)
+
+                idx = (self.glb.accessor(prim["indices"]).astype(np.uint32).ravel()
+                       if "indices" in prim else np.arange(n, dtype=np.uint32))
+                w = opt("WEIGHTS_0", 4)
+                # normalise so a vertex cannot gain or lose mass
+                tot = w.sum(axis=1, keepdims=True)
+                w = np.divide(w, tot, out=np.zeros_like(w), where=tot > 1e-8)
+                mi = prim.get("material")
+                out.append({
+                    "name": "%s#%d" % (node.get("name", "mesh"), pi),
+                    "positions": pos,
+                    "normals": opt("NORMAL", 3),
+                    "uvs": opt("TEXCOORD_0", 2),
+                    "tangents": opt("TANGENT", 4) if "TANGENT" in at else None,
+                    "joints": opt("JOINTS_0", 4),
+                    "weights": w,
+                    "indices": idx,
+                    "material": (mats[mi].get("name", "mat%d" % mi)
+                                 if mi is not None and mi < len(mats) else None),
+                })
+        return out
+
 
 def _mat3_to_quat(m):
     tr = m[0, 0] + m[1, 1] + m[2, 2]
