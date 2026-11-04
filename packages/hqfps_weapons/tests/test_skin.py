@@ -159,6 +159,82 @@ def test_idle_loops():
         check(d < 1e-3, "%-8s Idle start == end (%.1e m)" % (name, d))
 
 
+def test_uv_convention():
+    """UVs must reach the engine the way the engine's own importer sends them.
+
+    glTF puts the UV origin at the top-left and Heaven3D uploads textures
+    bottom-left, so its GLB importer flips V.  A loader that forgets is not
+    obviously broken -- the model is perfectly shaped and perfectly lit, it
+    just wears the wrong half of its own atlas.
+    """
+    print()
+    print("UV origin matches the engine's importer")
+    f = os.path.join(GUNS, "AKM.glb")
+    m = SkinnedModel(f)
+    g = m.glb.json
+    raw = None
+    for node in m.glb.nodes:
+        if "mesh" in node and "skin" in node:
+            prim = g["meshes"][node["mesh"]]["primitives"][0]
+            raw = m.glb.accessor(prim["attributes"]["TEXCOORD_0"]).reshape(-1, 2)
+            break
+    ours = m.primitives()[0]["uvs"]
+    check(raw is not None and ours is not None, "AKM has texture coordinates")
+    if raw is None or ours is None:
+        return
+    check(np.abs(ours[:, 0] - raw[:, 0]).max() < 1e-6, "U is passed through unchanged")
+    check(np.abs(ours[:, 1] - (1.0 - raw[:, 1])).max() < 1e-6,
+          "V is flipped, as Heaven3D's own glTF importer does")
+
+
+def test_grip_hand():
+    """Each weapon must be anchored to the hand that is holding it.
+
+    Both hands are on a rifle, but the knife is held in the right hand with
+    the left arm hanging at the side, so the mid-point of the two sits in
+    mid-air -- which is exactly where the melee weapons used to appear.
+    """
+    print()
+    print("the holding hand is on the weapon")
+    worst_mid = (0.0, "")
+    bad = []
+    for f in sorted(glob.glob(os.path.join(MODELS, "*.glb"))):
+        name = os.path.splitext(os.path.basename(f))[0]
+        gf = os.path.join(GUNS, name + ".glb")
+        if not os.path.exists(gf):
+            continue
+        arms, gun = SkinnedModel(f), SkinnedModel(gf)
+        clip = "Idle" if "Idle" in arms.clips else sorted(arms.clips)[0]
+        t = arms.clips[clip].duration * 0.5
+        names = [n.get("name", "") for n in arms.glb.nodes]
+        G = arms.global_matrices(clip, t)
+        hands = [G[i][:3, 3] for i, nm in enumerate(names) if nm in ("Hand.L", "Hand.R")]
+        if len(hands) < 2:
+            continue
+        P = gun.palette(clip if clip in gun.clips else None, t)
+        pts = []
+        for pr in gun.primitives():
+            v, j, w = pr["positions"], pr["joints"].astype(int), pr["weights"]
+            o = np.zeros_like(v)
+            for k in range(4):
+                M = P[j[:, k]]
+                o += w[:, k:k + 1] * (np.einsum("nij,nj->ni", M[:, :3, :3], v) + M[:, :3, 3])
+            pts.append(o)
+        pts = np.concatenate(pts)
+        d = [float(np.linalg.norm(pts - h, axis=1).min()) for h in hands]
+        if min(d) > 0.18:
+            bad.append("%s (%.2f m)" % (name, min(d)))
+        mid = np.mean(hands, axis=0)
+        gap = float(np.linalg.norm(pts - mid, axis=1).min())
+        if gap > worst_mid[0]:
+            worst_mid = (gap, name)
+    check(not bad, "every weapon has a hand within 18 cm of it%s"
+          % ("" if not bad else "  " + ", ".join(bad)))
+    # Not a requirement, just the evidence for why the anchor is one hand.
+    print("  %-64s %s" % ("worst mid-point gap: %s at %.2f m"
+                          % (worst_mid[1], worst_mid[0]), "info"))
+
+
 def test_arm_gun_clips_match():
     """One clip name has to drive both halves of the viewmodel."""
     print("\narm and gun clip names agree")
@@ -185,6 +261,8 @@ if __name__ == "__main__":
     test_sampling()
     test_no_start_snap()
     test_idle_loops()
+    test_uv_convention()
+    test_grip_hand()
     test_arm_gun_clips_match()
     print()
     if fails:

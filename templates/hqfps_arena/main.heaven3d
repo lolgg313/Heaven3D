@@ -1199,7 +1199,12 @@
      "alpha_mode": "BLEND"
     },
     "blueprint": null,
-    "blueprints": [],
+    "blueprints": [
+     {
+      "class": "HQFPSArena",
+      "properties": {}
+     }
+    ],
     "visible": true,
     "tag": "",
     "collider": null,
@@ -1207,235 +1212,10 @@
     "spawn_kind": "player",
     "spawn_config": {
      "health": 150.0,
-     "bullets": 120,
+     "bullets": 0,
      "walk_speed": 6.0,
      "run_speed": 10.0,
      "cam_rot_speed": 0.13
-    },
-    "is_sun": false,
-    "sun_light": null,
-    "is_point_light": false,
-    "point_light": null,
-    "is_spot_light": false,
-    "spot_light": null,
-    "is_clouds": false,
-    "cloud_settings": null,
-    "is_ocean": false,
-    "ocean_settings": null,
-    "is_terrain": false,
-    "terrain_config": null,
-    "children": []
-   },
-   {
-    "name": "Enemy Spawn",
-    "position": [
-     4.0,
-     3.0,
-     10.0
-    ],
-    "rotation_euler": [
-     0.0,
-     0.0,
-     0.0
-    ],
-    "scale": [
-     1.0,
-     1.0,
-     1.0
-    ],
-    "source_path": null,
-    "mesh_type": "sphere",
-    "mesh_params": {
-     "radius": 0.11
-    },
-    "material": {
-     "name": "enemy_spawn_mat",
-     "base_color": [
-      0.85,
-      0.16,
-      0.12,
-      1.0
-     ],
-     "metallic": 0.1,
-     "roughness": 0.35,
-     "emissive": [
-      0.45,
-      0.05,
-      0.03
-     ],
-     "emissive_intensity": 0.8,
-     "alpha_cutoff": 0.5,
-     "base_color_tex": null,
-     "metallic_roughness_tex": null,
-     "normal_tex": null,
-     "emissive_tex": null,
-     "occlusion_tex": null,
-     "double_sided": false,
-     "alpha_mode": "OPAQUE"
-    },
-    "blueprint": null,
-    "blueprints": [],
-    "visible": true,
-    "tag": "",
-    "collider": null,
-    "rigidbody": null,
-    "spawn_kind": "enemy",
-    "spawn_config": {
-     "health": 100.0,
-     "bullet_damage": 10.0,
-     "fly_speed": 4.0,
-     "cam_rot_speed": 240.0,
-     "shots_per_sec": 1.5
-    },
-    "is_sun": false,
-    "sun_light": null,
-    "is_point_light": false,
-    "point_light": null,
-    "is_spot_light": false,
-    "spot_light": null,
-    "is_clouds": false,
-    "cloud_settings": null,
-    "is_ocean": false,
-    "ocean_settings": null,
-    "is_terrain": false,
-    "terrain_config": null,
-    "children": []
-   },
-   {
-    "name": "Enemy Spawn (1)",
-    "position": [
-     -6.0,
-     3.0,
-     12.0
-    ],
-    "rotation_euler": [
-     0.0,
-     0.0,
-     0.0
-    ],
-    "scale": [
-     1.0,
-     1.0,
-     1.0
-    ],
-    "source_path": null,
-    "mesh_type": "sphere",
-    "mesh_params": {
-     "radius": 0.11
-    },
-    "material": {
-     "name": "enemy_spawn_mat",
-     "base_color": [
-      0.85,
-      0.16,
-      0.12,
-      1.0
-     ],
-     "metallic": 0.1,
-     "roughness": 0.35,
-     "emissive": [
-      0.45,
-      0.05,
-      0.03
-     ],
-     "emissive_intensity": 0.8,
-     "alpha_cutoff": 0.5,
-     "base_color_tex": null,
-     "metallic_roughness_tex": null,
-     "normal_tex": null,
-     "emissive_tex": null,
-     "occlusion_tex": null,
-     "double_sided": false,
-     "alpha_mode": "OPAQUE"
-    },
-    "blueprint": null,
-    "blueprints": [],
-    "visible": true,
-    "tag": "",
-    "collider": null,
-    "rigidbody": null,
-    "spawn_kind": "enemy",
-    "spawn_config": {
-     "health": 100.0,
-     "bullet_damage": 10.0,
-     "fly_speed": 4.0,
-     "cam_rot_speed": 240.0,
-     "shots_per_sec": 1.5
-    },
-    "is_sun": false,
-    "sun_light": null,
-    "is_point_light": false,
-    "point_light": null,
-    "is_spot_light": false,
-    "spot_light": null,
-    "is_clouds": false,
-    "cloud_settings": null,
-    "is_ocean": false,
-    "ocean_settings": null,
-    "is_terrain": false,
-    "terrain_config": null,
-    "children": []
-   },
-   {
-    "name": "Enemy Spawn (2)",
-    "position": [
-     10.0,
-     3.0,
-     4.0
-    ],
-    "rotation_euler": [
-     0.0,
-     0.0,
-     0.0
-    ],
-    "scale": [
-     1.0,
-     1.0,
-     1.0
-    ],
-    "source_path": null,
-    "mesh_type": "sphere",
-    "mesh_params": {
-     "radius": 0.11
-    },
-    "material": {
-     "name": "enemy_spawn_mat",
-     "base_color": [
-      0.85,
-      0.16,
-      0.12,
-      1.0
-     ],
-     "metallic": 0.1,
-     "roughness": 0.35,
-     "emissive": [
-      0.45,
-      0.05,
-      0.03
-     ],
-     "emissive_intensity": 0.8,
-     "alpha_cutoff": 0.5,
-     "base_color_tex": null,
-     "metallic_roughness_tex": null,
-     "normal_tex": null,
-     "emissive_tex": null,
-     "occlusion_tex": null,
-     "double_sided": false,
-     "alpha_mode": "OPAQUE"
-    },
-    "blueprint": null,
-    "blueprints": [],
-    "visible": true,
-    "tag": "",
-    "collider": null,
-    "rigidbody": null,
-    "spawn_kind": "enemy",
-    "spawn_config": {
-     "health": 100.0,
-     "bullet_damage": 10.0,
-     "fly_speed": 4.0,
-     "cam_rot_speed": 240.0,
-     "shots_per_sec": 1.5
     },
     "is_sun": false,
     "sun_light": null,
@@ -1648,7 +1428,7 @@
     "rigidbody": null,
     "spawn_kind": "trigger",
     "spawn_config": {
-     "text": "ARENA CLEARED!",
+     "text": "ARENA CLEARED",
      "color": [
       1.0,
       0.85,
@@ -1725,12 +1505,12 @@
  },
  "camera": {
   "position": [
-   22.0,
-   14.0,
+   0.0,
+   12.0,
    -26.0
   ],
-  "yaw": 141.84277506145384,
-  "pitch": -21.462726309689476
+  "yaw": 180.0,
+  "pitch": -22.0
  },
  "settings": {
   "shadows": true,

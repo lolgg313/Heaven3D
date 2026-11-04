@@ -35,13 +35,15 @@ UNIT = 11                         # bone-palette texture unit, shared with mh_ch
 STATE = {"warned": set()}
 
 # ---- viewmodel placement -------------------------------------------------
-# Where the idle hands sit, in CAMERA axes: (+right, +up, +forward) metres.
-# The rig is authored around a standing character, so its hands sit near
-# y = 1.44 in rig space; Viewmodel.anchor cancels that out, which is what
-# lets one offset place all twenty weapons the same way.
-HAND_OFFSET = (0.0, -0.17, 0.38)
-AIM_DISTANCE = 0.42                       # how far out the sights sit
-AIM_FALLBACK = (-0.055, -0.125, AIM_DISTANCE)
+# HQFPS's own number.  In Player.prefab the weapon rig hangs off the camera
+# as   View_Root(y 1.6) / Camera_Root / Equipment_Controller /
+# Equipment_Handler / FP_Equipment(0, -1.6, 0.33),  so the rig origin sits
+# 1.6 m below the eye -- cancelling the standing figure the rigs are
+# authored around -- and 0.33 m in front of it.  In camera axes:
+# (+right, +up, +forward) metres.
+HAND_OFFSET = (0.0, -1.6, 0.33)
+AIM_DISTANCE = 0.26                       # how far out the SIGHTS sit
+AIM_FALLBACK = (-0.055, 1.475, AIM_DISTANCE)
 VIEW_SCALE = 1.0
 
 # The HQFPS rigs keep Unity's convention: the weapon points along the rig's
@@ -313,6 +315,53 @@ def _textures_for(weapon, material):
     return base, norm
 
 
+_THROWN = {}
+# Parts that stay in the hand when the weapon leaves it.
+_NOT_THROWN = {"MolotovCocktail": ("Lighter",)}
+
+
+def _thrown_mesh(engine, weapon):
+    """(mesh, material) for the object a throwable actually becomes.
+
+    It is the weapon's own model in its bind pose, centred on itself so the
+    node's position is the object's middle, with the lighter (and anything
+    else that stays in the hand) left behind.
+    """
+    hit = _THROWN.get(weapon)
+    if hit is not None:
+        return hit
+    m = _m()
+    model, path = _model("models_gun", weapon)
+    out = (None, None)
+    if model is not None:
+        skip = _NOT_THROWN.get(weapon, ())
+        pos, nrm, uv, idx, mat = [], [], [], [], None
+        base = 0
+        for pr in model.primitives():
+            if pr["material"] in skip:
+                continue
+            pos.append(pr["positions"])
+            nrm.append(pr["normals"])
+            uv.append(pr["uvs"])
+            idx.append(pr["indices"] + base)
+            base += len(pr["positions"])
+            mat = mat or pr["material"]
+        if pos:
+            P = np.concatenate(pos)
+            P = P - (P.min(0) + P.max(0)) * 0.5          # centre it on itself
+            mesh = m.Mesh.from_arrays(engine.ctx, P, np.concatenate(nrm),
+                                      np.concatenate(uv), np.concatenate(idx),
+                                      name="hq_thrown_%s" % weapon)
+            b, n = _textures_for(weapon, mat)
+            material = m.Material(name="HQ %s (thrown)" % weapon,
+                                  base_color=(1.0, 1.0, 1.0, 1.0),
+                                  metallic=0.15, roughness=0.55,
+                                  base_color_tex=b, normal_tex=n)
+            out = (mesh, material)
+    _THROWN[weapon] = out
+    return out
+
+
 _STATS = None
 
 
@@ -385,6 +434,9 @@ def _sounds(weapon, what):
         pats = ["Melee/Swing/*"]
     elif what == "hit":
         pats = ["Melee/Hit/*"]
+    elif what.startswith("surface:"):
+        pats = ["Surface Effects/%s/BulletImpact*" % what.split(":", 1)[1],
+                "Impact Effects/Small Object/*"]
     elif what == "use":
         pats = ["Tools/%s/*" % weapon, "Heals/%s*" % weapon]
     elif what == "explode":
@@ -396,6 +448,43 @@ def _sounds(weapon, what):
             break
     _SOUNDS[key] = out
     return out
+
+
+_FLESH_BPS = ("Health", "MHEnemy", "MHCharacter", "EnemyAI", "EnemyFlyShooter",
+              "FlyingEnemyAI", "FPSController", "NPCWalker")
+
+
+def _is_flesh(node):
+    """True if the thing that was hit is a creature rather than scenery.
+
+    Bullet holes belong on walls, not on people -- and HQFPS has separate
+    flesh and surface impact sounds for the same reason.
+    """
+    n = node
+    while n is not None:
+        for b in getattr(n, "blueprints", ()):
+            if b.__class__.__name__ in _FLESH_BPS:
+                return True
+        if getattr(n, "spawn_kind", None) in ("enemy", "player", "flying_enemy"):
+            return True
+        n = getattr(n, "parent", None)
+    return False
+
+
+def _surface_of(node):
+    """Which HQFPS surface set a hit belongs to.
+
+    The template tags every surface in Unity; Heaven3D has no such tag, so
+    the material and node names pick the set and concrete is the fallback.
+    """
+    txt = ((getattr(getattr(node, "material", None), "name", "") or "")
+           + " " + (getattr(node, "name", "") or "")).lower()
+    for key, folder in (("metal", "Metal"), ("steel", "Metal"), ("iron", "Metal"),
+                        ("wood", "Wood"), ("crate", "Wood"), ("plank", "Wood"),
+                        ("tree", "Wood"), ("box", "Wood")):
+        if key in txt:
+            return folder
+    return "Concrete"
 
 
 def _cue(engine, path):
@@ -526,23 +615,29 @@ class _Half:
         # out transposed - same convention mh_characters uses.
         self.tex.write(np.ascontiguousarray(p.transpose(0, 2, 1), dtype=np.float32).tobytes())
 
-    def hand_anchor(self):
-        """Mid-point of the two hands in the idle pose, in rig space.
-
-        Subtracting this is what lets one HAND_OFFSET place all 20 weapons:
-        the rigs are authored around a standing figure, so without it the
-        hands would float about 1.4 m above the camera.
-        """
-        if self.model is None:
-            return np.zeros(3)
-        names = [n.get("name", "") for n in self.model.glb.nodes]
+    def _idle_pose(self):
+        """(clip, time) half way through the idle loop -- the pose every
+        measurement is taken from."""
         idle = self.clip("Idle")
-        G = self.model.global_matrices(idle, 0.0 if idle is None else
-                                       self.model.clips[idle].duration * 0.5)
-        pts = [G[i][:3, 3] for i, nm in enumerate(names) if nm in ("Hand.L", "Hand.R")]
-        if not pts:
-            return np.zeros(3)
-        return np.mean(pts, axis=0)
+        return idle, (self.model.clips[idle].duration * 0.5 if idle else 0.0)
+
+    def posed_points(self):
+        """Every vertex of this half, skinned into the idle pose."""
+        if self.model is None:
+            return None
+        clip, t = self._idle_pose()
+        P = self.model.palette(clip, t)
+        pts = []
+        for pr in self.model.primitives():
+            v = pr["positions"]
+            j = pr["joints"].astype(int)
+            w = pr["weights"]
+            out = np.zeros_like(v)
+            for k in range(4):
+                M = P[j[:, k]]
+                out += w[:, k:k + 1] * (np.einsum("nij,nj->ni", M[:, :3, :3], v) + M[:, :3, 3])
+            pts.append(out)
+        return np.concatenate(pts) if pts else None
 
     def set_visible(self, on):
         for n in self.nodes:
@@ -577,7 +672,8 @@ class Viewmodel:
         self.root._h3d_locked = True
         self.arms = _Half(engine, self.root, weapon, "models", "arms")
         self.gun = _Half(engine, self.root, weapon, "models_gun", "gun")
-        self.anchor = self.arms.hand_anchor()
+        self.stats = catalogue().get(weapon, {})
+        self.anchor = self._grip_anchor()
         self.clip = None
         self.t = 0.0
         self.speed = 1.0
@@ -589,6 +685,18 @@ class Viewmodel:
         self.sway = _Spring(55.0, 11.0)
         self.aim = 0.0
         self.play("Draw", loop=False, then="Idle")
+
+    def _grip_anchor(self):
+        """Rig-space point the viewmodel hangs from: its own origin.
+
+        HQFPS hangs the whole rig off the camera at a fixed offset
+        (HAND_OFFSET) and lets the authored animation decide where the
+        hands go, so there is nothing to measure -- every weapon's idle,
+        draw and reload already sit where its author put them.  Measuring a
+        grip point per weapon, as this used to, re-anchored every clip on
+        the hands and quietly undid that.
+        """
+        return np.zeros(3)
 
     def _sight_offset(self):
         """Camera-space offset that lines a weapon's sights up with the
@@ -602,28 +710,27 @@ class Viewmodel:
         if self.gun.model is None:
             return AIM_FALLBACK
         try:
-            idle = self.gun.clip("Idle")
-            t = self.gun.model.clips[idle].duration * 0.5 if idle else 0.0
-            P = self.gun.model.palette(idle, t)
-            pts = []
-            for pr in self.gun.model.primitives():
-                v = pr["positions"]
-                j = pr["joints"].astype(int)
-                w = pr["weights"]
-                out = np.zeros_like(v)
-                for k in range(4):
-                    M = P[j[:, k]]
-                    out += w[:, k:k + 1] * (np.einsum("nij,nj->ni", M[:, :3, :3], v) + M[:, :3, 3])
-                pts.append(out)
-            pts = np.concatenate(pts)
-            a = self.anchor
-            # centreline left-to-right, and the top of the weapon where the
+            pts = self.gun.posed_points()
+            # Centreline left-to-right, and the top of the weapon where the
             # sights are.  A percentile rather than the max, so one stray
             # vertex (a sling loop, an aerial) cannot throw the aim off.
-            sx = float(np.median(pts[:, 0]))
-            sy = float(np.percentile(pts[:, 1], 99.0))
-            # node +X is the character's left, so the x term flips sign
-            return (sx - float(a[0]), -(sy - float(a[1])), AIM_DISTANCE)
+            # The eye looks over the REAR sight, so that is the point to
+            # put on the crosshair: of the weapon's top surface, the part
+            # nearest the shooter.  Percentiles rather than extremes, so a
+            # sling loop or an aerial cannot throw the aim off.
+            top = pts[pts[:, 1] >= np.percentile(pts[:, 1], 90.0)]
+            if not len(top):
+                top = pts
+            rear = top[top[:, 2] <= np.percentile(top[:, 2], 25.0)]
+            if not len(rear):
+                rear = top
+            sx = float(np.median(rear[:, 0]))
+            sy = float(np.percentile(rear[:, 1], 90.0))
+            sz = float(np.median(rear[:, 2]))
+            # The rig is turned 180 degrees, so its +X points left: the
+            # lateral term comes back out with the sign it went in with,
+            # and the vertical one flips.
+            return (sx, -sy, AIM_DISTANCE - sz)
         except Exception as ex:
             _warn_once("sight_%s" % self.weapon,
                        "could not measure %s's sights (%s); using the default aim pose"
@@ -772,6 +879,7 @@ def _blueprints():
             self.vm = None
             self.index = 0
             self.names = []
+            self.cat = {}
             self.ammo = {}
             self.reserve = {}
             self._cool = 0.0
@@ -785,6 +893,40 @@ def _blueprints():
 
         def p(self, k):
             return self.properties.get(k, self.DEFAULTS.get(k))
+
+        # ---- ammo ----
+        def ammo_type(self, weapon=None):
+            """The name of the round a weapon takes, e.g. '45ACP'.
+
+            Weapons that take the same round share one reserve, so the type
+            -- not the weapon -- is what the reserve is keyed by.
+            """
+            st = self.cat.get(weapon or self.name, {})
+            return st.get("ammo_type")
+
+        def reserve_of(self, weapon=None):
+            a = self.ammo_type(weapon)
+            return self.reserve.get(a, 0) if a else 0
+
+        def take_reserve(self, n, weapon=None):
+            """Draw up to n rounds out of this weapon's pouch."""
+            a = self.ammo_type(weapon)
+            if not a:
+                return 0
+            got = min(int(n), self.reserve.get(a, 0))
+            self.reserve[a] = self.reserve.get(a, 0) - got
+            return got
+
+        def add_reserve(self, n, weapon=None):
+            """Put rounds back, up to the calibre's carry limit."""
+            a = self.ammo_type(weapon)
+            if not a:
+                return 0
+            st = self.cat.get(weapon or self.name, {})
+            cap = int(st.get("ammo_capacity", 0) or 0) or 10 ** 6
+            before = self.reserve.get(a, 0)
+            self.reserve[a] = min(before + int(n), cap)
+            return self.reserve[a] - before
 
         # ---- lifecycle ----
         def _retire_builtin_weapon(self):
@@ -819,11 +961,21 @@ def _blueprints():
                 H3D.warn("no HQ FPS weapons found on disk - nothing to equip")
                 return
             self.cat = cat
+            # Reserves are held per CALIBRE, the way HQFPS's inventory does
+            # it: the MP5 and the M1911 both eat 45ACP out of one pouch, the
+            # R870 and the double barrel share 12 gauge, and no round goes
+            # into a gun that does not take it.  Each type is capped at the
+            # carry limit the Item Database gives it.
             for n in self.names:
                 st = cat[n]
                 mag = int(st.get("magazine", 0) or 0)
                 self.ammo[n] = mag
-                self.reserve[n] = mag * int(self.p("reserve_magazines"))
+                a = self.ammo_type(n)
+                if not a or not mag:
+                    continue
+                cap = int(st.get("ammo_capacity", 0) or 0) or mag * 4
+                want = mag * int(self.p("reserve_magazines"))
+                self.reserve[a] = min(max(self.reserve.get(a, 0), want), cap)
             root = self.node
             while root.parent is not None and root.parent.parent is not None:
                 root = root.parent
@@ -1031,11 +1183,38 @@ def _blueprints():
             if hit is None:
                 return
             self._damage(hit.node, damage, hit.point, d, impulse)
+            self._impact(hit)
+
+        def _impact(self, hit):
+            """Mark and sound a hit: a bullet hole in scenery, a wet thud in
+            a body.  The hole, spark and flash are the engine's own, the
+            ones the built-in Weapon leaves."""
+            e = self.engine
+            flesh = _is_flesh(hit.node)
             try:
-                thud = random.choice(_sounds(self.name, "hit") or ["hit"])
-                e.audio.play_at(_cue(e, thud), hit.point, 0.35)
+                if flesh:
+                    clips = _sounds(self.name, "hit")
+                else:
+                    clips = _sounds(self.name, "surface:" + _surface_of(hit.node))
+                snd = _cue(e, random.choice(clips)) if clips else "bullet_impact"
             except Exception:
-                pass
+                snd = "bullet_impact"
+            if flesh:
+                try:
+                    e.audio.play_at(snd, hit.point, 0.5)
+                except Exception:
+                    pass
+                return
+            fx = getattr(e, "spawn_impact_fx", None)
+            if fx is None:
+                _warn_once("impact_api", "this Heaven3D has no spawn_impact_fx; "
+                                         "shots will not leave bullet holes")
+                try:
+                    e.audio.play_at(snd, hit.point, 0.5)
+                except Exception:
+                    pass
+                return
+            fx(hit, sound=snd)
 
         def _damage(self, node, amount, point, direction, impulse):
             e = self.engine
@@ -1133,14 +1312,22 @@ def _blueprints():
             node = m.SceneNode("HQ %s (thrown)" % name, parent=e.scene.root)
             node.position = cam.position + cam.forward() * 0.5
             node.rotation_euler = glm.vec3(cam.pitch, cam.yaw, 0.0)
-            node.scale = glm.vec3(0.12)
-            node.mesh_type = "sphere"
-            try:
-                node.mesh = m.Mesh.make_sphere(e.ctx, radius=1.0)
-            except Exception:
-                node.mesh = None
-            node.material = m.Material(name="HQ Throwable", base_color=(0.18, 0.2, 0.16, 1.0),
-                                       metallic=0.4, roughness=0.5)
+            mesh, material = _thrown_mesh(e, name)
+            if mesh is not None:
+                node.mesh, node.material = mesh, material
+            else:
+                # Only if the model could not be read at all.
+                _warn_once("thrown_%s" % name,
+                           "no mesh for the thrown %s; using a plain ball" % name)
+                node.scale = glm.vec3(0.12)
+                node.mesh_type = "sphere"
+                try:
+                    node.mesh = m.Mesh.make_sphere(e.ctx, radius=1.0)
+                except Exception:
+                    node.mesh = None
+                node.material = m.Material(name="HQ Throwable",
+                                           base_color=(0.18, 0.2, 0.16, 1.0),
+                                           metallic=0.4, roughness=0.5)
             # reuse the engine's own arced explosive rather than reimplement it
             proj = m.BlueprintRegistry.get("Projectile")
             if proj is None:
@@ -1156,9 +1343,8 @@ def _blueprints():
                 "owner_name": self.node.name,
             })
             self.ammo[name] = max(0, self.ammo.get(name, 1) - 1)
-            if self.ammo[name] <= 0 and self.reserve.get(name, 0) > 0:
-                self.reserve[name] -= 1
-                self.ammo[name] = 1
+            if self.ammo[name] <= 0 and self.reserve_of(name) > 0:
+                self.ammo[name] = self.take_reserve(1, name)
 
         def _use_tool(self):
             st = self.stats
@@ -1179,7 +1365,7 @@ def _blueprints():
             mag = int(st.get("magazine", 0) or 0)
             if not mag or self.ammo.get(name, 0) >= mag:
                 return
-            if not self.p("infinite_reserve") and self.reserve.get(name, 0) <= 0:
+            if not self.p("infinite_reserve") and self.reserve_of(name) <= 0:
                 return
             empty = self.ammo.get(name, 0) <= 0 and int(st.get("has_empty_reload", 0))
             clip = "ReloadEmpty" if empty and self.vm.duration("ReloadEmpty") > 0.0 else "Reload"
@@ -1201,9 +1387,8 @@ def _blueprints():
             if self.p("infinite_reserve"):
                 self.ammo[name] = mag
                 return
-            take = min(need, self.reserve.get(name, 0))
+            take = self.take_reserve(need, name)
             self.ammo[name] = self.ammo.get(name, 0) + take
-            self.reserve[name] = self.reserve.get(name, 0) - take
 
         # ---- hud ----
         def _hud(self, e, aiming):
@@ -1218,7 +1403,10 @@ def _blueprints():
             mag = int(st.get("magazine", 0) or 0)
             if mag:
                 e.hud.text(0.86, 0.895, "%d / %d" % (self.ammo.get(name, 0),
-                                                     self.reserve.get(name, 0)), size=22)
+                                                     self.reserve_of(name)), size=22)
+                a = self.ammo_type(name)
+                if a:
+                    e.hud.text(0.86, 0.862, a, size=13, color=(0.72, 0.74, 0.78, 1.0))
             elif kind == "melee":
                 e.hud.text(0.86, 0.895, "MELEE", size=18, color=(0.8, 0.8, 0.85, 1.0))
             if self._busy > 0.0 and self.vm.clip in ("Reload", "ReloadEmpty"):
@@ -1230,8 +1418,16 @@ def _blueprints():
         def on_message(self, event, data):
             if event == "add_ammo":
                 amt = int(data.get("amount", 0)) if isinstance(data, dict) else int(data or 0)
-                if self.name:
-                    self.reserve[self.name] = self.reserve.get(self.name, 0) + amt
+                # A pickup can name the calibre; otherwise it feeds whatever
+                # is in hand.
+                want = data.get("ammo_type") if isinstance(data, dict) else None
+                if want:
+                    for n in self.names:
+                        if self.ammo_type(n) == want:
+                            self.add_reserve(amt, n)
+                            return
+                elif self.name:
+                    self.add_reserve(amt)
 
     CLS["HQWeapons"] = HQWeapons
 

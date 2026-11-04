@@ -358,11 +358,20 @@ class SkinnedModel:
                 tot = w.sum(axis=1, keepdims=True)
                 w = np.divide(w, tot, out=np.zeros_like(w), where=tot > 1e-8)
                 mi = prim.get("material")
+                # glTF puts the UV origin at the TOP-left; Heaven3D uploads
+                # its textures bottom-left (the same flip its own glTF
+                # importer applies).  Without this every atlas is sampled
+                # upside down: the AKM wears gunmetal where its wood should
+                # be, and the arms wear the wrong patch of skin.
+                uv = opt("TEXCOORD_0", 2)
+                if uv is not None:
+                    uv = np.ascontiguousarray(
+                        np.column_stack([uv[:, 0], 1.0 - uv[:, 1]]), dtype=np.float32)
                 out.append({
                     "name": "%s#%d" % (node.get("name", "mesh"), pi),
                     "positions": pos,
                     "normals": opt("NORMAL", 3),
-                    "uvs": opt("TEXCOORD_0", 2),
+                    "uvs": uv,
                     "tangents": opt("TANGENT", 4) if "TANGENT" in at else None,
                     "joints": opt("JOINTS_0", 4),
                     "weights": w,

@@ -115,11 +115,14 @@ def run(project):
             n.ocean_settings.enabled = False
     ground = eng.add_plane(size=80.0, name="Ground")
     ground.material.base_color = (0.30, 0.33, 0.30, 1.0)
+    wall = None
     for i, x in enumerate((-6.0, 0.0, 6.0)):
         w = eng.add_cube(size=1.0, name="Wall%d" % i)
         w.scale = glm.vec3(3.0, 3.0, 0.4)
         w.position = glm.vec3(x, 1.5, -12.0)
         w.collider = H.BoxCollider(size=(1.0, 1.0, 1.0))
+        if x == -6.0:
+            wall = w                       # the one shots get fired into
 
     target = eng.add_cube(size=1.0, name="Target")
     target.scale = glm.vec3(1.4, 2.2, 1.0)
@@ -277,16 +280,49 @@ def run(project):
         # ---- reloading ----
         yield from wait(idle, "back to idle after firing", 200)
         bp.ammo["M1911"] = 0
-        res0 = bp.reserve["M1911"]
+        res0 = bp.reserve_of("M1911")
         yield from press("r")
         check("empty magazine plays the empty-reload clip",
               bp.vm.clip in ("ReloadEmpty", "Reload"), bp.vm.clip)
         yield from wait(lambda: bp.ammo["M1911"] > 0, "reload refills the magazine", 400,
                         lambda: "%d rounds" % bp.ammo["M1911"])
         check("rounds came out of the reserve",
-              bp.ammo["M1911"] == 7 and bp.reserve["M1911"] == res0 - 7,
-              "%d loaded, reserve %d -> %d" % (bp.ammo["M1911"], res0, bp.reserve["M1911"]))
+              bp.ammo["M1911"] == 7 and bp.reserve_of("M1911") == res0 - 7,
+              "%d loaded, reserve %d -> %d" % (bp.ammo["M1911"], res0, bp.reserve_of("M1911")))
         shot("04_after_reload")
+
+        # ---- each gun takes its own round -------------------------------
+        # Straight out of the HQFPS Item Database: the MP5 and the M1911
+        # both eat 45ACP from one pouch, the two shotguns share 12 gauge,
+        # and the rifles each take their own.
+        check("every gun names the round it takes",
+              all(cat[g].get("ammo_type") for g in guns),
+              ", ".join("%s=%s" % (g, cat[g].get("ammo_type")) for g in guns[:3]) + " ...")
+        check("the M1911 and the MP5 share one 45ACP pouch",
+              bp.ammo_type("M1911") == bp.ammo_type("MP5") == "45ACP"
+              and bp.reserve_of("M1911") == bp.reserve_of("MP5"),
+              "%s / %s, %d rounds" % (bp.ammo_type("M1911"), bp.ammo_type("MP5"),
+                                      bp.reserve_of("M1911")))
+        check("the two shotguns share 12 gauge",
+              bp.ammo_type("R870") == bp.ammo_type("DoubleBarrelShotgun") == "12 Gauge Shell")
+        check("the rifles do not share with the pistols",
+              len({bp.ammo_type(g) for g in ("AKM", "M1A", "F1", "M1911")}) == 4,
+              ", ".join(bp.ammo_type(g) for g in ("AKM", "M1A", "F1", "M1911")))
+        pool = bp.reserve_of("M1911")
+        bp.ammo["MP5"] = 0
+        bp._begin_switch(bp.names.index("MP5"))
+        yield from wait(lambda: bp.name == "MP5" and bp.vm.clip in ("Idle", "Hold"),
+                        "switched to the MP5", 400)
+        yield from press("r")
+        yield from wait(lambda: bp.ammo["MP5"] > 0, "the MP5 reloads", 400)
+        check("reloading the MP5 spent the pistol's 45ACP",
+              bp.reserve_of("M1911") == pool - bp.ammo["MP5"],
+              "%d -> %d after loading %d" % (pool, bp.reserve_of("M1911"), bp.ammo["MP5"]))
+        cap = cat["M1911"]["ammo_capacity"]
+        bp.add_reserve(10 ** 6, "M1911")
+        check("a pouch cannot hold more than its carry limit",
+              bp.reserve_of("M1911") == cap, "%d of %d" % (bp.reserve_of("M1911"), cap))
+        yield from switch_to("M1911")
 
         # ---- buckshot ----
         yield from switch_to("R870")
@@ -324,12 +360,45 @@ def run(project):
               "%.0f damage" % (hp2 - hp.hp))
         player.position = home
 
+        # ---- bullet holes ------------------------------------------------
+        # The engine's decals belong to its own Weapon, which HQWeapons
+        # stands down; shots have to leave the same marks through the
+        # engine's impact hook, and never on a body.
+        def decals():
+            return [n for n in eng.scene.root.traverse() if "_fp2_decal" in n.name]
+
+        yield from switch_to("M1911")
+        before = len(decals())
+        aim_at(wall)
+        yield
+        yield from click()
+        yield from wait(lambda: len(decals()) > before, "shooting a wall leaves a bullet hole",
+                        200, lambda: "%d decals" % len(decals()))
+        shot("13_bullet_hole")
+        n_wall = len(decals())
+        aim_at(target)                       # the target carries Health
+        for _ in range(3):
+            yield
+        yield from click()
+        for _ in range(30):
+            yield
+        check("shooting a body leaves no bullet hole", len(decals()) == n_wall,
+              "%d -> %d decals" % (n_wall, len(decals())))
+
         # ---- throwables ----
         yield from switch_to("FragGrenade")
         shot("09_grenade")
         yield from click()
         yield from wait(lambda: any("thrown" in n.name for n in eng.scene.root.traverse()),
                         "throwing spawns a live projectile", 300)
+        flying = next(n for n in eng.scene.root.traverse() if "thrown" in n.name)
+        verts = getattr(flying.mesh, "vertex_count", 0) if flying.mesh is not None else 0
+        check("what flies is the grenade's own model, not a ball",
+              verts > 1000 and flying.mesh_type != "sphere",
+              "%d vertices, mesh_type=%s" % (verts, flying.mesh_type))
+        check("the thrown grenade is textured",
+              os.path.isfile(str(getattr(flying.material, "base_color_tex", "") or "")),
+              os.path.basename(str(getattr(flying.material, "base_color_tex", ""))))
         shot("10_grenade_thrown")
 
         # ---- every viewmodel ----

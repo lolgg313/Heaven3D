@@ -13,13 +13,22 @@ the bare-skin `Arm_Standard` arm rig (no gloves) plus its own weapon mesh.
 ```
 python Play_HQFPS_Arena.py            # or double-click "Play HQFPS Arena.bat"
 python Play_HQFPS_Arena.py 1920 1080
-python Play_HQFPS_Arena.py --no-zombies
+python Play_HQFPS_Arena.py --where    # print the project folder
 ```
 
-`HQFPS_Arena.heaven3d` is the walled 40 x 40 arena from the *fps_arena*
-template. The launcher opens it in runtime mode, hands the player the whole
-arsenal and puts eight MakeHuman zombies in it that come after you. ESC
-releases the mouse.
+**HQ FPS Arena is its own template** (`templates/hqfps_arena`), listed in
+the Hub beside Tropical Island, Character Town and Race Track. It changes
+no existing scene and conflicts with no other kit. The first run makes a
+project from it in your Heaven3D Projects folder, with `hqfps_weapons` and
+`mh_characters` copied in the way the Hub does it, so it opens in the
+editor like any other project and exports like any other game.
+
+The scene is the walled 40 x 40 arena with its crates and pickups, and one
+blueprint — `HQFPSArena`, in the template's own `scripts/` — hands the
+player the arsenal and sets eight MakeHuman zombies on them. Its count,
+speed, health, spawn radius and loadout are Inspector properties. Without
+either package it still plays: you get the arena, and a warning saying
+what is missing.
 
 ---
 
@@ -117,26 +126,50 @@ verbatim and idempotently. Whichever package loads first patches the
 shaders; the other sees the hooks already there and leaves them alone. Both
 can be in one scene.
 
-**Placement is derived, not dialled in.** The rigs are authored around a
-standing figure, with the hands about 1.4 m up, so the viewmodel root is
-solved from `T + R·anchor = eye + offset`. One offset therefore places all
-twenty weapons. The rigs also keep Unity's +Z-forward, +X-left convention
-while Heaven3D nodes face −Z, so the root is turned 180° about Y and pitch
-and roll are negated to match.
+**Placement is HQFPS's own.** In `Player.prefab` the weapon rig hangs off
+the camera at `View_Root(y 1.6) / Camera_Root / … / FP_Equipment(0, −1.6,
+0.33)`, so the rig origin sits 1.6 m below the eye — cancelling the
+standing figure the rigs are authored around — and 0.33 m in front. That
+is the offset this port uses, which is why every weapon lands where its
+author put it and the animations are not re-anchored underneath. The rigs
+also keep Unity's +Z-forward, +X-left convention while Heaven3D nodes face
+−Z, so the root is turned 180° about Y and pitch and roll are negated.
 
-**Aiming** is measured per weapon: the posed weapon mesh gives its own
-centreline and sight height, which puts each gun's sights on the crosshair
-without hand-tuning eleven aim poses.
+**Aiming** is measured per weapon: on the posed weapon mesh, the top
+surface nearest the shooter is the rear sight, and that is the point put on
+the crosshair — no hand-tuned aim pose for each of the eleven guns.
+
+**Ammunition is per calibre**, out of the HQFPS Item Database: the M1911
+and the MP5 share one 45ACP pouch, the R870 and the double barrel share 12
+gauge, each rifle has its own, and every pouch stops at the carry limit the
+database gives it. Ammo pickups (`add_ammo`) feed the round in hand, or a
+named calibre if the pickup says so.
+
+**Shots leave the engine's own bullet holes.** A Player Spawn's built-in
+`Weapon` makes decals itself, so standing it down took them away with it;
+`HeavenEngine.spawn_impact_fx(hit)` now exposes that same hole, spark and
+flash to any package. Scenery gets a hole and a surface sound; a body gets
+a wet thud and no hole.
+
+**A thrown grenade is the grenade.** The throwables spawn their own model,
+centred on itself and textured, with the Molotov's lighter left in the
+hand — not a stand-in sphere.
 
 ---
 
 ## Tests
 
 ```
-python packages/hqfps_weapons/tests/test_skin.py      # 57 checks, no GPU needed
-python tests/test_hqfps_weapons.py                    # 42 checks, needs a GPU
+python packages/hqfps_weapons/tests/test_skin.py      # 62 checks, no GPU needed
+python tests/test_hqfps_weapons.py                    # 56 checks, needs a GPU
 python tests/test_hqfps_with_characters.py            # 14 checks, needs a GPU
 ```
+
+The first also pins the UV convention — glTF's origin is top-left and
+Heaven3D samples bottom-left, so V must be flipped exactly as the engine's
+own glTF importer flips it. Getting that wrong does not look like a bug in
+the loader: the model is perfectly shaped and perfectly lit, it just wears
+the wrong half of its own atlas.
 
 The first validates the glTF skinning runtime: the bind pose must rebuild to
 identity (which checks the inverse-bind matrices, the hierarchy walk, TRS

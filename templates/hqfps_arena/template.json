@@ -1,0 +1,9 @@
+{
+ "title": "HQ FPS Arena",
+ "desc": "The HQ FPS Template arsenal on foot: twenty first-person weapons with their own animations and sounds, against a horde of MakeHuman zombies in a walled arena. Press Play.",
+ "order": 5,
+ "packages": [
+  "hqfps_weapons",
+  "mh_characters"
+ ]
+}
