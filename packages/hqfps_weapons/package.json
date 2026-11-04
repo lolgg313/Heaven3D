@@ -1,7 +1,7 @@
 {
   "id": "hqfps_weapons",
   "name": "HQ FPS Weapons",
-  "version": "0.2.0",
+  "version": "0.3.1",
   "author": "Ported from HQ FPS Template (Unity) by the project owner",
   "category": "Gameplay",
   "description": "First-person weapon system ported from the HQ FPS Template Unity package. 20 GPU-skinned viewmodels sharing a 44-bone arm rig with bare-skin (Arm_Standard) hands: 11 firearms, 3 melee, 2 throwables, plus tools and unarmed. Original baked animation clips (Draw, Idle, Hold, Fire, AimFire, Reload, ReloadEmpty, Holster and weapon-specific variants) are preserved as glTF animations. Includes 183 original weapon, impact and surface sound effects.",

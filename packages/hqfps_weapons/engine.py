@@ -362,6 +362,84 @@ def _thrown_mesh(engine, weapon):
     return out
 
 
+# ---- ammunition props ----------------------------------------------------
+# HQFPS ships a container per calibre and a plain military can with no
+# markings; the Item Database says which weapon takes which round, and
+# these are the boxes those rounds come in.
+AMMO_MODELS = {
+    "45ACP": "AmmoPack_.45ACP.glb",
+    "357M": "AmmoPack_.357M.glb",
+    "5.56x45mm": "AmmoPack_5.56x45mm.glb",
+    "12 Gauge Shell": "AmmoPack_ShotgunShells.glb",
+    "300WM": "MilitaryAmmoCan_300WM.glb",
+    "7.62x39mm": "PlasticAmmoBox_7.62x39mm.glb",
+    "7.62x51mm": "PlasticAmmoBox_7.62x51mm.glb",
+    "Arrow": "Crossbow_Arrow.glb",
+    "Flare": "FlareGun_Flare.glb",
+    # no calibre painted on it: the box that feeds every gun
+    "": "MilitaryAmmoCan_Empty.glb",
+}
+_AMMO_GEO = {}
+
+
+def _ammo_textures(material):
+    """(base, normal) for an ammo prop's material."""
+    tex = os.path.join(_assets(), "textures", "ammo")
+    stem = "AmmoPacks" if str(material).startswith("AmmoPacks") else "Ammo"
+    b = os.path.join(tex, stem + ".jpg")
+    n = os.path.join(tex, stem + "_NRM.jpg")
+    return (b if os.path.isfile(b) else None), (n if os.path.isfile(n) else None)
+
+
+def _ammo_prop(engine, ammo_type):
+    """[(mesh, material, size)] for one ammo box, built once and shared.
+
+    These are static props, so the engine's own glTF importer loads them --
+    which is also what keeps their UVs the right way up.
+    """
+    key = ammo_type or ""
+    hit = _AMMO_GEO.get(key)
+    if hit is not None:
+        return hit
+    m = _m()
+    fn = AMMO_MODELS.get(key)
+    out = []
+    if fn:
+        path = os.path.join(_assets(), "models_ammo", fn)
+        if os.path.isfile(path):
+            try:
+                for nd in m.GlbImporter.build_nodes(path):
+                    for md in _flatten_meshes(nd):
+                        mesh = m.Mesh.from_arrays(engine.ctx, md.positions, md.normals,
+                                                  md.uvs, md.indices,
+                                                  name="hq_ammo_%s" % md.name,
+                                                  tangents=md.tangents)
+                        mat_name = ((md.material_info or {}).get("name")
+                                    if isinstance(md.material_info, dict) else None)
+                        b, n = _ammo_textures(mat_name or md.name)
+                        out.append((mesh, m.Material(
+                            name="HQ Ammo %s" % (mat_name or md.name),
+                            base_color=(1.0, 1.0, 1.0, 1.0),
+                            metallic=0.2, roughness=0.6,
+                            base_color_tex=b, normal_tex=n)))
+            except Exception as ex:
+                _warn_once("ammoprop_%s" % key,
+                           "could not build the %s ammo box (%s)"
+                           % (ammo_type or "universal", ex))
+        else:
+            _warn_once("ammofile_%s" % key, "missing ammo model %s" % fn)
+    _AMMO_GEO[key] = out
+    return out
+
+
+def _flatten_meshes(node):
+    """Every MeshData under one imported node, names included."""
+    out = list(getattr(node, "meshes", ()) or ())
+    for ch in getattr(node, "children", ()) or ():
+        out += _flatten_meshes(ch)
+    return out
+
+
 _STATS = None
 
 
@@ -1186,25 +1264,20 @@ def _blueprints():
             self._impact(hit)
 
         def _impact(self, hit):
-            """Mark and sound a hit: a bullet hole in scenery, a wet thud in
-            a body.  The hole, spark and flash are the engine's own, the
-            ones the built-in Weapon leaves."""
+            """Mark and sound a hit.
+
+            The hole, spark and flash are the engine's own -- the ones the
+            built-in Weapon leaves -- and the engine decides where a hole
+            belongs, exactly as it always has.  Only the SOUND is ours:
+            HQFPS has separate flesh and surface sets.
+            """
             e = self.engine
-            flesh = _is_flesh(hit.node)
             try:
-                if flesh:
-                    clips = _sounds(self.name, "hit")
-                else:
-                    clips = _sounds(self.name, "surface:" + _surface_of(hit.node))
+                clips = (_sounds(self.name, "hit") if _is_flesh(hit.node)
+                         else _sounds(self.name, "surface:" + _surface_of(hit.node)))
                 snd = _cue(e, random.choice(clips)) if clips else "bullet_impact"
             except Exception:
                 snd = "bullet_impact"
-            if flesh:
-                try:
-                    e.audio.play_at(snd, hit.point, 0.5)
-                except Exception:
-                    pass
-                return
             fx = getattr(e, "spawn_impact_fx", None)
             if fx is None:
                 _warn_once("impact_api", "this Heaven3D has no spawn_impact_fx; "
@@ -1431,6 +1504,113 @@ def _blueprints():
 
     CLS["HQWeapons"] = HQWeapons
 
+    @blueprint
+    class HQAmmoPickup(Blueprint):
+        """A box of ammunition, in its own HQFPS container.
+
+        `ammo_type` is a calibre from the Item Database ("45ACP",
+        "7.62x39mm", "12 Gauge Shell", ...) and the box wears that
+        calibre's own model.  Leave it EMPTY for the universal can: a
+        plain military box with no markings that tops up every calibre
+        the player carries.
+        """
+
+        DEFAULTS = {
+            "ammo_type": "",            # "" = the universal box
+            "amount": 0,                # 0 = a full carry limit of the round
+            "respawn_time": 25.0,
+            "spin": True,
+            "pickup_range": 1.6,
+            "sound": "pickup",
+        }
+
+        def __init__(self):
+            super().__init__()
+            for k, v in self.DEFAULTS.items():
+                self.properties.setdefault(k, v)
+            self.parts = []
+            self._gone = 0.0
+            self._spin = 0.0
+
+        def p(self, k):
+            return self.properties.get(k, self.DEFAULTS.get(k))
+
+        def on_begin_play(self):
+            self._build()
+            self._gone = 0.0
+
+        def on_end_play(self):
+            for n in self.parts:
+                if n.parent is not None:
+                    n.remove()
+            self.parts = []
+
+        def _build(self):
+            m = _m()
+            self.on_end_play()
+            for mesh, material in _ammo_prop(self.engine, str(self.p("ammo_type") or "")):
+                ch = m.SceneNode("ammo part", parent=self.node)
+                ch.mesh, ch.material = mesh, material
+                ch._heaven3d_imported_part = "hqfps"
+                self.parts.append(ch)
+            if not self.parts:
+                _warn_once("ammo_empty_%s" % self.p("ammo_type"),
+                           "no model for the '%s' ammo box" % self.p("ammo_type"))
+
+        # ---- the player walks into it ----
+        def on_tick(self, dt):
+            if self._gone > 0.0:
+                self._gone -= dt
+                if self._gone <= 0.0:
+                    for n in self.parts:
+                        n.visible = True
+                return
+            if self.p("spin"):
+                self._spin = (self._spin + dt * 55.0) % 360.0
+                self.node.rotation_euler.y = self._spin
+            pc = self.engine.first_blueprint("FPSController")
+            if pc is None:
+                return
+            d = glm.length(glm.vec3(pc.node.world_position())
+                           - glm.vec3(self.node.world_position()))
+            if d <= float(self.p("pickup_range")):
+                self._take(pc)
+
+        def _take(self, pc):
+            holder = next((b for b in pc.node.blueprints
+                           if b.__class__.__name__ == "HQWeapons"), None)
+            if holder is None:
+                return
+            want = str(self.p("ammo_type") or "")
+            amount = int(self.p("amount") or 0)
+            given = []
+            # The universal can fills every calibre the player is carrying;
+            # a marked box fills only its own.
+            types = ([t for t in (holder.ammo_type(n) for n in holder.names) if t]
+                     if not want else [want])
+            for t in dict.fromkeys(types):
+                weapon = next((n for n in holder.names if holder.ammo_type(n) == t), None)
+                if weapon is None:
+                    continue
+                cap = int(holder.cat.get(weapon, {}).get("ammo_capacity", 0) or 0)
+                n = holder.add_reserve(amount or cap or 30, weapon)
+                if n:
+                    given.append("%d %s" % (n, t))
+            if not given:
+                return
+            try:
+                self.engine.audio.play_at(str(self.p("sound")),
+                                          self.node.world_position(), 0.7)
+            except Exception:
+                pass
+            H3D.log("picked up " + ", ".join(given))
+            for n in self.parts:
+                n.visible = False
+            rt = float(self.p("respawn_time"))
+            self._gone = rt if rt > 0.0 else 1e9
+
+    CLS["HQAmmoPickup"] = HQAmmoPickup
+
 
 # =========================================================================== tools
 def give_weapons(engine, node=None, weapons="", start=0):
@@ -1447,6 +1627,33 @@ def give_weapons(engine, node=None, weapons="", start=0):
             return bp
     return engine.attach_blueprint(node, CLS["HQWeapons"],
                                    {"weapons": weapons, "start_index": int(start)})
+
+
+def place_ammo(engine, pos=None, ammo_type="", name=None):
+    """Drop one ammo box into the scene."""
+    m = _m()
+    node = m.SceneNode(engine._unique_node_name(
+        name or ("Ammo %s" % (ammo_type or "Box"))), parent=engine.scene.root)
+    if pos is not None:
+        node.position = pos
+    engine.attach_blueprint(node, CLS["HQAmmoPickup"], {"ammo_type": ammo_type})
+    return node
+
+
+def tool_ammo_box(engine):
+    n = place_ammo(engine, ammo_type="")
+    engine.select_node(n)
+    H3D.log("'%s' tops up every calibre the player carries" % n.name)
+
+
+def tool_ammo_each(engine):
+    """One box of every calibre, in a row."""
+    glm = _m().glm
+    types = [t for t in AMMO_MODELS if t]
+    for i, t in enumerate(sorted(types)):
+        place_ammo(engine, pos=glm.vec3((i - len(types) * 0.5) * 0.6, 0.1, 0.0),
+                   ammo_type=t)
+    H3D.log("%d ammo boxes added, one per calibre" % len(types))
 
 
 def tool_give(engine):
@@ -1480,6 +1687,9 @@ def register(h3d):
     _blueprints()
     h3d.on("play_stop", _on_play_stop)
     h3d.add_tool("HQ FPS: give the player every weapon", tool_give, "#B5473A")
+    h3d.add_tool("HQ FPS: universal ammo box", tool_ammo_box)
+    h3d.add_tool("HQ FPS: one ammo box per calibre", tool_ammo_each)
 
 
-__all__ = ["register", "give_weapons", "catalogue", "Viewmodel", "DEFAULT_ORDER"]
+__all__ = ["register", "give_weapons", "place_ammo", "catalogue", "Viewmodel",
+           "DEFAULT_ORDER", "AMMO_MODELS"]

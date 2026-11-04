@@ -19,6 +19,7 @@ Controls
 import importlib.util
 import json
 import os
+import shutil
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -42,6 +43,22 @@ def _version(pkg_dir):
         return None
 
 
+def _copy_pkg(src, dst):
+    keep = None
+    sf = os.path.join(dst, "settings.json")
+    if os.path.isfile(sf):
+        with open(sf, "rb") as fh:
+            keep = fh.read()
+    if os.path.isdir(dst):
+        shutil.rmtree(dst)
+    os.makedirs(os.path.dirname(dst), exist_ok=True)
+    shutil.copytree(src, dst, ignore=shutil.ignore_patterns(
+        "__pycache__", "*.pyc", "settings.json", "tools", "tests"))
+    if keep:
+        with open(sf, "wb") as fh:
+            fh.write(keep)
+
+
 def project_path():
     """Make the project from the template if it is not there yet."""
     hb = hub()
@@ -59,7 +76,11 @@ def project_path():
                 ship = _version(os.path.join(HERE, "packages", pid))
                 if ship and have != ship:
                     print("updating %s %s -> %s ..." % (pid, have or "(missing)", ship))
-                    hb.add_package_to_project(dest, pid)
+                    # Copy the package shipped HERE.  The Hub's installer
+                    # prefers the user's library, which is how the project
+                    # kept getting an older copy than the one just fixed.
+                    _copy_pkg(os.path.join(HERE, "packages", pid),
+                              os.path.join(dest, "packages", pid))
             except Exception as ex:
                 print("could not refresh package %s: %s" % (pid, ex))
         return scene

@@ -15699,12 +15699,17 @@ class HeavenEngine:
             self.input.rmb = True
             if self._playing:
                 self.input.rmb_just_pressed = True
-            pygame.event.set_grab(True)
-            pygame.mouse.set_visible(False)
+            # Right/middle drag grabs the pointer to look around in the
+            # EDITOR.  While a game holds the pointer, the game owns it:
+            # _apply_mouse_capture is the only thing allowed to change it.
+            if not self._game_holds_pointer():
+                pygame.event.set_grab(True)
+                pygame.mouse.set_visible(False)
         elif button == 2:   # middle
             self.input.mmb = True
-            pygame.event.set_grab(True)
-            pygame.mouse.set_visible(False)
+            if not self._game_holds_pointer():
+                pygame.event.set_grab(True)
+                pygame.mouse.set_visible(False)
 
     def _on_mouse_up(self, button, pos):
         if button == 1:
@@ -15723,12 +15728,17 @@ class HeavenEngine:
                 self.view_gizmo.end_press(self.camera)
         elif button == 3:
             self.input.rmb = False
-            pygame.event.set_grab(False)
-            pygame.mouse.set_visible(True)
+            # Releasing the right button used to free the pointer even in
+            # play, so aiming down sights once cost you mouse-look for the
+            # rest of the game.
+            if not self._game_holds_pointer():
+                pygame.event.set_grab(False)
+                pygame.mouse.set_visible(True)
         elif button == 2:
             self.input.mmb = False
-            pygame.event.set_grab(False)
-            pygame.mouse.set_visible(True)
+            if not self._game_holds_pointer():
+                pygame.event.set_grab(False)
+                pygame.mouse.set_visible(True)
 
     # ------------------------------------------------------- mouse ray helper
     def _mouse_ray(self, mouse_pos) -> Tuple[glm.vec3, glm.vec3]:
@@ -16163,10 +16173,21 @@ class HeavenEngine:
                     except Exception as ex:
                         Log.error(f"{hook} error on '{nb.name}': {ex}")
 
+    def _game_holds_pointer(self) -> bool:
+        """True while gameplay owns the pointer (mouse-look is on)."""
+        return bool(self._playing and self.capture_mouse
+                    and not self._capture_suspended)
+
     def _apply_mouse_capture(self):
-        want = (self._playing and self.capture_mouse
-                and not self._capture_suspended)
-        if want == self._mouse_captured:
+        want = self._game_holds_pointer()
+        # Compare against the REAL grab, not just the last value set here:
+        # anything else that frees the pointer is then taken back on the
+        # next frame instead of leaving the game unable to look around.
+        try:
+            actual = bool(pygame.event.get_grab())
+        except Exception:
+            actual = self._mouse_captured
+        if want == self._mouse_captured and want == actual:
             return
         self._mouse_captured = want
         try:
