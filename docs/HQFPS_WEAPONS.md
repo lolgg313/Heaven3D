@@ -8,10 +8,29 @@ the bare-skin `Arm_Standard` arm rig (no gloves) plus its own weapon mesh.
 
 ---
 
-## Using it
+## Playing it right now
+
+```
+python Play_HQFPS_Arena.py            # or double-click "Play HQFPS Arena.bat"
+python Play_HQFPS_Arena.py 1920 1080
+python Play_HQFPS_Arena.py --no-zombies
+```
+
+`HQFPS_Arena.heaven3d` is the walled 40 x 40 arena from the *fps_arena*
+template. The launcher opens it in runtime mode, hands the player the whole
+arsenal and puts eight MakeHuman zombies in it that come after you. ESC
+releases the mouse.
+
+---
+
+## Using it in your own scene
 
 Attach **HQWeapons** to the player — the node that carries `FPSController` —
 or use the Packages menu: *HQ FPS: give the player every weapon*.
+
+A Player Spawn grows Heaven3D's own `Weapon` blueprint when play starts.
+That one fires on the same LMB and draws its own crosshair, so `HQWeapons`
+stands it down on begin-play rather than letting every click fire twice.
 
 From a script:
 
@@ -115,7 +134,7 @@ without hand-tuning eleven aim poses.
 
 ```
 python packages/hqfps_weapons/tests/test_skin.py      # 57 checks, no GPU needed
-python tests/test_hqfps_weapons.py                    # 37 checks, needs a GPU
+python tests/test_hqfps_weapons.py                    # 42 checks, needs a GPU
 python tests/test_hqfps_with_characters.py            # 14 checks, needs a GPU
 ```
 
@@ -129,6 +148,13 @@ The second drives a real engine frame by frame, waiting on state rather than
 frame counts, and screenshots each step. Among other things it checks that
 the hands are *in front of the eye* — a viewmodel placed behind the camera
 renders to nothing while every other assertion still passes.
+
+The second also guards the audio, which is easy to break silently: every
+sound a weapon can ask for must resolve to a real file (a glob like
+`*Reload*` matches the `Gun_Reloading` *folder* just as happily as a clip),
+every gun must have a shot and every blade a swing, firing must leave a
+playable sound registered, and nothing the run played may have failed to
+load.
 
 The third puts both skinning packages in one scene and shoots `mh_characters`
 zombies with the rifle and stabs one with the knife. It asserts the shader

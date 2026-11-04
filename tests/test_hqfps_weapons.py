@@ -90,6 +90,25 @@ def run(project):
           "AKM %.3fs/shot, R870 %.3fs/shot" % (cat["AKM"]["fire_interval"],
                                                cat["R870"]["fire_interval"]))
 
+    # ---- sound mapping -------------------------------------------------
+    # Every clip a weapon can ask for has to resolve to a real file.  A
+    # pattern that matches a FOLDER (`*Reload*` hits `Gun_Reloading/`) or a
+    # family path that does not exist (the crossbow's clips are
+    # `*LaunchArrow*`, not `*_Shoot*`) both end in silence.
+    broken, silent = [], []
+    for w in cat:
+        for what in ("fire", "dry", "reload", "draw", "swing", "hit", "use", "explode"):
+            files = mod._sounds(w, what)
+            broken += [f for f in files if not os.path.isfile(f)]
+        if cat[w]["kind"] == "gun" and not mod._sounds(w, "fire"):
+            silent.append(w)
+        if cat[w]["kind"] == "melee" and not mod._sounds(w, "swing"):
+            silent.append(w + "/swing")
+    check("every mapped sound is a real file", not broken,
+          "%d bad: %s" % (len(broken), ", ".join(os.path.basename(b) for b in broken[:3])))
+    check("every gun has a shot sound and every blade a swing", not silent,
+          ", ".join(silent) or "all %d covered" % len(cat))
+
     # ---- arena ---------------------------------------------------------
     for n in eng.scene.root.traverse():
         if n.is_ocean:
@@ -234,6 +253,16 @@ def run(project):
               "%d -> %d" % (ammo0, bp.ammo["M1911"]))
         check("hitscan damaged the target", hp.hp == hp0 - 40.0,
               "%.0f -> %.0f hp (M1911 does 40)" % (hp0, hp.hp))
+        # The shot has to be AUDIBLE, not merely requested: the engine used
+        # to auto-load a sound file under its basename and then look it up
+        # by path, so every gun was silent after one warning.
+        cues = mod._sounds("M1911", "fire")
+        check("the shot's own sound file is on disk", bool(cues),
+              "%d pistol shot files" % len(cues))
+        check("firing registered a playable sound",
+              any(eng.audio.has_sound(c) for c in cues),
+              "%d of %d clips loaded"
+              % (sum(1 for c in cues if eng.audio.has_sound(c)), len(cues)))
         shot("03_fire")
 
         # semi-auto must not keep firing while the button is held down
@@ -337,6 +366,12 @@ def run(project):
         eng.input.lmb = False
         yield
         shot("12_enemy_down")
+
+        # Nothing the weapons asked for may have failed to play.
+        bad_audio = sorted(eng.audio._failed_once)
+        check("every sound the weapons played was found", not bad_audio,
+              "%d missing: %s" % (len(bad_audio), ", ".join(
+                  os.path.basename(b) for b in bad_audio[:4])))
 
         print("\n%d/%d passed" % (sum(res), len(res)), flush=True)
         print("SCREENSHOTS", OUT, flush=True)

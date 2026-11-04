@@ -337,9 +337,30 @@ _FAMILY = {
     "MP5": "Guns/SMGs/SMG1", "R870": "Guns/Shotguns/Shotgun1",
     "DoubleBarrelShotgun": "Guns/Shotguns/Shotgun1",
     "HuntingRifle": "Guns/Snipers/Sniper1", "Revolver": "Guns/Revolvers/Revolver",
-    "FlareGun": "Guns/Special/FlareGun", "Crossbow": "Guns/Bows/Crossbow",
+    "FlareGun": "Guns/Special/FlareGun", "Crossbow": "Bows/Crossbow",
 }
+# Weapons whose shot clips are not named `<family>_Shoot *`.
+_FIRE_PATS = {"Crossbow": ["Bows/Crossbow/*LaunchArrow*"]}
 _SOUNDS = {}
+_AUDIO_EXT = (".wav", ".ogg", ".mp3")
+
+
+def _audio_files(paths):
+    """Flatten a glob result down to playable clips.
+
+    A pattern like `*Reload*` matches the `Gun_Reloading` FOLDER as happily
+    as a clip, and handing the mixer a directory is guaranteed silence, so
+    folders are expanded into the clips inside them.
+    """
+    out = []
+    for p in sorted(paths):
+        if os.path.isdir(p):
+            for root, _dirs, names in os.walk(p):
+                out += [os.path.join(root, n) for n in names
+                        if n.lower().endswith(_AUDIO_EXT)]
+        elif p.lower().endswith(_AUDIO_EXT):
+            out.append(p)
+    return sorted(out)
 
 
 def _sounds(weapon, what):
@@ -351,8 +372,9 @@ def _sounds(weapon, what):
     audio = os.path.join(_assets(), "audio", "Equipment")
     pats = []
     fam = _FAMILY.get(weapon)
-    if what == "fire" and fam:
-        pats = [fam + "_Shoot *", fam + "_Shoot*"]
+    if what == "fire":
+        pats = _FIRE_PATS.get(weapon) or (
+            [fam + "_Shoot *", fam + "_Shoot*"] if fam else [])
     elif what == "dry":
         pats = ["Guns/!Misc/*DryFire*", "Guns/!Misc/*Dry*"]
     elif what == "reload":
@@ -363,15 +385,33 @@ def _sounds(weapon, what):
         pats = ["Melee/Swing/*"]
     elif what == "hit":
         pats = ["Melee/Hit/*"]
+    elif what == "use":
+        pats = ["Tools/%s/*" % weapon, "Heals/%s*" % weapon]
     elif what == "explode":
         pats = ["Throwables/Explosive Grenade/*Explosion*"]
     out = []
     for p in pats:
-        out = sorted(glob.glob(os.path.join(audio, p)))
+        out = _audio_files(glob.glob(os.path.join(audio, p)))
         if out:
             break
     _SOUNDS[key] = out
     return out
+
+
+def _cue(engine, path):
+    """Register one sound file under its own path and hand back that key.
+
+    Playing a path straight off disk relies on the engine auto-loading it
+    under the same name it was asked for; loading it here, by name, means
+    the shot is audible either way.
+    """
+    try:
+        a = engine.audio
+        if not a.has_sound(path):
+            a.load_sound(path, name=path)
+    except Exception:
+        pass
+    return path
 
 
 def _play(engine, weapon, what, volume=0.7):
@@ -379,7 +419,7 @@ def _play(engine, weapon, what, volume=0.7):
     if not files:
         return
     try:
-        engine.audio.play(random.choice(files), volume)
+        engine.audio.play(_cue(engine, random.choice(files)), volume)
     except Exception:
         pass
 
@@ -747,7 +787,31 @@ def _blueprints():
             return self.properties.get(k, self.DEFAULTS.get(k))
 
         # ---- lifecycle ----
+        def _retire_builtin_weapon(self):
+            """Stand down Heaven3D's own `Weapon` on this node.
+
+            A Player Spawn grows an FPSController *and* a built-in Weapon
+            when play starts.  That one also fires on LMB and draws its own
+            crosshair, so leaving it running gives every click two shots and
+            the screen two reticles.  Retiring it is safe: play-stop cleanup
+            only removes blueprints it still finds in the lists.
+            """
+            e = self.engine
+            for bp in list(self.node.blueprints):
+                if bp.__class__.__name__ != "Weapon":
+                    continue
+                try:
+                    bp.on_end_play()
+                except Exception:
+                    pass
+                self.node.blueprints.remove(bp)
+                if e is not None and bp in e._blueprints:
+                    e._blueprints.remove(bp)
+                H3D.log("stood down the built-in Weapon - the HQ FPS arsenal "
+                        "has the trigger now")
+
         def on_begin_play(self):
+            self._retire_builtin_weapon()
             cat = catalogue()
             want = [w.strip() for w in str(self.p("weapons") or "").split(",") if w.strip()]
             self.names = [w for w in want if w in cat] or [w for w in DEFAULT_ORDER if w in cat]
@@ -968,7 +1032,8 @@ def _blueprints():
                 return
             self._damage(hit.node, damage, hit.point, d, impulse)
             try:
-                e.audio.play_at(random.choice(_sounds(self.name, "hit") or ["hit"]), hit.point, 0.35)
+                thud = random.choice(_sounds(self.name, "hit") or ["hit"])
+                e.audio.play_at(_cue(e, thud), hit.point, 0.35)
             except Exception:
                 pass
 
@@ -1041,7 +1106,8 @@ def _blueprints():
                 seen.add(id(hit.node))
                 self._damage(hit.node, damage, hit.point, d, impulse)
                 try:
-                    e.audio.play_at(random.choice(_sounds(self.name, "hit") or ["hit"]), hit.point, 0.5)
+                    thud = random.choice(_sounds(self.name, "hit") or ["hit"])
+                    e.audio.play_at(_cue(e, thud), hit.point, 0.5)
                 except Exception:
                     pass
                 self._shake(0.5, random.uniform(-0.3, 0.3))
@@ -1079,7 +1145,9 @@ def _blueprints():
             proj = m.BlueprintRegistry.get("Projectile")
             if proj is None:
                 return
+            boom = _sounds(name, "explode")
             e.attach_blueprint(node, proj, {
+                "boom_sound": _cue(e, random.choice(boom)) if boom else "explosion",
                 "speed": float(st.get("throw_speed", 14.0)),
                 "gravity": 9.81,
                 "damage": float(st.get("blast_damage", 90.0) or 90.0),
@@ -1100,6 +1168,7 @@ def _blueprints():
                 self._cool = self.vm.duration(clip)
             else:
                 self._cool = 0.4
+            _play(self.engine, self.name, "use", 0.6 * float(self.p("volume")))
             _ = st
 
         # ---- reloading ----

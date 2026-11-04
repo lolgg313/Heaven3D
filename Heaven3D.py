@@ -13638,7 +13638,9 @@ class AudioSystem:
         key = str(name)
         snd = self._sounds.get(key)
         if snd is None:
-            if os.path.isfile(key) and self.load_sound(key):
+            # Auto-load under the KEY, not the filename stem -- `play` looks
+            # the sound up by exactly the string it was given.
+            if os.path.isfile(key) and self.load_sound(key, name=key):
                 snd = self._sounds.get(key)
         if snd is None:
             if key not in self._failed_once:
@@ -13699,7 +13701,9 @@ class AudioSystem:
         key = str(name)
         snd = self._sounds.get(key)
         if snd is None:
-            if os.path.isfile(key) and self.load_sound(key):
+            # Auto-load under the KEY, not the filename stem -- `play` looks
+            # the sound up by exactly the string it was given.
+            if os.path.isfile(key) and self.load_sound(key, name=key):
                 snd = self._sounds.get(key)
         if snd is None:
             return None
