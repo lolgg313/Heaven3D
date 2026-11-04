@@ -40,7 +40,8 @@ STATE = {"warned": set()}
 # y = 1.44 in rig space; Viewmodel.anchor cancels that out, which is what
 # lets one offset place all twenty weapons the same way.
 HAND_OFFSET = (0.0, -0.17, 0.38)
-AIM_OFFSET = (-0.055, -0.125, 0.32)       # centred and closer when aiming
+AIM_DISTANCE = 0.42                       # how far out the sights sit
+AIM_FALLBACK = (-0.055, -0.125, AIM_DISTANCE)
 VIEW_SCALE = 1.0
 
 # The HQFPS rigs keep Unity's convention: the weapon points along the rig's
@@ -542,11 +543,52 @@ class Viewmodel:
         self.speed = 1.0
         self.loop = True
         self.then = None                    # clip to fall back to when this one ends
+        self.aim_off = self._sight_offset()
         self.pos = _Spring(90.0, 14.0)
         self.rot = _Spring(90.0, 14.0)
         self.sway = _Spring(55.0, 11.0)
         self.aim = 0.0
         self.play("Draw", loop=False, then="Idle")
+
+    def _sight_offset(self):
+        """Camera-space offset that lines a weapon's sights up with the
+        crosshair, measured off the posed weapon mesh.
+
+        Every gun sits differently in the hands, so a single hand-tuned aim
+        pose suits one of them and none of the rest.  Posing the weapon and
+        reading its own centreline and sight height gives each one an aim
+        pose for free.
+        """
+        if self.gun.model is None:
+            return AIM_FALLBACK
+        try:
+            idle = self.gun.clip("Idle")
+            t = self.gun.model.clips[idle].duration * 0.5 if idle else 0.0
+            P = self.gun.model.palette(idle, t)
+            pts = []
+            for pr in self.gun.model.primitives():
+                v = pr["positions"]
+                j = pr["joints"].astype(int)
+                w = pr["weights"]
+                out = np.zeros_like(v)
+                for k in range(4):
+                    M = P[j[:, k]]
+                    out += w[:, k:k + 1] * (np.einsum("nij,nj->ni", M[:, :3, :3], v) + M[:, :3, 3])
+                pts.append(out)
+            pts = np.concatenate(pts)
+            a = self.anchor
+            # centreline left-to-right, and the top of the weapon where the
+            # sights are.  A percentile rather than the max, so one stray
+            # vertex (a sling loop, an aerial) cannot throw the aim off.
+            sx = float(np.median(pts[:, 0]))
+            sy = float(np.percentile(pts[:, 1], 99.0))
+            # node +X is the character's left, so the x term flips sign
+            return (sx - float(a[0]), -(sy - float(a[1])), AIM_DISTANCE)
+        except Exception as ex:
+            _warn_once("sight_%s" % self.weapon,
+                       "could not measure %s's sights (%s); using the default aim pose"
+                       % (self.weapon, ex))
+            return AIM_FALLBACK
 
     # ---- animation ----
     def play(self, clip, loop=False, speed=1.0, then=None):
@@ -596,7 +638,7 @@ class Viewmodel:
         up = glm.normalize(glm.cross(right, fwd))
 
         ox, oy, oz = HAND_OFFSET
-        axm, aym, azm = AIM_OFFSET
+        axm, aym, azm = self.aim_off
         k = self.aim
         offx = ox + (axm - ox) * k + sw[0] + p[0]
         offy = oy + (aym - oy) * k + sw[1] + p[1]
@@ -612,9 +654,9 @@ class Viewmodel:
                               + right * (offx + ax)
                               + up * (offy - ay)
                               + fwd * (offz - az))
-        self.root.rotation_euler = glm.vec3(-(cam.pitch + r[0] * 2.0),
-                                            cam.yaw + YAW_FLIP + r[1] * 2.0,
-                                            -(r[2] * 2.0 + sw[0] * 14.0))
+        self.root.rotation_euler = glm.vec3(-(cam.pitch + r[0] * 1.2),
+                                            cam.yaw + YAW_FLIP + r[1] * 1.2,
+                                            -(r[2] * 1.2 + sw[0] * 8.0))
         self.root.scale = glm.vec3(VIEW_SCALE)
 
     def muzzle(self):
