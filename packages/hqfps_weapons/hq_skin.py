@@ -173,15 +173,36 @@ class _Channel:
 
 
 class Clip:
-    """One named animation: a set of channels plus its duration."""
+    """One named animation: a set of channels plus its duration.
+
+    The source FBX takes were baked out of Blender one NLA strip at a time,
+    and that bake writes the armature's REST pose into the first frame of
+    every strip before the action is evaluated.  Left in, each clip snaps to
+    a half-A-pose for one frame whenever it starts or is sampled at t=0.
+
+    The artifact is confined to that one key: on channels that carry real
+    motion (>2 keys) the first key is an outlier, while constant channels
+    (exactly 2 keys, start and end) hold the same value at both ends and are
+    already correct.  So drop the leading key only where there is motion to
+    drop it from, then rebase every channel so the clip starts at t=0.
+    """
 
     def __init__(self, name, channels):
         self.name = name
-        self.channels = channels
-        self.duration = 0.0
+        kept = []
         for ch in channels:
+            if len(ch.times) > 2:
+                ch.times = ch.times[1:]
+                ch.values = ch.values[1:]
             if len(ch.times):
-                self.duration = max(self.duration, float(ch.times[-1]))
+                kept.append(ch)
+        t0 = min((float(ch.times[0]) for ch in kept), default=0.0)
+        for ch in kept:
+            ch.times = ch.times - t0
+        self.channels = kept
+        self.duration = 0.0
+        for ch in kept:
+            self.duration = max(self.duration, float(ch.times[-1]))
 
 
 # -------------------------------------------------------------------- rig
