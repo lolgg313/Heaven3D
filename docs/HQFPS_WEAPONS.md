@@ -114,8 +114,9 @@ without hand-tuning eleven aim poses.
 ## Tests
 
 ```
-python packages/hqfps_weapons/tests/test_skin.py     # 57 checks, no GPU needed
-python tests/test_hqfps_weapons.py                   # 37 checks, needs a GPU
+python packages/hqfps_weapons/tests/test_skin.py      # 57 checks, no GPU needed
+python tests/test_hqfps_weapons.py                    # 37 checks, needs a GPU
+python tests/test_hqfps_with_characters.py            # 14 checks, needs a GPU
 ```
 
 The first validates the glTF skinning runtime: the bind pose must rebuild to
@@ -128,6 +129,12 @@ The second drives a real engine frame by frame, waiting on state rather than
 frame counts, and screenshots each step. Among other things it checks that
 the hands are *in front of the eye* — a viewmodel placed behind the camera
 renders to nothing while every other assertion still passes.
+
+The third puts both skinning packages in one scene and shoots `mh_characters`
+zombies with the rifle and stabs one with the knife. It asserts the shader
+hooks end up installed exactly once, that both packages share the bone-palette
+texture unit, and that the viewmodel and the characters are posed in the same
+frame.
 
 ---
 
