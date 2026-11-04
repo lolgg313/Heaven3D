@@ -1011,7 +1011,14 @@ def _blueprints():
     class MHEnemy(_Mover):
         """Patrols its 'path' (or wanders), notices the player (sight cone,
         hearing range, optional line of sight), chases, attacks (melee or
-        hitscan with a pistol), plays hit / death animations.  Takes 'damage' messages."""
+        hitscan with a pistol), plays hit / death animations.  Takes 'damage' messages.
+
+        A melee attack only lands at arm's length: the player has to be in
+        reach (never more than MELEE_REACH_MAX, whatever attack_range says),
+        in front, at about the same height and not behind a wall.  A shot
+        that doesn't kill plays the hit reaction and stuns the enemy for as
+        long as it lasts; the killing shot plays the death, once."""
+        MELEE_REACH_MAX = 2.0
         DEFAULTS = {"path": "", "patrol_speed": 1.2, "chase_speed": 3.8, "detect_range": 18.0, "fov": 120.0,
                     "hearing_range": 4.0, "require_los": True, "lose_interest": 6.0, "attack_range": 1.5,
                     "attack_damage": 12.0, "attack_cooldown": 1.3, "attack_style": "melee", "hitscan_range": 25.0,
@@ -1030,6 +1037,7 @@ def _blueprints():
             self.stagger = 0.0
             self._wander = None
             self._attacking = False
+            self._dead_once = False
             if self.rig is not None and self.rig.moveset != desired_moveset(self.node, _char_bp(self.node)):
                 self.rig.set_moveset(desired_moveset(self.node, _char_bp(self.node)))
             if self.points:
@@ -1066,6 +1074,52 @@ def _blueprints():
                         return False, d
             return True, d
 
+        def _reach(self):
+            """Melee reach, measured centre to centre (capsules included)."""
+            return max(0.6, min(float(self.p("attack_range")), self.MELEE_REACH_MAX))
+
+        def _in_melee_reach(self, pn, slack=0.0):
+            me = self.node.world_position()
+            pp = pn.world_position()
+            to = pp - me
+            d = math.sqrt(to.x * to.x + to.z * to.z)
+            if d > self._reach() + slack:
+                return False
+            h = self.rig.height if self.rig else 1.75
+            if abs(pp.y - me.y) > h * 0.8:                 # player on a crate / below a ledge
+                return False
+            if d > 0.35:
+                f = self._forward()
+                if (f.x * to.x + f.z * to.z) / d < 0.35:   # roughly in front (about 70 degrees)
+                    return False
+                eye = self._eye()
+                v = pp - eye
+                L = glm.length(v)
+                if L > 1e-4:                               # no clawing through a wall
+                    pb, _pn = self._player()
+                    hit = self.engine.physics.raycast(eye, v / L, L, ignore=set(self._ignore))
+                    if hit is not None and pb is not None and not _is_under(hit.node, pb.node):
+                        return False
+            return True
+
+        def _spread(self, dt):
+            """Standing in reach, step away from any other enemy that is
+            closer than a body width, so a crowd forms a ring round the
+            player instead of standing inside one another."""
+            pos = self.node.position
+            sx = sz = 0.0
+            for other, ox, oz, _vx, _vz in STATE.get("agents", ()):
+                if other is self.node:
+                    continue
+                rx, rz = pos.x - ox, pos.z - oz
+                dist = math.hypot(rx, rz)
+                if 1e-4 < dist < 0.75:
+                    k = (0.75 - dist) / 0.75
+                    sx += rx / dist * k
+                    sz += rz / dist * k
+            if abs(sx) + abs(sz) > 1e-4:
+                self.cc.move(glm.vec3(sx, 0.0, sz) * (1.6 * dt))
+
         def on_tick(self, dt):
             if not self.alive or self.rig is None:
                 return
@@ -1101,13 +1155,15 @@ def _blueprints():
                     return
             if self.state == "chase" and pn is not None:
                 to = pn.world_position() - self.node.world_position()
-                rng = float(self.p("attack_range")) if not ranged else \
+                rng = self._reach() if not ranged else \
                     min(float(self.p("hitscan_range")), float(self.p("detect_range")) * 0.75)
                 self._turn_to(glm.vec3(to.x, 0, to.z), dt, 360.0)
                 if d <= rng:
                     keep = 0.0 if not ranged or d < rng * 0.6 else float(self.p("patrol_speed")) * 0.8
                     self._move(keep, dt, decel=8.0)
-                    if self.cool <= 0.0 and (not ranged or seen):
+                    if not ranged:
+                        self._spread(dt)
+                    if self.cool <= 0.0 and (seen if ranged else self._in_melee_reach(pn)):
                         self.cool = float(self.p("attack_cooldown"))
                         self._attacking = an.play("shoot" if ranged else "attack", fade=0.08)
                         if not ranged:
@@ -1162,8 +1218,9 @@ def _blueprints():
                 if hit is not None and _is_under(hit.node, pn):
                     e.message_ancestors(hit.node, "damage", {"amount": dmg, "point": hit.point, "source": "enemy"})
             else:
-                to = pn.world_position() - self.node.world_position()
-                if math.sqrt(to.x * to.x + to.z * to.z) <= float(self.p("attack_range")) * 1.35:
+                # The claw connects only if the player is STILL in reach when
+                # it lands (a little slack for the lunge); step back and it misses.
+                if self._in_melee_reach(pn, slack=0.3):
                     e.message_ancestors(pn, "damage", {"amount": dmg, "point": pn.world_position(), "source": "enemy"})
 
         def on_message(self, event, data):
@@ -1175,14 +1232,28 @@ def _blueprints():
             if self.hp <= 0:
                 self._die()
             elif self.rig is not None and amt > 0:
+                # Hit, not dead: play the hit reaction and stay stunned for
+                # all of it -- no walking, turning or attacking until it ends.
                 self._attacking = False
-                self.rig.animator.play("hit", fade=0.06)
-                self.stagger = 0.35
+                an = self.rig.animator
+                # played a touch slower than authored: a clear stagger,
+                # about half a second, rather than a 0.3 s flinch
+                if an.play("hit", fade=0.06, rate=0.8) and an.action is not None:
+                    dur = an.action["clip"].duration / max(an.action["rate"], 1e-3)
+                else:
+                    dur = 0.35
+                self.stagger = max(self.stagger, max(0.35, dur))
+                self.cool = max(self.cool, 0.3)
 
         def _die(self):
+            if not getattr(self, "alive", True) and getattr(self, "_dead_once", False):
+                return                              # dies once: never a second death clip
+            self._dead_once = True
             e = self.engine
             self.alive = False
             self.hp = 0.0
+            self.stagger = 0.0
+            self._attacking = False
             e.audio.play_at(self.p("death_sound"), self.node.world_position(), 0.7)
             if self.rig is not None:
                 self.rig.animator.set_speed(0.0, snap=True)

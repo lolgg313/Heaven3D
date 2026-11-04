@@ -128,15 +128,14 @@ class HQFPSArena(Blueprint):
             node = chars.place_character(self.engine, spec, pos=glm.vec3(x, 0.0, z),
                                          name="Zombie%d" % (i + 1), yaw=yaw,
                                          select=False)
-            # Give each one its own reach and pace.  With the same
-            # attack_range they all press in to the same 1.5 m and end up
-            # standing INSIDE each other, so shooting into the pile looks
-            # like one zombie playing its death twice.
+            # Each one gets its own pace and an arm's-length reach (about
+            # 1.4 m centre to centre).  MHEnemy spreads them round the
+            # player once they arrive, so they don't stand inside each other.
             self.engine.attach_blueprint(node, chars.CLS["MHEnemy"], {
                 "chase_speed": float(self.p("zombie_speed")) * rng.uniform(0.75, 1.15),
                 "patrol_speed": float(self.p("zombie_speed")) * 0.45,
                 "detect_range": 40.0,
-                "attack_range": 1.4 + 0.55 * i,
+                "attack_range": rng.uniform(1.3, 1.5),
                 "attack_damage": 9.0,
                 "require_los": False,
                 "max_health": float(self.p("zombie_health")),

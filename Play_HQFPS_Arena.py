@@ -83,6 +83,19 @@ def project_path():
                               os.path.join(dest, "packages", pid))
             except Exception as ex:
                 print("could not refresh package %s: %s" % (pid, ex))
+        # The arena script the template first shipped gave zombie number N a
+        # reach of 1.4 + 0.55*N metres (zombie 8 hit you from 7 m away).
+        # Replace that copy with the fixed one; a script you edited is kept.
+        try:
+            mine = os.path.join(dest, "scripts", "hqfps_arena.py")
+            ship = os.path.join(HERE, "templates", TEMPLATE, "scripts", "hqfps_arena.py")
+            with open(mine, encoding="utf-8") as fh:
+                old = fh.read()
+            if "1.4 + 0.55 * i" in old and os.path.isfile(ship):
+                shutil.copy2(ship, mine)
+                print("updated the arena script (zombie reach fix)")
+        except OSError:
+            pass
         return scene
     print("Creating '%s' from the %s template in:\n  %s" % (PROJECT_NAME, TEMPLATE, dest))
     hb.create_project(cfg, PROJECT_NAME, TEMPLATE, root)

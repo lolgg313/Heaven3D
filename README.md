@@ -25,7 +25,15 @@ Heaven3D is a from-scratch 3D game engine written in Python on top of [ModernGL]
 
 The whole engine ships as a single file, `Heaven3D.py`, so it is easy to read, hack on, and bundle into your own projects.
 
-## 🆕 What's new in 2.7.3
+## 🆕 HQ FPS Arena fixes (HQ FPS Weapons 0.3.2, MakeHuman Characters 1.2.2)
+
+- **Zombies only hit you at arm's length.** The arena used to give zombie N a reach of 1.4 + 0.55×N m (the eighth one clawed you from 7 m away). Every melee enemy now needs you within its reach (never more than 2 m, whatever `attack_range` says), in front of it, at about its height and not behind a wall, and the claw only lands if you're still there when it swings.
+- **Hit, then death, once.** A shot that doesn't kill plays the hit reaction and stuns the enemy for all of it (about half a second); the killing shot plays the death. The zombie set used a knock-*down* clip as its hit reaction, so a wounded zombie fell, sprang back up and fell again when it died. Hit reactions now always keep a character on its feet, for every moveset.
+- **Bullet holes with every HQ FPS gun**, on any Heaven3D build: on an engine without `spawn_impact_fx` (such as `Heaven3D_runtime.py` before this fix) the package leaves the holes itself. Zombies get a blood puff instead of a hole stuck in the air.
+- **Aiming never loses mouse-look.** Letting go of the right mouse button no longer frees the pointer. Fixed in `Heaven3D_runtime.py` too, SDL's mouse auto-capture is off, and a pointer lock the OS drops is taken back on the next frame.
+- **No more hollow arms.** The first-person arms were cut off above the elbow; on the AKM's reloads, the knife's holster and most draws you could see into them. The cut is now continued to the shoulder and closed, and the near clip plane is 3 cm while a weapon is out. `tests/test_hqfps_arms.py` checks every clip of all 20 weapons.
+
+## What's new in 2.7.3
 
 **MakeHuman Characters 1.2: lifelike animation.**
 

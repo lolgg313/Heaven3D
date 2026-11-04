@@ -30,6 +30,7 @@ import numpy as np
 
 H3D = None
 SKIN = None                       # hq_skin module
+ARMS = None                       # hq_arms module (closes the cut-off arm ends)
 CLS = {}
 UNIT = 11                         # bone-palette texture unit, shared with mh_characters
 STATE = {"warned": set()}
@@ -45,6 +46,11 @@ HAND_OFFSET = (0.0, -1.6, 0.33)
 AIM_DISTANCE = 0.26                       # how far out the SIGHTS sit
 AIM_FALLBACK = (-0.055, 1.475, AIM_DISTANCE)
 VIEW_SCALE = 1.0
+# Near clip plane while a viewmodel is out.  The engine's default 0.1 m
+# slices through the arms on a knife holster or an MP5 reload and shows
+# their hollow inside; 3 cm never does (tests/test_hqfps_arms.py checks
+# every clip of every weapon) and is far enough for the depth buffer.
+VIEWMODEL_NEAR = 0.03
 
 # The HQFPS rigs keep Unity's convention: the weapon points along the rig's
 # +Z and the rig's +X is the character's left.  Heaven3D nodes face -Z, so
@@ -130,6 +136,13 @@ def _patch_shaders():
 
 
 # =========================================================================== skinned meshes
+def _is_shadow_prog(prog):
+    try:
+        return prog.get("u_light_space", None) is not None and prog.get("u_view", None) is None
+    except Exception:
+        return False
+
+
 def _mesh_classes():
     m = _m()
     moderngl = __import__("moderngl")
@@ -153,6 +166,9 @@ def _mesh_classes():
                 except KeyError:
                     on = False
             try:
+                shadow_ni = getattr(self.mesh, "_hq_shadow_ni", None)
+                if shadow_ni is not None and not a and "vertices" not in kw and _is_shadow_prog(prog):
+                    return self.vao.render(moderngl.TRIANGLES, vertices=shadow_ni)
                 return self.vao.render(*a, **kw)
             finally:
                 if on:
@@ -180,6 +196,8 @@ def _mesh_classes():
             self.bounding_box, self.bounding_sphere = geo.bbox, geo.bsphere
             self._hq_skin_vbo = geo.skin_vbo
             self._hq_half = None
+            sn = getattr(geo, "shadow_ni", None)
+            self._hq_shadow_ni = sn if sn is not None and sn < geo.ni else None
 
         def get_vao(self, program):
             key = ("hq", id(program))
@@ -225,7 +243,28 @@ class _Geo:
 _GEO = {}
 
 
-def _geo_for(engine, path, model):
+_ARM_ROOT = {}
+
+
+def _arm_prims(model, path):
+    """The arms' primitives with the cut-off upper arms continued to the
+    shoulder (hq_arms), and the node the new skin follows (or None)."""
+    key = os.path.abspath(path)
+    prims = model.primitives()
+    if ARMS is None:
+        _ARM_ROOT[key] = None
+        return prims
+    try:
+        prims, closed, node = ARMS.close_arms(model, prims, HAND_OFFSET)
+        _ARM_ROOT[key] = node
+    except Exception as ex:
+        _warn_once("arms_" + key, "could not close the arms of %s (%s)" % (os.path.basename(path), ex))
+        _ARM_ROOT[key] = None
+        prims = model.primitives()
+    return prims
+
+
+def _geo_for(engine, path, model, arms=False):
     """Upload (once) every skinned primitive of a GLB."""
     key = os.path.abspath(path)
     cached = _GEO.get(key)
@@ -234,7 +273,7 @@ def _geo_for(engine, path, model):
     m = _m()
     glm = m.glm
     out = []
-    for pr in model.primitives():
+    for pr in (_arm_prims(model, path) if arms else model.primitives()):
         tmp = m.Mesh.from_arrays(engine.ctx, pr["positions"], pr["normals"], pr["uvs"],
                                  pr["indices"], name="hq_tmp", tangents=pr["tangents"])
         g = _Geo()
@@ -251,6 +290,7 @@ def _geo_for(engine, path, model):
         g.bsphere = (glm.vec3(0.0, 0.0, 0.0), 4.0)
         g.material = pr["material"]
         g.name = pr["name"]
+        g.shadow_ni = pr.get("index_count_original")
         out.append(g)
     _GEO[key] = out
     return out
@@ -549,6 +589,67 @@ def _is_flesh(node):
     return False
 
 
+# Character blueprints only: a crate with a Health blueprint is still a
+# crate and still takes bullet holes.
+_CREATURE_BPS = ("MHEnemy", "MHCharacter", "NPCWalker", "EnemyAI", "EnemyFlyShooter",
+                 "FlyingEnemyAI", "FPSController")
+
+
+def _is_creature(node):
+    n = node
+    while n is not None:
+        for b in getattr(n, "blueprints", ()):
+            if b.__class__.__name__ in _CREATURE_BPS:
+                return True
+        if getattr(n, "spawn_kind", None) in ("enemy", "player", "flying_enemy"):
+            return True
+        n = getattr(n, "parent", None)
+    return False
+
+
+_HOLES = []
+_HOLE_MESH = {}
+
+
+def _own_bullet_hole(engine, hit, size=0.11, keep=48):
+    """A bullet hole for an engine without spawn_impact_fx: a small dark
+    disc on the surface, the newest `keep` kept, swept away on Stop."""
+    m = _m()
+    glm = m.glm
+    ctx = engine.ctx
+    mesh = _HOLE_MESH.get(id(ctx))
+    if mesh is None:
+        k = 14
+        ang = np.linspace(0.0, 2.0 * math.pi, k, endpoint=False)
+        jag = 0.5 * (1.0 + 0.18 * np.sin(ang * 5.0))
+        pos = np.vstack([[0.0, 0.0, 0.0], np.c_[np.cos(ang) * jag, np.sin(ang) * jag, np.zeros(k)]])
+        nrm = np.tile([0.0, 0.0, 1.0], (k + 1, 1))
+        uv = pos[:, :2] + 0.5
+        idx = np.array([[0, 1 + i, 1 + (i + 1) % k] for i in range(k)]).ravel()
+        mesh = m.Mesh.from_arrays(ctx, pos.astype(np.float32), nrm.astype(np.float32),
+                                  uv.astype(np.float32), idx.astype(np.uint32), name="hq_hole")
+        _HOLE_MESH[id(ctx)] = mesh
+    n = glm.normalize(glm.vec3(hit.normal)) if glm.length(glm.vec3(hit.normal)) > 1e-6 else glm.vec3(0, 1, 0)
+    node = m.SceneNode("_hq_bullet_hole", parent=engine.scene.root)
+    node.position = glm.vec3(hit.point) + n * (0.012 + (len(_HOLES) % 7) * 0.0007)
+    yaw = math.degrees(math.atan2(n.x, n.z))
+    pitch = math.degrees(-math.asin(max(-1.0, min(1.0, float(n.y)))))
+    node.rotation_euler = glm.vec3(pitch, yaw, random.uniform(0.0, 360.0))
+    node.scale = glm.vec3(size * random.uniform(0.85, 1.15))
+    node.mesh = mesh
+    node.material = m.Material(name="hq_hole", base_color=(0.05, 0.045, 0.04, 0.92),
+                               roughness=0.9, metallic=0.0, alpha_mode="BLEND", double_sided=True)
+    try:
+        engine._spawn_runtime_nodes.append(node)
+    except Exception:
+        pass
+    _HOLES.append(node)
+    while len(_HOLES) > keep:
+        old = _HOLES.pop(0)
+        if old.parent is not None:
+            old.remove()
+
+
 def _surface_of(node):
     """Which HQFPS surface set a hit belongs to.
 
@@ -650,11 +751,15 @@ class _Half:
         if self.model is None:
             return
         m = _m()
-        nb = len(self.model.joints)
+        self.is_arms = kind == "models"
+        geos = _geo_for(engine, path, self.model, arms=self.is_arms)
+        # the continued upper arms follow the arms' root: one extra bone row
+        self.root_node = _ARM_ROOT.get(os.path.abspath(path)) if self.is_arms else None
+        nb = len(self.model.joints) + (1 if self.root_node is not None else 0)
         self.tex = engine.ctx.texture((nb * 4, 1), 4, dtype="f4")
         mgl = CLS["moderngl"]
         self.tex.filter = (mgl.NEAREST, mgl.NEAREST)
-        for g in _geo_for(engine, path, self.model):
+        for g in geos:
             ch = m.SceneNode("%s %s" % (tag, g.name), parent=parent)
             ch._heaven3d_imported_part = "hqfps"
             ch._h3d_locked = True
@@ -688,7 +793,11 @@ class _Half:
     def upload(self, clip, t):
         if self.model is None or self.tex is None:
             return
-        p = self.model.palette(self.clip(clip) if clip else None, t)
+        c = self.clip(clip) if clip else None
+        if self.root_node is not None:
+            p = ARMS.palette_with_root(self.model, self.root_node, c, t)
+        else:
+            p = self.model.palette(c, t)
         # The GLSL mat4 is built from four texels as columns, so the rows go
         # out transposed - same convention mh_characters uses.
         self.tex.write(np.ascontiguousarray(p.transpose(0, 2, 1), dtype=np.float32).tobytes())
@@ -968,6 +1077,8 @@ def _blueprints():
             self._ignore = set()
             self._switch_to = None
             self._queued = None
+            self._rmb_was = False
+            self._near_was = None
 
         def p(self, k):
             return self.properties.get(k, self.DEFAULTS.get(k))
@@ -1059,12 +1170,43 @@ def _blueprints():
                 root = root.parent
             self._ignore = {id(n) for n in root.traverse()}
             self.index = max(0, min(int(self.p("start_index")), len(self.names) - 1))
+            cam = self.engine.camera
+            self._near_was = getattr(cam, "near", None)
+            if self._near_was is not None and self._near_was > VIEWMODEL_NEAR:
+                cam.near = VIEWMODEL_NEAR
+            self._rmb_was = False
             self._equip(self.index)
 
         def on_end_play(self):
             if self.vm is not None:
                 self.vm.destroy()
                 self.vm = None
+            near = getattr(self, "_near_was", None)
+            if near is not None:
+                self.engine.camera.near = near
+                self._near_was = None
+
+        def _keep_pointer(self, inp):
+            """Mouse-look must survive aiming.  The engine keeps the pointer
+            locked while the game owns it; this is the same guard for an
+            older Heaven3D, where letting go of the right button freed the
+            pointer and the camera stopped turning."""
+            e = self.engine
+            rmb = bool(inp.rmb)
+            released = self._rmb_was and not rmb
+            self._rmb_was = rmb
+            want = bool(getattr(e, "_playing", False) and getattr(e, "capture_mouse", False)
+                        and not getattr(e, "_capture_suspended", False))
+            if not want:
+                return
+            try:
+                pg = CLS.get("pygame") or __import__("pygame")
+                if released or not pg.event.get_grab() or pg.mouse.get_visible():
+                    pg.event.set_grab(True)
+                    pg.mouse.set_visible(False)
+                    e._mouse_captured = True
+            except Exception:
+                pass
 
         # ---- equipping ----
         def _equip(self, i):
@@ -1154,6 +1296,7 @@ def _blueprints():
                 else:
                     self._pending = (left, fn)
 
+            self._keep_pointer(inp)
             self._try_queued()
             self._switch_input(inp)
             aiming = bool(inp.rmb) and self.stats.get("kind") != "throw"
@@ -1278,14 +1421,25 @@ def _blueprints():
                 snd = _cue(e, random.choice(clips)) if clips else "bullet_impact"
             except Exception:
                 snd = "bullet_impact"
-            fx = getattr(e, "spawn_impact_fx", None)
-            if fx is None:
-                _warn_once("impact_api", "this Heaven3D has no spawn_impact_fx; "
-                                         "shots will not leave bullet holes")
+            if _is_creature(hit.node):
+                # A hole stuck to the air where a moving zombie USED to be
+                # looks worse than none: creatures get the sound and a red
+                # puff, walls, floors and props get the hole.
                 try:
-                    e.audio.play_at(snd, hit.point, 0.5)
+                    e.audio.play_at(snd, hit.point, 0.6)
+                    e.spawn_flash(hit.point, color=(0.75, 0.05, 0.03), intensity=2.5, range=1.2, ttl=0.06)
                 except Exception:
                     pass
+                return
+            fx = getattr(e, "spawn_impact_fx", None)
+            if fx is None:
+                # An older Heaven3D (Heaven3D_runtime.py before 2.7.4, an old
+                # standalone edition): leave the hole ourselves.
+                try:
+                    e.audio.play_at(snd, hit.point, 0.6)
+                except Exception:
+                    pass
+                _own_bullet_hole(e, hit)
                 return
             fx(hit, sound=snd)
 
@@ -1682,6 +1836,12 @@ def register(h3d):
     global H3D, SKIN
     H3D = h3d
     SKIN = h3d.load("hq_skin.py")
+    global ARMS
+    try:
+        ARMS = h3d.load("hq_arms.py")
+    except Exception as ex:
+        ARMS = None
+        h3d.warn("arm meshes left as they are (%s)" % ex)
     _patch_shaders()
     _mesh_classes()
     _blueprints()

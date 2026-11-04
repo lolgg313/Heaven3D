@@ -113,6 +113,10 @@ except ImportError:
     sys.exit(1)
 
 # ---- pygame (window + input) ----
+# A mouse button press must not start SDL's own "auto capture": on Windows,
+# releasing the button ends that capture and can take the game's pointer
+# lock with it (aim down sights once = no more mouse-look).
+os.environ.setdefault("SDL_MOUSE_AUTO_CAPTURE", "0")
 try:
     import pygame
     from pygame import OPENGL, DOUBLEBUF
@@ -15695,12 +15699,17 @@ class HeavenEngine:
             self.input.rmb = True
             if self._playing:
                 self.input.rmb_just_pressed = True
-            pygame.event.set_grab(True)
-            pygame.mouse.set_visible(False)
+            # Right/middle drag grabs the pointer to look around in the
+            # EDITOR.  While a game holds the pointer, the game owns it:
+            # _apply_mouse_capture is the only thing allowed to change it.
+            if not self._game_holds_pointer():
+                pygame.event.set_grab(True)
+                pygame.mouse.set_visible(False)
         elif button == 2:   # middle
             self.input.mmb = True
-            pygame.event.set_grab(True)
-            pygame.mouse.set_visible(False)
+            if not self._game_holds_pointer():
+                pygame.event.set_grab(True)
+                pygame.mouse.set_visible(False)
 
     def _on_mouse_up(self, button, pos):
         if button == 1:
@@ -15717,14 +15726,26 @@ class HeavenEngine:
             # End any active view-gizmo press (a clean click snaps the view)
             if self.view_gizmo is not None and self.view_gizmo.pressing:
                 self.view_gizmo.end_press(self.camera)
-        elif button == 3:
-            self.input.rmb = False
-            pygame.event.set_grab(False)
-            pygame.mouse.set_visible(True)
-        elif button == 2:
-            self.input.mmb = False
-            pygame.event.set_grab(False)
-            pygame.mouse.set_visible(True)
+        elif button in (2, 3):
+            if button == 3:
+                self.input.rmb = False
+            else:
+                self.input.mmb = False
+            # Releasing the right button used to free the pointer even in
+            # play, so aiming down sights once cost you mouse-look for the
+            # rest of the game.  In play the game keeps the pointer, and the
+            # lock is taken again right here in case the OS dropped it with
+            # the button release.
+            if self._game_holds_pointer():
+                self._mouse_regrab = 3
+                try:
+                    pygame.event.set_grab(True)
+                    pygame.mouse.set_visible(False)
+                except Exception:
+                    pass
+            else:
+                pygame.event.set_grab(False)
+                pygame.mouse.set_visible(True)
 
     # ------------------------------------------------------- mouse ray helper
     def _mouse_ray(self, mouse_pos) -> Tuple[glm.vec3, glm.vec3]:
@@ -16159,11 +16180,34 @@ class HeavenEngine:
                     except Exception as ex:
                         Log.error(f"{hook} error on '{nb.name}': {ex}")
 
+    def _game_holds_pointer(self) -> bool:
+        """True while gameplay owns the pointer (mouse-look is on)."""
+        return bool(self._playing and self.capture_mouse
+                    and not self._capture_suspended)
+
     def _apply_mouse_capture(self):
-        want = (self._playing and self.capture_mouse
-                and not self._capture_suspended)
-        if want == self._mouse_captured:
-            return
+        """Keep the pointer locked while the game wants it, every frame.
+
+        Compared against the REAL grab and cursor state, not just the last
+        value set here: whatever frees the pointer (a button release, the OS
+        taking focus, a dialog) is taken back on the next frame instead of
+        leaving the game unable to look around."""
+        want = self._game_holds_pointer()
+        regrab = getattr(self, "_mouse_regrab", 0)
+        if regrab:
+            self._mouse_regrab = regrab - 1
+        if not want:
+            # Not playing: only the hand-over matters.  The editor's own
+            # right/middle-drag grab is left alone.
+            if not self._mouse_captured:
+                return
+        else:
+            try:
+                held = bool(pygame.event.get_grab()) and not pygame.mouse.get_visible()
+            except Exception:
+                held = self._mouse_captured
+            if self._mouse_captured and held and not regrab:
+                return
         self._mouse_captured = want
         try:
             pygame.event.set_grab(want)
@@ -24677,8 +24721,9 @@ if not globals().get("_FP2_GAMEPLAY_INSTALLED"):
                 fade_after=0.35,
                 roll=random.uniform(0.0, 360.0), kind="splash")
 
-    def _fp2_hard_impact_fx(e, hit):
-        e.audio.play_at("bullet_impact", hit.point, 0.8)
+    def _fp2_hard_impact_fx(e, hit, sound="bullet_impact"):
+        if sound:
+            e.audio.play_at(sound, hit.point, 0.8)
         n = _safe_normalize(_v3(hit.normal), glm.vec3(0, 1, 0))
         # Bullet-hole decal: offset along the normal (+ a tiny per-decal
         # epsilon jitter) so stacked decals never z-fight each other or
@@ -24819,6 +24864,21 @@ if not globals().get("_FP2_GAMEPLAY_INSTALLED"):
             _FP2_PREV_WEAPON_SHOOT(self)
 
     Weapon._shoot = _fp2_weapon_shoot
+
+    def _fp2_spawn_impact_fx(self, hit, sound="bullet_impact"):
+        """Bullet hole, spark and flash at a raycast hit.
+
+        The stock Weapon makes these itself, but a weapon from a package
+        has no way in, so any shooter can call
+        `engine.spawn_impact_fx(hit)` and leave the same marks.  Pass
+        `sound=None` to keep the visuals and play your own.
+        """
+        try:
+            _fp2_hard_impact_fx(self, hit, sound)
+        except Exception as ex:
+            _fp2_log_once("impact_api", f"[FINALPATCH2] impact FX failed: {ex}")
+
+    HeavenEngine.spawn_impact_fx = _fp2_spawn_impact_fx
 
     # ---------------------------------------------------------------
     # Feature 4 - smart wall-aware flying enemy (zero FPS drop).

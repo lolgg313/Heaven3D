@@ -163,7 +163,22 @@ hand — not a stand-in sphere.
 python packages/hqfps_weapons/tests/test_skin.py      # 62 checks, no GPU needed
 python tests/test_hqfps_weapons.py                    # 56 checks, needs a GPU
 python tests/test_hqfps_with_characters.py            # 14 checks, needs a GPU
+python tests/test_hqfps_arms.py                       # 20 weapons, no GPU needed
+python tests/test_hqfps_arena_fixes.py                # 14 checks, needs a GPU
 ```
+
+`test_hqfps_arms.py` skins the arms through every clip of every weapon
+(16 moments each) exactly as the viewmodel shows them, and fails if an open
+edge of the arm mesh, or the camera's near plane cutting through it, is ever
+inside the view -- the two ways you could look into the hollow arm. The arms
+are cut off above the elbow; `hq_arms.py` continues each cut to where a
+shoulder would be (beside, below and behind the eye), bound to the upper arm
+at the cut and to the arms' root at the shoulder, and closes it there.
+
+`test_hqfps_arena_fixes.py` plays the HQ FPS Arena template: zombie reach,
+hit-then-death with the M1911, bullet holes (also on an engine without
+`spawn_impact_fx`), the right mouse button and the pointer lock, the closed
+arms and the 3 cm near plane.
 
 The first also pins the UV convention — glTF's origin is top-left and
 Heaven3D samples bottom-left, so V must be flipped exactly as the engine's

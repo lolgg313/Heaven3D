@@ -1219,14 +1219,14 @@ MOVESETS = {
                  "attack": ["Punch_Jab", "Punch_Cross"], "hit": ["Hit_Chest", "Hit_Head"], "death": ["Death01"],
                  "yes": ["Yes"], "no": ["Idle_No_Loop"]},
     "brawler": {"idle": ["Idle_Loop"], "walk": ["Walk_Loop"], "run": ["Jog_Fwd_Loop"], "sprint": ["Sprint_Loop"],
-                "attack": ["Punch_Jab", "Punch_Cross", "Melee_Hook"], "hit": ["Hit_Chest", "Hit_Head", "Hit_Knockback"],
+                "attack": ["Punch_Jab", "Punch_Cross", "Melee_Hook"], "hit": ["Hit_Chest", "Hit_Head"],
                 "death": ["Death01"], "talk": ["Idle_Talking_Loop"], "wave": ["@wave"]},
     "pistol": {"idle": ["Idle_Loop"], "walk": ["Walk_Loop"], "run": ["Jog_Fwd_Loop"], "sprint": ["Sprint_Loop"],
                "upper": ["Pistol_Idle_Loop"], "shoot": ["Pistol_Shoot"], "reload": ["Pistol_Reload"],
                "attack": ["Pistol_Shoot"], "hit": ["Hit_Chest", "Hit_Head"], "death": ["Death01"],
                "talk": ["Idle_Talking_Loop"], "wave": ["@wave"]},
     "zombie": {"idle": ["Zombie_Idle_Loop"], "walk": ["Zombie_Walk_Fwd_Loop"], "run": ["Zombie_Walk_Fwd_Loop"],
-               "sprint": ["Zombie_Walk_Fwd_Loop"], "attack": ["Zombie_Scratch"], "hit": ["Hit_Knockback", "Hit_Chest"],
+               "sprint": ["Zombie_Walk_Fwd_Loop"], "attack": ["Zombie_Scratch"], "hit": ["Hit_Chest", "Hit_Head"],
                "death": ["Death01"], "talk": ["Zombie_Idle_Loop"], "wave": ["Zombie_Idle_Loop"]},
     "sword": {"idle": ["Sword_Idle"], "walk": ["Walk_Loop"], "run": ["Jog_Fwd_Loop"], "sprint": ["Sprint_Loop"],
               "attack": ["Sword_Attack"], "hit": ["Hit_Chest", "Hit_Head"], "death": ["Death01"],
@@ -1266,9 +1266,17 @@ def clipset(model, moveset, seed, library, overrides=None):
                     ground_fit(model, c)
                 if slot in ("walk", "run", "sprint"):
                     measure_gait(model, c)
+                if slot == "hit" and not stays_upright(model, c):
+                    # A knock-DOWN used as a hit reaction makes a character
+                    # fall, spring back up, then fall again when it dies:
+                    # it reads as dying twice.  Hit reactions stay on their feet.
+                    c = False
                 cache[key] = c
+            if c is False:
+                continue
             clips.append(c)
-        out[slot] = clips
+        if clips:
+            out[slot] = clips
     if ms.get("wave") == ["@wave"] and out.get("idle"):
         c = cache.get(("@wave", True))
         if c is None:
@@ -1287,6 +1295,19 @@ def clipset(model, moveset, seed, library, overrides=None):
             measure_gait(model, c)
         out[slot] = [c]
     return out
+
+
+def stays_upright(model, clip, keep=0.7):
+    """True if the hips never sink below `keep` of their standing height
+    (a stagger), False for a clip that puts the character on the floor."""
+    hips = model.bone("mixamorig:Hips")
+    if hips < 0 or len(clip.rot) == 0:
+        return True
+    pose = Pose(model)
+    ys = [float(pose.fk(clip.rot[f], clip.hips[f])[hips, 1, 3])
+          for f in range(0, len(clip.rot), max(1, len(clip.rot) // 24))]
+    stand = float(pose.fk(clip.rot[0], clip.hips[0])[hips, 1, 3])
+    return min(ys) >= keep * max(stand, 1e-3)
 
 
 def ground_fit(model, clip, max_shift=0.15):

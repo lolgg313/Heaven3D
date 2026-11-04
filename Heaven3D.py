@@ -113,6 +113,10 @@ except ImportError:
     sys.exit(1)
 
 # ---- pygame (window + input) ----
+# A mouse button press must not start SDL's own "auto capture": on Windows,
+# releasing the button ends that capture and can take the game's pointer
+# lock with it (aim down sights once = no more mouse-look).
+os.environ.setdefault("SDL_MOUSE_AUTO_CAPTURE", "0")
 try:
     import pygame
     from pygame import OPENGL, DOUBLEBUF
@@ -15726,17 +15730,24 @@ class HeavenEngine:
             # End any active view-gizmo press (a clean click snaps the view)
             if self.view_gizmo is not None and self.view_gizmo.pressing:
                 self.view_gizmo.end_press(self.camera)
-        elif button == 3:
-            self.input.rmb = False
+        elif button in (2, 3):
+            if button == 3:
+                self.input.rmb = False
+            else:
+                self.input.mmb = False
             # Releasing the right button used to free the pointer even in
             # play, so aiming down sights once cost you mouse-look for the
-            # rest of the game.
-            if not self._game_holds_pointer():
-                pygame.event.set_grab(False)
-                pygame.mouse.set_visible(True)
-        elif button == 2:
-            self.input.mmb = False
-            if not self._game_holds_pointer():
+            # rest of the game.  In play the game keeps the pointer, and the
+            # lock is taken again right here in case the OS dropped it with
+            # the button release.
+            if self._game_holds_pointer():
+                self._mouse_regrab = 3
+                try:
+                    pygame.event.set_grab(True)
+                    pygame.mouse.set_visible(False)
+                except Exception:
+                    pass
+            else:
                 pygame.event.set_grab(False)
                 pygame.mouse.set_visible(True)
 
@@ -16179,16 +16190,28 @@ class HeavenEngine:
                     and not self._capture_suspended)
 
     def _apply_mouse_capture(self):
+        """Keep the pointer locked while the game wants it, every frame.
+
+        Compared against the REAL grab and cursor state, not just the last
+        value set here: whatever frees the pointer (a button release, the OS
+        taking focus, a dialog) is taken back on the next frame instead of
+        leaving the game unable to look around."""
         want = self._game_holds_pointer()
-        # Compare against the REAL grab, not just the last value set here:
-        # anything else that frees the pointer is then taken back on the
-        # next frame instead of leaving the game unable to look around.
-        try:
-            actual = bool(pygame.event.get_grab())
-        except Exception:
-            actual = self._mouse_captured
-        if want == self._mouse_captured and want == actual:
-            return
+        regrab = getattr(self, "_mouse_regrab", 0)
+        if regrab:
+            self._mouse_regrab = regrab - 1
+        if not want:
+            # Not playing: only the hand-over matters.  The editor's own
+            # right/middle-drag grab is left alone.
+            if not self._mouse_captured:
+                return
+        else:
+            try:
+                held = bool(pygame.event.get_grab()) and not pygame.mouse.get_visible()
+            except Exception:
+                held = self._mouse_captured
+            if self._mouse_captured and held and not regrab:
+                return
         self._mouse_captured = want
         try:
             pygame.event.set_grab(want)
