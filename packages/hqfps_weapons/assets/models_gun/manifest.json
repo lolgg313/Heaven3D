@@ -1,0 +1,391 @@
+{
+  "AKM": {
+    "bones": 8,
+    "bytes": 659200,
+    "clips": [
+      "Draw",
+      "EmptyReload",
+      "Fire",
+      "FireAim",
+      "Hold",
+      "Holster",
+      "Idle",
+      "Reload"
+    ],
+    "glb": "AKM.glb",
+    "materials": [
+      "AKM"
+    ],
+    "meshes": [
+      "AKM"
+    ]
+  },
+  "BaseballBat": {
+    "bones": 11,
+    "bytes": 269572,
+    "clips": [
+      "ComboAttack",
+      "Draw",
+      "Hold",
+      "Holster",
+      "Idle",
+      "StrongAttack"
+    ],
+    "glb": "BaseballBat.glb",
+    "materials": [
+      "BaseballBat"
+    ],
+    "meshes": [
+      "BaseballBat"
+    ]
+  },
+  "CombatKnife": {
+    "bones": 1,
+    "bytes": 200064,
+    "clips": [
+      "Draw",
+      "Hold",
+      "Holster",
+      "Idle",
+      "Stab1",
+      "Stab2"
+    ],
+    "glb": "CombatKnife.glb",
+    "materials": [
+      "CombatKnife"
+    ],
+    "meshes": [
+      "CombatKnife"
+    ]
+  },
+  "Compass": {
+    "bones": 3,
+    "bytes": 131628,
+    "clips": [
+      "Draw",
+      "Hold",
+      "Holster",
+      "Idle"
+    ],
+    "glb": "Compass.glb",
+    "materials": [
+      "Compass",
+      "CompassGlass"
+    ],
+    "meshes": [
+      "Compass"
+    ]
+  },
+  "Crossbow": {
+    "bones": 16,
+    "bytes": 653664,
+    "clips": [
+      "AimFire",
+      "Draw",
+      "Fire",
+      "Hold",
+      "Holster",
+      "Idle",
+      "Reload"
+    ],
+    "glb": "Crossbow.glb",
+    "materials": [
+      "Crossbow"
+    ],
+    "meshes": [
+      "Crossbow",
+      "Crossbow_Arrow"
+    ]
+  },
+  "DoubleBarrelShotgun": {
+    "bones": 6,
+    "bytes": 568080,
+    "clips": [
+      "AimFire",
+      "Draw",
+      "Fire",
+      "Hold",
+      "Holster",
+      "Idle",
+      "Reload",
+      "ReloadEmpty"
+    ],
+    "glb": "DoubleBarrelShotgun.glb",
+    "materials": [
+      "DoubleBarrelShotgun"
+    ],
+    "meshes": [
+      "DoubleBarrelShotgun"
+    ]
+  },
+  "F1": {
+    "bones": 5,
+    "bytes": 581608,
+    "clips": [
+      "AimFire",
+      "Draw",
+      "Fire",
+      "Hold",
+      "Holster",
+      "Idle",
+      "PickUp",
+      "Reload",
+      "ReloadEmpty"
+    ],
+    "glb": "F1.glb",
+    "materials": [
+      "F1"
+    ],
+    "meshes": [
+      "F1"
+    ]
+  },
+  "FireAxe": {
+    "bones": 1,
+    "bytes": 181928,
+    "clips": [
+      "Draw",
+      "Hold",
+      "Holster",
+      "Idle",
+      "StrongAttack"
+    ],
+    "glb": "FireAxe.glb",
+    "materials": [
+      "OldFireAxe"
+    ],
+    "meshes": [
+      "FireAxe"
+    ]
+  },
+  "FlareGun": {
+    "bones": 15,
+    "bytes": 418796,
+    "clips": [
+      "AimFire",
+      "Draw",
+      "Fire",
+      "Hold",
+      "Holster",
+      "Idle",
+      "Reload"
+    ],
+    "glb": "FlareGun.glb",
+    "materials": [
+      "FlareGun"
+    ],
+    "meshes": [
+      "FlareGun",
+      "FlareGun_Flare"
+    ]
+  },
+  "Flashlight": {
+    "bones": 12,
+    "bytes": 225096,
+    "clips": [
+      "Draw",
+      "Hold",
+      "Holster",
+      "Idle",
+      "Switch"
+    ],
+    "glb": "Flashlight.glb",
+    "materials": [
+      "Flashlight",
+      "Flashlight_Glass"
+    ],
+    "meshes": [
+      "Flashlight"
+    ]
+  },
+  "FragGrenade": {
+    "bones": 12,
+    "bytes": 249224,
+    "clips": [
+      "Draw",
+      "Hold",
+      "Holster",
+      "Idle",
+      "LongThrow",
+      "ShortThrow"
+    ],
+    "glb": "FragGrenade.glb",
+    "materials": [
+      "FragGrenade"
+    ],
+    "meshes": [
+      "FragGrenade"
+    ]
+  },
+  "HuntingRifle": {
+    "bones": 7,
+    "bytes": 709656,
+    "clips": [
+      "AimFire",
+      "Draw",
+      "Fire",
+      "Hold",
+      "Holster",
+      "Idle",
+      "ReloadEmpty",
+      "ReloadPart1",
+      "ReloadPart2",
+      "ReloadPart3"
+    ],
+    "glb": "HuntingRifle.glb",
+    "materials": [
+      "HuntingRifle",
+      "HuntingRifle_Clip"
+    ],
+    "meshes": [
+      "HuntingRifle"
+    ]
+  },
+  "M1911": {
+    "bones": 8,
+    "bytes": 619056,
+    "clips": [
+      "AimFire",
+      "Draw",
+      "Fire",
+      "Hold",
+      "Holster",
+      "Idle",
+      "Reload",
+      "ReloadEmpty"
+    ],
+    "glb": "M1911.glb",
+    "materials": [
+      "M1911"
+    ],
+    "meshes": [
+      "M1911"
+    ]
+  },
+  "M1A": {
+    "bones": 6,
+    "bytes": 585724,
+    "clips": [
+      "AimFire",
+      "Draw",
+      "Fire",
+      "Hold",
+      "Holster",
+      "Idle",
+      "Reload",
+      "ReloadEmpty"
+    ],
+    "glb": "M1A.glb",
+    "materials": [
+      "M1A"
+    ],
+    "meshes": [
+      "M1A"
+    ]
+  },
+  "MP5": {
+    "bones": 8,
+    "bytes": 754984,
+    "clips": [
+      "AimFire",
+      "Draw",
+      "Fire",
+      "Hold",
+      "Holster",
+      "Idle",
+      "Reload",
+      "ReloadEmpty"
+    ],
+    "glb": "MP5.glb",
+    "materials": [
+      "MP5"
+    ],
+    "meshes": [
+      "MP5"
+    ]
+  },
+  "MolotovCocktail": {
+    "bones": 16,
+    "bytes": 372024,
+    "clips": [
+      "Draw",
+      "Hold",
+      "Holster",
+      "Idle",
+      "LongThrow",
+      "ShortThrow"
+    ],
+    "glb": "MolotovCocktail.glb",
+    "materials": [
+      "Lighter",
+      "MolotovCocktail"
+    ],
+    "meshes": [
+      "MolotovCocktail"
+    ]
+  },
+  "R870": {
+    "bones": 7,
+    "bytes": 413760,
+    "clips": [
+      "AimFire",
+      "AltFire",
+      "Draw",
+      "Fire",
+      "Hold",
+      "Holster",
+      "Idle",
+      "ReloadEmpty",
+      "ReloadPart1",
+      "ReloadPart2",
+      "ReloadPart3"
+    ],
+    "glb": "R870.glb",
+    "materials": [
+      "Ammo",
+      "DoubleBarrelShotgun",
+      "R870"
+    ],
+    "meshes": [
+      "R870"
+    ]
+  },
+  "Revolver": {
+    "bones": 14,
+    "bytes": 658876,
+    "clips": [
+      "Draw",
+      "DryFire",
+      "Fire",
+      "FireAim",
+      "Hold",
+      "Holster",
+      "Idle",
+      "Reload"
+    ],
+    "glb": "Revolver.glb",
+    "materials": [
+      "Ammo",
+      "Revolver"
+    ],
+    "meshes": [
+      "Revolver",
+      "Revolver_Bullets"
+    ]
+  },
+  "Syringe": {
+    "bones": 2,
+    "bytes": 68812,
+    "clips": [
+      "Hold",
+      "Use"
+    ],
+    "glb": "Syringe.glb",
+    "materials": [
+      "Syringe"
+    ],
+    "meshes": [
+      "Syringe"
+    ]
+  }
+}
