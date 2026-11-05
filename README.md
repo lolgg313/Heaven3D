@@ -25,7 +25,10 @@ Heaven3D is a from-scratch 3D game engine written in Python on top of [ModernGL]
 
 The whole engine ships as a single file, `Heaven3D.py`, so it is easy to read, hack on, and bundle into your own projects.
 
-## 🆕 HQ FPS Arena fixes (HQ FPS Weapons 0.3.2, MakeHuman Characters 1.2.2)
+## 🆕 HQ FPS Arena fixes (HQ FPS Weapons 0.4.0, MakeHuman Characters 1.2.2)
+
+- **Everything works from the Hub.** New project > *HQ FPS Arena* > Open / Play; no separate launcher. The template has its Hub preview, and the Hub always gives a project the newest copy of a package.
+- **Guns and ammo are real scene objects.** The weapons and ammo boxes lie in the arena with their HQ FPS models, visible in the editor, saved with the project and movable like anything else. You start empty-handed and pick your guns up off the floor. (An older arena project gets them added when you open it.)
 
 - **Zombies only hit you at arm's length.** The arena used to give zombie N a reach of 1.4 + 0.55×N m (the eighth one clawed you from 7 m away). Every melee enemy now needs you within its reach (never more than 2 m, whatever `attack_range` says), in front of it, at about its height and not behind a wall, and the claw only lands if you're still there when it swings.
 - **Hit, then death, once.** A shot that doesn't kill plays the hit reaction and stuns the enemy for all of it (about half a second); the killing shot plays the death. The zombie set used a knock-*down* clip as its hit reaction, so a wounded zombie fell, sprang back up and fell again when it died. Hit reactions now always keep a character on its feet, for every moveset.

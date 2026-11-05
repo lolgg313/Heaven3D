@@ -24,13 +24,18 @@ CHARACTERS_PKG = "h3dpkg_mh_characters"
 class HQFPSArena(Blueprint):
     """Arms the player and fills the arena with zombies.
 
+    The guns and ammo boxes are scene objects (HQWeaponPickup /
+    HQAmmoPickup) you can see and move in the editor; with "weapons" set
+    to "none" the player starts empty-handed and picks them up.
+
     Attach to the Player Spawn.  The horde spawns in a ring around the
     arena centre, out of the player's lap, and is cleaned up on Stop so
     the scene you saved is the scene you get back.
     """
 
     DEFAULTS = {
-        "weapons": "",              # comma separated; empty = every weapon
+        "weapons": "none",          # "none" = start empty-handed and pick guns up off the floor;
+                                    # comma separated list, or "" for every weapon
         "start_weapon": 0,
         "zombies": 8,
         "zombie_health": 60.0,
@@ -38,7 +43,8 @@ class HQFPSArena(Blueprint):
         "spawn_radius": 13.0,
         "keep_clear": 7.0,          # no zombie closer than this to the player
         "seed": 4100,
-        "ammo_boxes": True,         # a box of each calibre + the universal can
+        "ammo_boxes": False,        # True = also drop a box of each calibre at play (the
+                                    # arena's boxes are ordinary scene objects now)
     }
 
     def __init__(self):

@@ -10,25 +10,33 @@ the bare-skin `Arm_Standard` arm rig (no gloves) plus its own weapon mesh.
 
 ## Playing it right now
 
-```
-python Play_HQFPS_Arena.py            # or double-click "Play HQFPS Arena.bat"
-python Play_HQFPS_Arena.py 1920 1080
-python Play_HQFPS_Arena.py --where    # print the project folder
-```
+In the Hub: **New project > HQ FPS Arena**, then **Open** to edit it or
+**Play** to play it. Nothing else to run.
 
-**HQ FPS Arena is its own template** (`templates/hqfps_arena`), listed in
-the Hub beside Tropical Island, Character Town and Race Track. It changes
-no existing scene and conflicts with no other kit. The first run makes a
-project from it in your Heaven3D Projects folder, with `hqfps_weapons` and
-`mh_characters` copied in the way the Hub does it, so it opens in the
-editor like any other project and exports like any other game.
+**HQ FPS Arena is its own template** (`templates/hqfps_arena`). It changes
+no existing scene and conflicts with no other kit. The Hub copies
+`hqfps_weapons` and `mh_characters` into the project, and keeps those copies
+up to date with the Heaven3D you run.
 
-The scene is the walled 40 x 40 arena with its crates and pickups, and one
-blueprint — `HQFPSArena`, in the template's own `scripts/` — hands the
-player the arsenal and sets eight MakeHuman zombies on them. Its count,
-speed, health, spawn radius and loadout are Inspector properties. Without
-either package it still plays: you get the arena, and a warning saying
-what is missing.
+The scene is the walled 40 x 40 arena with its crates. **The guns and the
+ammo boxes are ordinary scene objects**: twelve `HQWeaponPickup`s in a row in
+front of the player spawn and one `HQAmmoPickup` per calibre (plus the
+universal can) behind them. They show their HQ FPS models in the editor, so
+you can see them, move them, delete them or add more (*Packages > HQ FPS:
+weapon pickup* / *ammo box*), and the project saves them like any other
+object. In play you start empty-handed: walk over a gun to pick it up and
+draw it, walk over a box to fill that calibre.
+
+One blueprint, `HQFPSArena` on the Player Spawn (in the template's own
+`scripts/`), sets eight MakeHuman zombies on you; its count, speed, health,
+spawn radius and the starting loadout (`weapons`: `none`, a list, or empty
+for every gun) are Inspector properties. Without either package it still
+plays: you get the arena, and a warning saying what is missing.
+
+An arena project made before the pickups existed gets them added the first
+time you open it (save to keep them).
+
+`Play_HQFPS_Arena.py` still works as a shortcut, but you don't need it.
 
 ---
 
@@ -50,6 +58,20 @@ mod.give_weapons(engine)                                  # every weapon
 mod.give_weapons(engine, weapons="M1911,AKM,CombatKnife")  # or a loadout
 ```
 
+### Weapons and ammo in the world
+
+**HQWeaponPickup** (`weapon`, `magazines`, `respawn_time`, `spin`,
+`pickup_range`) and **HQAmmoPickup** (`ammo_type`, `amount`,
+`respawn_time`) show their models in the editor and in play. A weapon
+pickup gives the player that weapon (adding `HQWeapons` if the player has
+none yet) and draws it; one the player already carries tops up its
+ammunition instead.
+
+```python
+mod.place_weapon(engine, pos=glm.vec3(2, 0.35, 4), weapon="AKM")
+mod.place_ammo(engine, pos=glm.vec3(3, 0.15, 4), ammo_type="7.62x39mm")
+```
+
 ### Controls
 
 | | |
@@ -64,7 +86,7 @@ mod.give_weapons(engine, weapons="M1911,AKM,CombatKnife")  # or a loadout
 
 | property | default | |
 |---|---|---|
-| `weapons` | *(empty)* | comma-separated loadout; empty means all of them |
+| `weapons` | *(empty)* | comma-separated loadout; empty means all of them; `none` = empty-handed |
 | `start_index` | `0` | which one is drawn first |
 | `reserve_magazines` | `4` | spare magazines per weapon |
 | `infinite_reserve` | `False` | never run down the reserve |

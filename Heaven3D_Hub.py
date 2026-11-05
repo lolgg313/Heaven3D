@@ -298,6 +298,10 @@ def create_project(cfg, name, template_id, location):
             fh.write("Put your models (.glb .gltf .blend .obj), textures and sounds here.\n"
                      "Files inside the project folder are saved with RELATIVE paths, so\n"
                      "the project keeps working when you move or share the folder.\n")
+    try:                                                     # never start a project on an old copy
+        update_library_from_bundled()
+    except Exception:
+        pass
     for pid in list(tpl.get("packages", []) or []):          # packages the template needs
         if os.path.isdir(os.path.join(dest, "packages", pid)):
             continue

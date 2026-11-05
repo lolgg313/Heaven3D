@@ -237,7 +237,7 @@ def _mesh_classes():
 class _Geo:
     """GPU buffers of one primitive, shared by every viewmodel using it."""
     __slots__ = ("vbo", "ibo", "skin_vbo", "nv", "ni", "bbox", "bsphere",
-                 "cpu_pos", "cpu_idx", "material", "name")
+                 "cpu_pos", "cpu_idx", "material", "name", "shadow_ni")
 
 
 _GEO = {}
@@ -399,6 +399,37 @@ def _thrown_mesh(engine, weapon):
                                   base_color_tex=b, normal_tex=n)
             out = (mesh, material)
     _THROWN[weapon] = out
+    return out
+
+
+_PICKUP_GEO = {}
+
+
+def _weapon_prop(engine, weapon):
+    """[(mesh, material)] of a weapon lying in the world: its own model in
+    the bind pose, one part per material so wood stays wood and steel steel,
+    centred on itself.  Built once per weapon and shared."""
+    hit = _PICKUP_GEO.get(weapon)
+    if hit is not None:
+        return hit
+    m = _m()
+    model, path = _model("models_gun", weapon)
+    out = []
+    if model is not None:
+        skip = _NOT_THROWN.get(weapon, ())
+        prims = [pr for pr in model.primitives() if pr["material"] not in skip]
+        if prims:
+            allp = np.concatenate([pr["positions"] for pr in prims])
+            centre = (allp.min(0) + allp.max(0)) * 0.5
+            for pr in prims:
+                mesh = m.Mesh.from_arrays(engine.ctx, pr["positions"] - centre, pr["normals"], pr["uvs"],
+                                          pr["indices"], name="hq_pickup_%s" % weapon,
+                                          tangents=pr["tangents"])
+                b, n = _textures_for(weapon, pr["material"])
+                out.append((mesh, m.Material(name="HQ %s" % weapon, base_color=(1.0, 1.0, 1.0, 1.0),
+                                             metallic=0.15, roughness=0.55,
+                                             base_color_tex=b, normal_tex=n)))
+    _PICKUP_GEO[weapon] = out
     return out
 
 
@@ -1050,7 +1081,7 @@ def _blueprints():
         FPSController).  LMB fire, RMB aim, R reload, 1-0 / wheel to switch."""
 
         DEFAULTS = {
-            "weapons": "",              # comma separated; empty = the default order
+            "weapons": "",              # comma separated; empty = the default order; "none" = empty-handed
             "start_index": 0,
             "infinite_reserve": False,
             "reserve_magazines": 4,
@@ -1144,12 +1175,16 @@ def _blueprints():
         def on_begin_play(self):
             self._retire_builtin_weapon()
             cat = catalogue()
-            want = [w.strip() for w in str(self.p("weapons") or "").split(",") if w.strip()]
-            self.names = [w for w in want if w in cat] or [w for w in DEFAULT_ORDER if w in cat]
-            if not self.names:
-                H3D.warn("no HQ FPS weapons found on disk - nothing to equip")
-                return
             self.cat = cat
+            spec = str(self.p("weapons") or "").strip()
+            if spec.lower() == "none":
+                # empty-handed: weapons come from HQWeaponPickup items in the world
+                self.names = []
+            else:
+                want = [w.strip() for w in spec.split(",") if w.strip()]
+                self.names = [w for w in want if w in cat] or [w for w in DEFAULT_ORDER if w in cat]
+                if not self.names:
+                    H3D.warn("no HQ FPS weapons found on disk - nothing to equip")
             # Reserves are held per CALIBRE, the way HQFPS's inventory does
             # it: the MP5 and the M1911 both eat 45ACP out of one pouch, the
             # R870 and the double barrel share 12 gauge, and no round goes
@@ -1169,13 +1204,41 @@ def _blueprints():
             while root.parent is not None and root.parent.parent is not None:
                 root = root.parent
             self._ignore = {id(n) for n in root.traverse()}
-            self.index = max(0, min(int(self.p("start_index")), len(self.names) - 1))
+            self.index = max(0, min(int(self.p("start_index")), max(0, len(self.names) - 1)))
             cam = self.engine.camera
             self._near_was = getattr(cam, "near", None)
             if self._near_was is not None and self._near_was > VIEWMODEL_NEAR:
                 cam.near = VIEWMODEL_NEAR
             self._rmb_was = False
-            self._equip(self.index)
+            if self.names:
+                self._equip(self.index)
+
+        def add_weapon(self, name, magazines=None):
+            """Give the player a weapon (a pickup calls this) and draw it.
+            Picking up one you already carry adds its ammunition instead.
+            Returns True if anything was taken."""
+            st = self.cat.get(name) or catalogue().get(name)
+            if st is None:
+                return False
+            self.cat.setdefault(name, st)
+            mag = int(st.get("magazine", 0) or 0)
+            a = self.ammo_type(name)
+            if name in self.names:
+                if not (a and mag):
+                    return False
+                return self.add_reserve(mag * int(magazines or 1), name) > 0
+            self.names.append(name)
+            self.ammo[name] = mag
+            if a and mag:
+                cap = int(st.get("ammo_capacity", 0) or 0) or mag * 4
+                want = mag * int(magazines if magazines is not None else self.p("reserve_magazines"))
+                self.reserve[a] = min(max(self.reserve.get(a, 0), want), cap)
+            i = len(self.names) - 1
+            if self.vm is None:
+                self._equip(i)
+            else:
+                self._begin_switch(i)
+            return True
 
         def on_end_play(self):
             if self.vm is not None:
@@ -1280,6 +1343,7 @@ def _blueprints():
         # ---- the tick ----
         def on_tick(self, dt):
             if self.vm is None or not self.names:
+                self._keep_pointer(self.engine.input)
                 return
             e = self.engine
             inp = e.input
@@ -1674,7 +1738,7 @@ def _blueprints():
             "amount": 0,                # 0 = a full carry limit of the round
             "respawn_time": 25.0,
             "spin": True,
-            "pickup_range": 1.6,
+            "pickup_range": 1.0,
             "sound": "pickup",
         }
 
@@ -1699,9 +1763,13 @@ def _blueprints():
                     n.remove()
             self.parts = []
 
+        def _built_for(self):
+            return str(self.p("ammo_type") or "")
+
         def _build(self):
             m = _m()
             self.on_end_play()
+            self._built = self._built_for()
             for mesh, material in _ammo_prop(self.engine, str(self.p("ammo_type") or "")):
                 ch = m.SceneNode("ammo part", parent=self.node)
                 ch.mesh, ch.material = mesh, material
@@ -1765,6 +1833,105 @@ def _blueprints():
 
     CLS["HQAmmoPickup"] = HQAmmoPickup
 
+    @blueprint
+    class HQWeaponPickup(Blueprint):
+        """A weapon lying in the world, in its own HQFPS model.  Walk into it
+        to pick it up: it's added to the player's arsenal and drawn.  Walking
+        into one you already carry takes its magazines instead.
+
+        It shows in the editor too, so you can see and place it."""
+
+        DEFAULTS = {
+            "weapon": "M1911",
+            "magazines": 3,             # spare magazines that come with it
+            "respawn_time": 0.0,        # 0 = gone for good once taken
+            "spin": True,
+            "pickup_range": 1.0,         # walk over it (pickups sit 1.5 m apart)
+            "sound": "pickup",
+        }
+
+        def __init__(self):
+            super().__init__()
+            for k, v in self.DEFAULTS.items():
+                self.properties.setdefault(k, v)
+            self.parts = []
+            self._gone = 0.0
+            self._spin = 0.0
+            self._t = 0.0
+
+        def p(self, k):
+            return self.properties.get(k, self.DEFAULTS.get(k))
+
+        def _built_for(self):
+            return str(self.p("weapon") or "")
+
+        def _build(self):
+            m = _m()
+            self.on_end_play()
+            self._built = self._built_for()
+            for mesh, material in _weapon_prop(self.engine, self._built):
+                ch = m.SceneNode("weapon part", parent=self.node)
+                ch.mesh, ch.material = mesh, material
+                ch.rotation_euler = glm.vec3(0.0, 0.0, 90.0)     # lying on its side
+                ch._heaven3d_imported_part = "hqfps"
+                self.parts.append(ch)
+            if not self.parts:
+                _warn_once("wpick_%s" % self._built, "no model for the weapon '%s'" % self._built)
+
+        def on_begin_play(self):
+            self._build()
+            self._gone = 0.0
+            self._base_y = float(self.node.position.y)
+
+        def on_end_play(self):
+            for n in self.parts:
+                if n.parent is not None:
+                    n.remove()
+            self.parts = []
+            if hasattr(self, "_base_y"):
+                self.node.position.y = self._base_y
+                del self._base_y
+
+        def on_tick(self, dt):
+            if self._gone > 0.0:
+                self._gone -= dt
+                if self._gone <= 0.0:
+                    for n in self.parts:
+                        n.visible = True
+                return
+            self._t += dt
+            if self.p("spin"):
+                self._spin = (self._spin + dt * 55.0) % 360.0
+                self.node.rotation_euler.y = self._spin
+                self.node.position.y = self._base_y + 0.06 * math.sin(self._t * 2.2)
+            pc = self.engine.first_blueprint("FPSController")
+            if pc is None:
+                return
+            to = glm.vec3(pc.node.world_position()) - glm.vec3(self.node.world_position())
+            if math.hypot(to.x, to.z) <= float(self.p("pickup_range")) and abs(to.y) < 2.2:
+                self._take(pc)
+
+        def _take(self, pc):
+            holder = next((b for b in pc.node.blueprints if b.__class__.__name__ == "HQWeapons"), None)
+            if holder is None:
+                holder = give_weapons(self.engine, pc.node, weapons="none")
+                if holder is None:
+                    return
+                holder.on_begin_play()
+            if not holder.add_weapon(self._built_for(), int(self.p("magazines"))):
+                return
+            try:
+                self.engine.audio.play_at(str(self.p("sound")), self.node.world_position(), 0.7)
+            except Exception:
+                pass
+            H3D.log("picked up the %s" % self._built_for())
+            for n in self.parts:
+                n.visible = False
+            rt = float(self.p("respawn_time"))
+            self._gone = rt if rt > 0.0 else 1e9
+
+    CLS["HQWeaponPickup"] = HQWeaponPickup
+
 
 # =========================================================================== tools
 def give_weapons(engine, node=None, weapons="", start=0):
@@ -1825,6 +1992,114 @@ def _holders(engine):
     return out
 
 
+def _editor_props(engine, dt=0.0):
+    """Give every ammo box and weapon pickup its 3D model while EDITING, so
+    you see what you place.  The parts are never saved (imported-part flag),
+    and are rebuilt when you change the box's calibre or the weapon."""
+    if getattr(engine, "_playing", False) or getattr(engine, "_fp2_paused", False):
+        return
+    STATE["ed_t"] = STATE.get("ed_t", 1.0) + float(dt or 0.0)
+    if dt and STATE["ed_t"] < 0.25:          # a few times a second is plenty
+        return
+    STATE["ed_t"] = 0.0
+    for n in list(engine.scene.root.traverse()):
+        for bp in getattr(n, "blueprints", ()):
+            if bp.__class__.__name__ not in ("HQAmmoPickup", "HQWeaponPickup"):
+                continue
+            alive = bp.parts and all(c.parent is n for c in bp.parts)
+            if not alive or getattr(bp, "_built", None) != bp._built_for():
+                try:
+                    bp._build()
+                except Exception as ex:
+                    _warn_once("edprop_%s" % n.name, "could not show %s (%s)" % (n.name, ex))
+
+
+def place_weapon(engine, pos=None, weapon="M1911", name=None):
+    m = _m()
+    glm = m.glm
+    if pos is None:
+        cam = engine.camera
+        pos = glm.vec3(cam.position) + cam.forward() * 3.0
+        pos.y = max(0.6, pos.y - 1.0)
+    node = m.SceneNode(name or ("%s Pickup" % weapon), parent=engine.scene.root)
+    node.position = glm.vec3(pos)
+    engine.attach_blueprint(node, CLS["HQWeaponPickup"], {"weapon": weapon})
+    _editor_props(engine)
+    return node
+
+
+# What the HQ FPS Arena lays out in front of the player spawn: you start
+# empty-handed and pick your guns up off the floor, as in the HQFPS demo.
+ARENA_WEAPONS = ["M1911", "Revolver", "MP5", "AKM", "M1A", "R870", "DoubleBarrelShotgun",
+                 "HuntingRifle", "Crossbow", "CombatKnife", "FireAxe", "FragGrenade"]
+
+
+def furnish_arena(engine, spawn):
+    """Put the weapons and the ammo boxes into the scene, as real objects
+    you can see, move and delete in the editor (and that are saved with the
+    project).  Used by the HQ FPS Arena template, and run once on an arena
+    made before the pickups existed.  Returns the nodes added."""
+    m = _m()
+    glm = m.glm
+    cat = catalogue()
+    here = glm.vec3(spawn.position)
+    a = math.radians(spawn.rotation_euler.y)
+    fwd = glm.vec3(-math.sin(a), 0.0, -math.cos(a))
+    right = glm.vec3(-fwd.z, 0.0, fwd.x)
+    out = []
+    guns = [w for w in ARENA_WEAPONS if w in cat]
+    for i, w in enumerate(guns):
+        x = (i - (len(guns) - 1) * 0.5) * 1.5
+        pos = here + fwd * 3.2 + right * x
+        pos.y = 0.35
+        out.append(place_weapon(engine, pos=pos, weapon=w, name=engine._unique_node_name("%s Pickup" % w)))
+    types = sorted(t for t in AMMO_MODELS if t) + [""]
+    for i, t in enumerate(types):
+        x = (i - (len(types) - 1) * 0.5) * 1.5
+        pos = here + fwd * 5.0 + right * x
+        pos.y = 0.15
+        out.append(place_ammo(engine, pos=pos, ammo_type=t))
+    _editor_props(engine)
+    return out
+
+
+def _arena_spawn(engine):
+    for n in engine.scene.root.traverse():
+        for b in n.blueprints:
+            if b.__class__.__name__ == "HQFPSArena":
+                return n, b
+    return None, None
+
+
+def _upgrade_old_arena(engine, path=None):
+    """An HQ FPS Arena made before the pickups existed armed the player from
+    code and spawned ammo only during play, so the editor showed neither.
+    Give such a scene its pickups once (save to keep them)."""
+    spawn, arena = _arena_spawn(engine)
+    if spawn is None:
+        return
+    has = any(b.__class__.__name__ in ("HQWeaponPickup", "HQAmmoPickup")
+              for n in engine.scene.root.traverse() for b in n.blueprints)
+    if has:
+        return
+    arena.properties["weapons"] = "none"
+    arena.properties["ammo_boxes"] = False
+    nodes = furnish_arena(engine, spawn)
+    if getattr(engine, "_playing", False):
+        for n in nodes:
+            for b in n.blueprints:
+                try:
+                    b.on_begin_play()
+                except Exception:
+                    pass
+    H3D.log("HQ FPS Arena: put the weapons and ammo boxes into the scene "
+            "(pick them up in play; save the project to keep them)")
+
+
+def tool_weapon_pickup(engine):
+    place_weapon(engine, weapon="M1911")
+
+
 def _on_play_stop(engine):
     for bp in _holders(engine):
         if getattr(bp, "vm", None) is not None:
@@ -1846,10 +2121,13 @@ def register(h3d):
     _mesh_classes()
     _blueprints()
     h3d.on("play_stop", _on_play_stop)
+    h3d.on("update", _editor_props)
+    h3d.on("project_loaded", lambda e, p=None: (_upgrade_old_arena(e, p), _editor_props(e)))
     h3d.add_tool("HQ FPS: give the player every weapon", tool_give, "#B5473A")
+    h3d.add_tool("HQ FPS: weapon pickup (M1911)", tool_weapon_pickup)
     h3d.add_tool("HQ FPS: universal ammo box", tool_ammo_box)
     h3d.add_tool("HQ FPS: one ammo box per calibre", tool_ammo_each)
 
 
-__all__ = ["register", "give_weapons", "place_ammo", "catalogue", "Viewmodel",
+__all__ = ["register", "give_weapons", "place_ammo", "place_weapon", "catalogue", "Viewmodel",
            "DEFAULT_ORDER", "AMMO_MODELS"]

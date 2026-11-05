@@ -2,6 +2,14 @@
 
     python tests/test_hqfps_arena_fixes.py
 
+The project is made the way a player makes it: the Hub's create_project
+from the HQ FPS Arena template, in a fresh home folder.
+
+  * the template has a Hub preview image
+  * the guns and the ammo boxes are scene objects with their 3D models in
+    the EDITOR, saved with the project (their models are not)
+  * in play you start empty-handed and pick the guns up off the floor
+
   * zombies only hurt you at arm's length, never from across the arena
   * a shot that doesn't kill plays the hit reaction and stuns; the killing
     shot plays the death, once, and the zombie stays on its feet until then
@@ -38,7 +46,18 @@ def main():
     hub = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(hub)
     cfg = hub.Config()
+    tpl = next(t for t in hub.list_templates() if t["id"] == "hqfps_arena")
+    check("the HQ FPS Arena template has a Hub preview image", os.path.isfile(tpl["thumb"]), tpl["thumb"])
     proj = hub.create_project(cfg, "HQ FPS Arena", "hqfps_arena", os.path.join(HOME, "Projects"))
+    import subprocess
+    r = subprocess.run([sys.executable, os.path.abspath(__file__), "editor", proj["path"], OUT],
+                       env=dict(os.environ), capture_output=True, text=True)
+    for line in r.stdout.splitlines():
+        if line.startswith(("PASS ", "FAIL ")):
+            res.append(line.startswith("PASS "))
+            print(line, flush=True)
+    if r.returncode != 0 and not any(l.startswith(("PASS", "FAIL")) for l in r.stdout.splitlines()):
+        check("editor phase ran", False, r.stderr[-800:])
     spec = importlib.util.spec_from_file_location("Heaven3D", os.path.join(ROOT, "Heaven3D.py"))
     H = importlib.util.module_from_spec(spec)
     sys.modules["Heaven3D"] = H
@@ -91,7 +110,7 @@ def main():
 
     def script():
         bp = None
-        while bp is None or bp.vm is None:
+        while bp is None:
             found = bps("HQWeapons")
             bp = found[0] if found else None
             yield
@@ -99,6 +118,37 @@ def main():
         zs = bps("MHEnemy")
         pc = eng.first_blueprint("FPSController")
         player = pc.node
+        picks = bps("HQWeaponPickup")
+        boxes = bps("HQAmmoPickup")
+        check("play starts empty-handed, with guns and ammo lying in the arena",
+              bp.names == [] and bp.vm is None and len(picks) >= 10 and len(boxes) >= 10,
+              "%d weapons on the floor, %d ammo boxes, carrying %s" % (len(picks), len(boxes), bp.names))
+        check("every pickup shows its HQ FPS model",
+              all(p.parts and all(c.mesh is not None and c.visible for c in p.parts) for p in picks + boxes))
+        for z in zs:                          # keep the horde away while shopping
+            z.properties["detect_range"] = 0.0
+        # walk onto the M1911 on the floor
+        m1911 = next(p for p in picks if p.p("weapon") == "M1911")
+        player.position = glm.vec3(m1911.node.world_position().x, 1.0, m1911.node.world_position().z)
+        for _ in range(60):
+            yield
+            if bp.vm is not None and bp.name == "M1911":
+                break
+        check("walking onto the M1911 picks it up and draws it",
+              bp.names == ["M1911"] and bp.vm is not None and not any(c.visible for c in m1911.parts),
+              "carrying %s, ammo %s / %s" % (bp.names, bp.ammo.get("M1911"), bp.reserve.get(bp.ammo_type("M1911"))))
+        shot("hq_01_m1911_picked_up")
+        for p in picks:                       # and the rest of the arsenal
+            if p is m1911:
+                continue
+            player.position = glm.vec3(p.node.world_position().x, 1.0, p.node.world_position().z)
+            yield from frames(8)
+        check("every weapon on the floor can be picked up",
+              sorted(bp.names) == sorted(p.p("weapon") for p in picks), "%d carried" % len(bp.names))
+        for _ in range(200):
+            yield
+            if bp.vm is not None and bp.vm.clip in ("Idle", "Hold") and bp._busy <= 0.0:
+                break
         check("near plane is %.2f m while the viewmodel is out" % wep.VIEWMODEL_NEAR,
               abs(eng.camera.near - wep.VIEWMODEL_NEAR) < 1e-6, "near %.3f" % eng.camera.near)
         arms = bp.vm.arms
@@ -282,5 +332,51 @@ def main():
     eng.run()
 
 
+def editor_phase(project, out):
+    """Open the project in the EDITOR, as the Hub's Open button does."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("Heaven3D", os.path.join(ROOT, "Heaven3D.py"))
+    H = importlib.util.module_from_spec(spec)
+    sys.modules["Heaven3D"] = H
+    spec.loader.exec_module(H)
+    H._h3d_set_splash_mode("off")
+    import glm
+    import moderngl
+    import pygame
+    import json
+    eng = H.HeavenEngine(mode="editor", width=W, height=HH, project_path=os.path.join(project, "main.heaven3d"))
+
+    def bps(cls):
+        return [b for n in eng.scene.root.traverse() for b in n.blueprints if b.__class__.__name__ == cls]
+    st = {"f": 0}
+    flip = pygame.display.flip
+
+    def driver():
+        st["f"] += 1
+        if st["f"] == 3:
+            eng.camera.position = glm.vec3(3.5, 2.2, -18.8)
+            eng.camera.yaw, eng.camera.pitch = 155.0, -18.0
+        if st["f"] == 30:
+            picks, boxes = bps("HQWeaponPickup"), bps("HQAmmoPickup")
+            shown = [p for p in picks + boxes if p.parts and all(c.mesh is not None for c in p.parts)]
+            check("EDITOR: the guns and ammo boxes show their 3D models",
+                  len(picks) >= 10 and len(boxes) >= 10 and len(shown) == len(picks) + len(boxes),
+                  "%d guns, %d boxes, %d with models" % (len(picks), len(boxes), len(shown)))
+            data = moderngl.get_context().screen.read(components=3)
+            pygame.image.save(pygame.transform.flip(pygame.image.frombuffer(data, (W, HH), "RGB"), False, True),
+                              os.path.join(out, "hq_00_editor.png"))
+            eng.save_project()
+            raw = open(os.path.join(project, "main.heaven3d"), encoding="utf-8").read()
+            check("EDITOR: saving keeps the pickups and not their generated models",
+                  raw.count('"HQWeaponPickup"') >= len(picks) and "weapon part" not in raw and "ammo part" not in raw)
+            os._exit(0)
+        flip()
+    pygame.display.flip = driver
+    eng.run()
+
+
 if __name__ == "__main__":
-    main()
+    if len(sys.argv) > 1 and sys.argv[1] == "editor":
+        editor_phase(sys.argv[2], sys.argv[3])
+    else:
+        main()
