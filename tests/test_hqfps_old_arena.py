@@ -68,8 +68,11 @@ def main():
         r = subprocess.run([sys.executable, __file__, "--phase", proj, label], capture_output=True, text=True)
         print("\n".join(l for l in r.stdout.splitlines() if l.startswith(("PASS", "FAIL"))), flush=True)
         ok = ok and r.returncode == 0
-    raw = open(os.path.join(proj, "main.heaven3d"), encoding="utf-8").read()
-    n = raw.count('"class": "HQWeaponPickup"')
+    import json
+    with open(os.path.join(proj, "main.heaven3d"), encoding="utf-8") as fh:
+        scene = json.load(fh)["scene"]
+    n = sum(1 for c in scene.get("children", [])
+            if any(b.get("class") == "HQWeaponPickup" for b in c.get("blueprints", [])))
     check("the saved project keeps exactly one set of pickups", n == 12, "%d weapon pickups saved" % n)
     shutil.rmtree(proj, ignore_errors=True)
     print("\nRESULT", "PASS" if ok and all(res) else "FAIL", flush=True)

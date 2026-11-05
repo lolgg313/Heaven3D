@@ -1467,7 +1467,7 @@
             "magazines": 3,
             "respawn_time": 0.0,
             "spin": true,
-            "pickup_range": 1.5,
+            "pickup_range": 1.0,
             "sound": "pickup"
           }
         },
@@ -1532,7 +1532,7 @@
             "magazines": 3,
             "respawn_time": 0.0,
             "spin": true,
-            "pickup_range": 1.5,
+            "pickup_range": 1.0,
             "sound": "pickup"
           }
         },
@@ -1597,7 +1597,7 @@
             "magazines": 3,
             "respawn_time": 0.0,
             "spin": true,
-            "pickup_range": 1.5,
+            "pickup_range": 1.0,
             "sound": "pickup"
           }
         },
@@ -1662,7 +1662,7 @@
             "magazines": 3,
             "respawn_time": 0.0,
             "spin": true,
-            "pickup_range": 1.5,
+            "pickup_range": 1.0,
             "sound": "pickup"
           }
         },
@@ -1727,7 +1727,7 @@
             "magazines": 3,
             "respawn_time": 0.0,
             "spin": true,
-            "pickup_range": 1.5,
+            "pickup_range": 1.0,
             "sound": "pickup"
           }
         },
@@ -1792,7 +1792,7 @@
             "magazines": 3,
             "respawn_time": 0.0,
             "spin": true,
-            "pickup_range": 1.5,
+            "pickup_range": 1.0,
             "sound": "pickup"
           }
         },
@@ -1857,7 +1857,7 @@
             "magazines": 3,
             "respawn_time": 0.0,
             "spin": true,
-            "pickup_range": 1.5,
+            "pickup_range": 1.0,
             "sound": "pickup"
           }
         },
@@ -1922,7 +1922,7 @@
             "magazines": 3,
             "respawn_time": 0.0,
             "spin": true,
-            "pickup_range": 1.5,
+            "pickup_range": 1.0,
             "sound": "pickup"
           }
         },
@@ -1987,7 +1987,7 @@
             "magazines": 3,
             "respawn_time": 0.0,
             "spin": true,
-            "pickup_range": 1.5,
+            "pickup_range": 1.0,
             "sound": "pickup"
           }
         },
@@ -2052,7 +2052,7 @@
             "magazines": 3,
             "respawn_time": 0.0,
             "spin": true,
-            "pickup_range": 1.5,
+            "pickup_range": 1.0,
             "sound": "pickup"
           }
         },
@@ -2117,7 +2117,7 @@
             "magazines": 3,
             "respawn_time": 0.0,
             "spin": true,
-            "pickup_range": 1.5,
+            "pickup_range": 1.0,
             "sound": "pickup"
           }
         },
@@ -2182,7 +2182,7 @@
             "magazines": 3,
             "respawn_time": 0.0,
             "spin": true,
-            "pickup_range": 1.5,
+            "pickup_range": 1.0,
             "sound": "pickup"
           }
         },
@@ -2247,7 +2247,7 @@
             "amount": 0,
             "respawn_time": 25.0,
             "spin": true,
-            "pickup_range": 1.6,
+            "pickup_range": 1.0,
             "sound": "pickup"
           }
         },
@@ -2312,7 +2312,7 @@
             "amount": 0,
             "respawn_time": 25.0,
             "spin": true,
-            "pickup_range": 1.6,
+            "pickup_range": 1.0,
             "sound": "pickup"
           }
         },
@@ -2377,7 +2377,7 @@
             "amount": 0,
             "respawn_time": 25.0,
             "spin": true,
-            "pickup_range": 1.6,
+            "pickup_range": 1.0,
             "sound": "pickup"
           }
         },
@@ -2442,7 +2442,7 @@
             "amount": 0,
             "respawn_time": 25.0,
             "spin": true,
-            "pickup_range": 1.6,
+            "pickup_range": 1.0,
             "sound": "pickup"
           }
         },
@@ -2507,7 +2507,7 @@
             "amount": 0,
             "respawn_time": 25.0,
             "spin": true,
-            "pickup_range": 1.6,
+            "pickup_range": 1.0,
             "sound": "pickup"
           }
         },
@@ -2572,7 +2572,7 @@
             "amount": 0,
             "respawn_time": 25.0,
             "spin": true,
-            "pickup_range": 1.6,
+            "pickup_range": 1.0,
             "sound": "pickup"
           }
         },
@@ -2637,7 +2637,7 @@
             "amount": 0,
             "respawn_time": 25.0,
             "spin": true,
-            "pickup_range": 1.6,
+            "pickup_range": 1.0,
             "sound": "pickup"
           }
         },
@@ -2702,7 +2702,7 @@
             "amount": 0,
             "respawn_time": 25.0,
             "spin": true,
-            "pickup_range": 1.6,
+            "pickup_range": 1.0,
             "sound": "pickup"
           }
         },
@@ -2767,7 +2767,7 @@
             "amount": 0,
             "respawn_time": 25.0,
             "spin": true,
-            "pickup_range": 1.6,
+            "pickup_range": 1.0,
             "sound": "pickup"
           }
         },
@@ -2832,7 +2832,7 @@
             "amount": 0,
             "respawn_time": 25.0,
             "spin": true,
-            "pickup_range": 1.6,
+            "pickup_range": 1.0,
             "sound": "pickup"
           }
         },

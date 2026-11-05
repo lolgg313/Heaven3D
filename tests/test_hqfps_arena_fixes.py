@@ -368,7 +368,7 @@ def editor_phase(project, out):
             eng.save_project()
             raw = open(os.path.join(project, "main.heaven3d"), encoding="utf-8").read()
             check("EDITOR: saving keeps the pickups and not their generated models",
-                  raw.count('"HQWeaponPickup"') >= len(picks) and "weapon part" not in raw and "ammo part" not in raw)
+                  sum(1 for c in json.loads(raw)["scene"]["children"] if any(b.get("class") == "HQWeaponPickup" for b in c.get("blueprints", []))) == len(picks) and "weapon part" not in raw and "ammo part" not in raw)
             os._exit(0)
         flip()
     pygame.display.flip = driver
