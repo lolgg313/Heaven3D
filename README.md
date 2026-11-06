@@ -407,6 +407,14 @@ When reporting a bug, please include your OS, Python version, GPU and driver ver
 
 Heaven3D is licensed under the **Apache License, Version 2.0**. See the [LICENSE](LICENSE) file for the full text.
 
+**Package assets have their own licences:**
+
+| Package | Assets licence |
+| --- | --- |
+| MakeHuman Characters | CC0 ([ASSETS_LICENSE.md](packages/mh_characters/ASSETS_LICENSE.md)) |
+| Tropical Islands | CC0 ([ASSETS_LICENSE.md](packages/tropical_islands/ASSETS_LICENSE.md)) |
+| HQ FPS Weapons | made by lolgg313 · free in Heaven3D games only, no redistribution of the raw files ([ASSETS_LICENSE.md](packages/hqfps_weapons/ASSETS_LICENSE.md)) |
+
 ```
 Copyright 2026 Heaven3D Contributors
 

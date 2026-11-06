@@ -1,4 +1,8 @@
-"""HQ FPS Weapons - the HQ FPS Template weapon system inside Heaven3D.
+"""HQ FPS Weapons - lolgg313's first-person weapon system inside Heaven3D.
+
+The models, animations, textures and sounds were made by lolgg313 (originally
+for Unity).  Assets: free in Heaven3D games only, no redistribution of the raw
+files -- see ASSETS_LICENSE.md.  Code: Apache 2.0, like the rest of Heaven3D.
 
 Twenty GPU-skinned first-person viewmodels sharing one 44-bone bare-skin
 arm rig (Arm_Standard, no gloves), each paired with its own weapon mesh and

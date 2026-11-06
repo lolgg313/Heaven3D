@@ -1,7 +1,11 @@
 # HQ FPS Weapons
 
-The HQ FPS Template weapon system, ported into Heaven3D: twenty GPU-skinned
-first-person viewmodels with their original animations, sounds and stats.
+lolgg313's first-person weapon system, brought into Heaven3D from the author's
+own Unity project: twenty GPU-skinned first-person viewmodels with their
+original animations, sounds and stats.
+
+> **Assets licence:** free in Heaven3D games only, no redistribution of the raw
+> files. See [`packages/hqfps_weapons/ASSETS_LICENSE.md`](../packages/hqfps_weapons/ASSETS_LICENSE.md).
 
 Eleven firearms, four melee weapons, two throwables and three tools, each one
 the bare-skin `Arm_Standard` arm rig (no gloves) plus its own weapon mesh.
@@ -236,7 +240,12 @@ frame.
 
 ## Assets
 
-Converted from the HQ FPS Template with Blender 4.3 (`FBX → glTF`), textures
-recompressed from 1.83 GB to 121 MB. 183 original sound effects. The assets
-are the HQ FPS Template's and stay under its licence; this package is the
-code that runs them.
+All models, rigs, animations, textures and the 183 sound effects were made by
+lolgg313, originally for Unity, and converted for Heaven3D with Blender 4.3
+(`FBX → glTF`); textures were recompressed from 1.83 GB to 121 MB.
+
+**Licence.** The assets are free to use in games made with Heaven3D, personal
+or commercial, and may ship inside exported Heaven3D games. Redistributing the
+raw files, or using them in another engine or a non-Heaven3D project, is not
+allowed. Full terms: [`packages/hqfps_weapons/ASSETS_LICENSE.md`](../packages/hqfps_weapons/ASSETS_LICENSE.md).
+The package's code is Apache 2.0, like the rest of Heaven3D.

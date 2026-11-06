@@ -1,6 +1,6 @@
 {
  "title": "HQ FPS Arena",
- "desc": "The HQ FPS Template arsenal on foot: pick twenty first-person weapons (with their own animations and sounds) and their ammo up off the floor, then fight a horde of MakeHuman zombies in a walled arena.",
+ "desc": "The HQ FPS Weapons arsenal on foot: pick twenty first-person weapons (with their own animations and sounds) and their ammo up off the floor, then fight a horde of MakeHuman zombies in a walled arena.",
  "order": 5,
  "packages": [
   "hqfps_weapons",
