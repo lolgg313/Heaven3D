@@ -430,7 +430,7 @@ Heaven3D is free and open source, built with a lot of late nights and passion. I
 **Bitcoin (BTC):**
 
 ```
-bitcoin:bc1q83ks2w5t8uy9r5gg47dhdx4ugeswdlmjlp9a0m?message=GOD%21
+bc1q8tsn0kjgdjd22ulrk4m66h9w7wz89gt0eh53l7
 ```
 
 Thank you for your support! 🙏
