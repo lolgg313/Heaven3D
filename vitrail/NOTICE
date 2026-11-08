@@ -1,0 +1,15 @@
+Vitrail
+Created by S.U.P.E (Hamid Reza Jahanshahi)
+Copyright 2026 Hamid Reza Jahanshahi (S.U.P.E)
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+Vitrail is an independent, from-scratch implementation. It contains no code
+from Blender, BUI, Dear ImGui or any other UI toolkit. The icon set and the
+logo are original artwork released under the same license. Its interaction style
+(drag-to-scrub number fields, press-drag-release menus, pie menus, etc.) is
+inspired by common desktop-application conventions.
+
+Runtime dependencies (not bundled):
+  pygame or pygame-ce  - LGPL-2.1
+  moderngl             - MIT

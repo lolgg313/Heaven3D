@@ -176,7 +176,7 @@ void main() { frag = texture(u_tex, v_uv); }
     def _h3d27_build_ui2(self):
         _H3D27_PREV_BUILD_UI2(self)
         try:
-            if self.ui is None or self.mode != "editor":
+            if self.ui is None or self.mode != "editor" or getattr(self, "_vt", None) is not None:
                 return
             st = _h3d27_view(self)
             T = THEME

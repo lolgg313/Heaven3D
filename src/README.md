@@ -30,9 +30,9 @@ earlier parts.
 | `rendering/` | meshes, materials, lights, every GLSL shader, the deferred renderer, instancing, water and reflections |
 | `physics/` | the CPU physics engine, its later overhaul (islands, sweep-and-prune), the Numba kernels |
 | `audio/` | the audio system and the sound points |
-| `gameplay/` | blueprints, the HUD, the FPS kit, weapon FX, particles and flying AI, the pause menu |
+| `gameplay/` | blueprints, the HUD, the FPS kit, weapon FX, particles and flying AI, the pause menu, visual scripts (the graph runner), the Animator |
 | `world/` | terrain, the terrain editor, the procedural building system |
-| `editor/` | gizmos, the editor grid, the collider editor, the view gizmo, the classic UI renderer, selection outlines |
+| `editor/` | gizmos, the editor grid, the collider editor, the view gizmo, the classic UI renderer, selection outlines, the hook that loads the Vitrail editor (`../h3d_editor/`) |
 | `engine/` | `HeavenEngine` (window, main loop, editor and runtime modes), `main()`, the `__main__` guard |
 | `branding/` | the embedded logo and the boot splash |
 | `patches/` | quality fixes and optimisations that touch several areas |
@@ -53,3 +53,11 @@ back by N spaces when building.
 
 `python tests/test_build.py` checks that the built files are up to date,
 that the build is lossless, and that both files compile.
+
+## The editor interface
+
+The editor's windows are not part of `Heaven3D.py`: they are the
+`h3d_editor/` package at the repository root, drawn with the bundled
+`vitrail/` toolkit. `editor/vitrail_hook.py` loads them in editor mode only.
+Anything a game needs at run time (the visual-script runner, the Animator)
+lives here in `src/gameplay/`, because exported games ship without the editor.

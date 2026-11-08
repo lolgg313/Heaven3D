@@ -2231,7 +2231,8 @@ void main(){
                 # Floating fallback button: only when the patcher could NOT
                 # place the navbar button (marker config set by
                 # Terrainupdate.py).  Never used in the runtime file.
-                if globals().get("_TERRAINPATCH_NAVBAR", True) == "FLOAT":
+                if (globals().get("_TERRAINPATCH_NAVBAR", True) == "FLOAT"
+                        and getattr(self, "_vt", None) is None):
                     ui.button(UIRect(0.186, 0.890, 0.078, 0.034),
                               "TERRAIN", self.toggle_terrain_editor,
                               _hex("#2E7CD6"))

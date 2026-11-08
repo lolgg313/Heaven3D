@@ -23,6 +23,8 @@ def main():
     parser.add_argument("--reset-welcome", action="store_true",
                         help="Forget that the engine has booted before, so "
                              "the next launch shows the welcome splash again.")
+    parser.add_argument("--classic-ui", action="store_true",
+                        help="Use the classic editor interface instead of the Vitrail one.")
     args = parser.parse_args()
 
     # [BRANDING] Resolve the splash mode before the engine is constructed —

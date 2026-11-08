@@ -2867,7 +2867,15 @@ else:
         _FP_PREV_BUILD_UI = HeavenEngine._build_ui
 
         def _fp_build_ui(self):
-            _FP_PREV_BUILD_UI(self)
+            # With the Vitrail editor (h3d_editor) the classic layout is not
+            # drawn, only the tool panels; package panels wrapped around
+            # _build_ui still draw as usual.
+            vt_editor = getattr(self, "_vt", None) is not None
+            if vt_editor:
+                if getattr(self, "ui", None) is not None:
+                    self.ui.begin_frame()
+            else:
+                _FP_PREV_BUILD_UI(self)
             try:
                 ui = getattr(self, "ui", None)
                 if ui is None or getattr(self, "_playing", False):
@@ -2875,9 +2883,10 @@ else:
                 gen = getattr(self, "procedural_generator", None)
                 if gen is None:
                     return
-                ui.button(UIRect(0.935, 0.944, 0.060, 0.042),
-                          "BUILDING EDITOR", gen.toggle_panel,
-                          THEME["accent_dim"])
+                if not vt_editor:                  # (the Vitrail toolbar has its own button)
+                    ui.button(UIRect(0.935, 0.944, 0.060, 0.042),
+                              "BUILDING EDITOR", gen.toggle_panel,
+                              THEME["accent_dim"])
                 if gen.panel_open:
                     gen.draw_panel(ui)
             except Exception as ex:

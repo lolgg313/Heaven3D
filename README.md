@@ -23,7 +23,29 @@ Deferred PBR rendering · CPU physics · Built-in editor · Standalone runtime
 
 Heaven3D is a from-scratch 3D game engine written in Python on top of [ModernGL](https://github.com/moderngl/moderngl), giving direct access to the OpenGL Core profile. No Panda3D, Unity, Unreal, or GameGuru under the hood: the renderer, physics, editor, importers, audio, and gameplay systems are all written specifically for Heaven3D.
 
-The whole engine ships as a single file, `Heaven3D.py`, so it is easy to read, hack on, and bundle into your own projects.
+The whole engine ships as a single file, `Heaven3D.py`, so it is easy to bundle into your own projects; it is developed as modular source in `src/`. The editor's interface lives next to it in `h3d_editor/`.
+
+## 🆕 The new editor (Vitrail UI) and making games without leaving it
+
+The editor's interface is now built with [Vitrail](https://github.com/lolgg313/vitrail), a GPU-drawn widget toolkit for pygame + ModernGL (bundled in `vitrail/`, so there's nothing extra to install). It works the same on Windows, Linux and macOS. The whole interface is drawn in one draw call and is only rebuilt when something changes, so it costs well under a millisecond a frame.
+
+- **Menu bar and toolbar:** File, Edit, Create, View, Play, Tools, Packages and Help menus, with keyboard shortcuts. File dialogs are built into the editor (no more Tk pop-ups for open, save, import and export).
+- **Outliner:** the scene tree. You can search it, drag objects to re-parent them, and right-click for rename, duplicate, hide, add a script, add an animation or delete.
+- **Inspector:** every property of the selection, live, including transform, material, lights, sun, clouds, ocean, spawn settings, collider and rigid body, and blueprint properties. Fields follow the gizmo, physics and scripts as they move things, and new engine attributes show up on their own.
+- **Undo / redo** (Ctrl+Z / Ctrl+Y) for gizmo moves, field edits, create, duplicate, delete, rename and re-parent.
+- **Console:** the engine log, plus a Python prompt where `engine`, `scene`, `selected` and `h3d` (the whole engine) are ready to use.
+- **Script tab:** a real code editor (Python colours, line numbers, auto-indent, Ctrl+/ comments, undo). *New* makes a blueprint from a template. **Ctrl+S saves and hot-reloads**, so objects already using the script switch to the new code at once, even during Play. Syntax errors are marked on their line.
+- **Graph tab: visual scripting, no code needed.** Events (begin play, tick, timer, key, message, collision, trigger), flow (branch, sequence, delay, do once, for loop), actions (move, rotate, scale, show/hide, destroy, spawn, colour, velocity, sound, flash, message, variables, stop game) and maths/logic nodes. Graphs run in the engine itself (`VisualScript` blueprint), so they work in exported games. Add your own nodes with `@vs_node` from a script or a package.
+- **Animation tab:** keyframe position, rotation, scale, visibility, material and light values on a timeline, with linear, constant or smooth curves. Clips are stored on an `Animator` blueprint and play in the game (`play_animation` message, or `Animator.play("Open")`).
+- **Assets tab:** browse the project folder. Double-click a model to import it, or **drag it onto the viewport** to drop it there. Double-click a script to edit it.
+- **API tab:** a searchable reference built from the engine itself: every engine and scene-object method, the blueprint hooks, every visual-script node and every blueprint you can attach. *Insert* puts an example into your script.
+- **Play in the editor** with Ctrl+P or F5. The panels step aside so the game gets the whole window, and a small Stop button floats on top.
+
+The terrain editor, particle studio and building editor open from the toolbar as before. `python Heaven3D.py --classic-ui` (or `HEAVEN3D_CLASSIC_UI=1`) brings back the previous interface, and the engine also falls back to it by itself if the new one can't start. Games, whether run with `Heaven3D_runtime.py` or exported, never load the editor.
+
+## 🧱 Modular source (issue #4)
+
+The 45,000-line engine is now kept as about 70 files in [`src/`](src/README.md) (`core/`, `rendering/`, `physics/`, `gameplay/`, `editor/`, `world/`, ...). `python build.py` puts them back together into the single `Heaven3D.py` that players and exported games use, so nothing changes for them. See [Working on the engine itself](#️-working-on-the-engine-itself).
 
 ## 🆕 HQ FPS Arena fixes (HQ FPS Weapons 0.4.0, MakeHuman Characters 1.2.2)
 
@@ -320,6 +342,7 @@ python Heaven3D.py --runtime
 | `--no-splash` | Skip the boot splash |
 | `--splash` | Force the full first-run welcome splash |
 | `--reset-welcome` | Show the welcome splash again on next launch |
+| `--classic-ui` | Use the classic editor interface instead of the Vitrail one |
 | `--version` | Print the engine version |
 
 ## 🎮 Minimal FPS Example
@@ -358,6 +381,10 @@ Heaven3D/
 ├── FILEBURNER.py    # Fixing file path for in game used assets and media compatible with linux and windows.  
 ├── Heaven3D_Hub.py    # The Hub: projects, templates and offline tutorials
 ├── Heaven3D_Hub.pyw   # Double-click launcher for the Hub on Windows (no console window)
+├── src/               # The engine's modular source; build.py turns it into Heaven3D.py
+├── build.py           # python build.py: rebuilds Heaven3D.py + Heaven3D_runtime.py from src/
+├── h3d_editor/        # The editor interface (outliner, inspector, script / graph / animation tabs...)
+├── vitrail/           # Vitrail, the GPU UI toolkit the editor is drawn with (Apache-2.0)
 ├── branding/          # Heaven3D logo (PNG sizes + .ico) used by the Hub, editor, launchers and exported games
 ├── packages/          # Packages included with Heaven3D (light_theme, physics_plus, spline_roads, car_race_kit)
 ├── docs/PACKAGES.md   # How to write packages (engine + Hub API)
@@ -371,6 +398,9 @@ Heaven3D/
 │   ├── test_portable_editor.py   # Same, end to end in the real editor (needs a GPU)
 │   ├── test_pause_menu.py        # Esc pause menu (needs a GPU)
 │   ├── test_packages.py          # Package system + included packages (needs a GPU)
+│   ├── test_build.py             # Heaven3D.py is up to date with src/ and compiles
+│   ├── test_visual_scripts.py    # Visual scripts + Animator, no GPU needed
+│   ├── test_vitrail_editor.py    # The editor end to end (needs a GPU)
 │   └── importers/                # 8 hard .blend / .gltf / .glb files each + test runner
 ├── LICENSE        # Apache License 2.0
 └── README.md
@@ -384,6 +414,9 @@ python tests/test_portable_projects.py         # portable projects + save games,
 python tests/test_one_object.py                # editor checks, needs a GPU
 python tests/test_pause_menu.py                # Esc pause menu in a running game, needs a GPU
 python tests/test_packages.py                  # packages: load order, tools, spline road, race kit, needs a GPU
+python tests/test_build.py                     # the built engine matches src/, no GPU needed
+python tests/test_visual_scripts.py            # visual scripts + animator, no GPU needed
+python tests/test_vitrail_editor.py            # the editor: picking, inspector, undo, graphs, hot reload, Play
 ```
 
 ## 🛠️ Building the standalone editions

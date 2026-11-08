@@ -408,7 +408,7 @@ _H3D27_PREV_BUILD_UI = HeavenEngine._build_ui
 def _h3d27_build_ui(self):
     _H3D27_PREV_BUILD_UI(self)
     try:
-        if self.ui is None or self.mode != "editor" or self._playing:
+        if self.ui is None or self.mode != "editor" or self._playing or getattr(self, "_vt", None) is not None:
             return
         tools = _H3D27_PKG_STATE["tools"]
         T = THEME

@@ -43,7 +43,8 @@ PY_LIN = "3.12"
 PKGS = ["numpy", "pygame", "moderngl", "pyglm", "numba", "zstandard", "pillow", "trimesh", "DracoPy", "pip"]
 MICROMAMBA = "https://conda.anaconda.org/conda-forge/linux-64/micromamba-2.9.0-0.tar.bz2"
 SHIP = ["Heaven3D.py", "Heaven3D_runtime.py", "Heaven3D_Hub.py", "FILEBURNER.py", "install.py",
-        "LICENSE", "README.md", "templates", "tutorials", "branding", "packages", "docs"]
+        "LICENSE", "README.md", "templates", "tutorials", "branding", "packages", "docs",
+        "vitrail", "h3d_editor"]
 
 
 def sh(*cmd, **kw):

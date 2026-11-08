@@ -239,7 +239,7 @@ sys.stdout.write("H3DRESULT" + json.dumps(res))
             _H3D27_PREV_BUILD_UI3(self)
             try:
                 if (self.ui is None or self.mode != "editor" or self._playing
-                        or not _H3D27_LIB_STATE["open"]):
+                        or not _H3D27_LIB_STATE["open"] or getattr(self, "_vt", None) is not None):
                     return
                 T = THEME
                 items = _H3D27_LIB_STATE["items"]
