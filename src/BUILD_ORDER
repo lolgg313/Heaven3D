@@ -1,0 +1,67 @@
+# Heaven3D.py is these parts, concatenated in this order (build.py).
+# <part> [indent=N]  - N: the part is stored dedented, the build indents it back.
+core/header.py
+core/imports.py
+core/scene_graph.py
+importers/glb_classic.py
+importers/obj.py
+importers/blend_classic.py
+rendering/mesh.py
+rendering/material.py
+gameplay/blueprint.py
+rendering/lights.py
+core/camera.py
+core/project_io.py
+rendering/shaders.py
+rendering/fullscreen_quad.py
+editor/grid.py
+rendering/renderer.py
+editor/gizmo.py
+editor/light_gizmos.py
+editor/spawn_gizmos.py
+editor/collider_editor.py
+editor/view_gizmo.py
+editor/ui_renderer.py
+world/terrain.py
+physics/physics.py
+audio/audio.py
+gameplay/hud.py
+gameplay/fps_kit.py
+engine/engine.py
+rendering/instancing.py
+rendering/water.py
+editor/selection_outline.py
+physics/physics_overhaul.py
+patches/quality_fixes_v1.py
+patches/single_object_imports_icons.py
+world/procedural_building.py
+gameplay/gameplay_fx.py
+engine/main.py
+physics/numba_boost.py
+audio/sound_point.py
+world/terrain_editor.py
+gameplay/particles_flying_ai.py
+branding/branding.py
+gameplay/pause_menu.py
+h3d27/begin.py
+h3d27/modules/meshutil.py indent=8
+h3d27/modules/blendfile.py indent=8
+h3d27/modules/meshopt.py indent=8
+h3d27/modules/gltf.py indent=8
+h3d27/modules/blend.py indent=8
+h3d27/modules/portable.py indent=8
+h3d27/factory_end.py indent=4
+h3d27/engine/01_shaders.py
+h3d27/engine/02_mesh.py indent=4
+h3d27/engine/03_materials.py indent=4
+h3d27/engine/04_import.py indent=4
+h3d27/engine/05_colliders.py indent=4
+h3d27/engine/06_projects.py indent=4
+h3d27/engine/07_thumbnails.py indent=4
+h3d27/engine/08_portable.py indent=4
+h3d27/engine/09_packages.py indent=4
+h3d27/engine/10_view_menu.py
+h3d27/engine/11_macos.py
+h3d27/end.py
+patches/perf_274.py
+engine/run.py

@@ -229,6 +229,10 @@ path = self.engine.asset_path("assets/music/theme.ogg")   # finds project files 
 
 Saves are written atomically (a crash can't corrupt them) with an automatic backup. They're stored in the game's `saves/` folder, so they move with the game. If that folder can't be written to, they go to `%APPDATA%\Heaven3D\<Game>` on Windows or `~/.local/share/heaven3d/<Game>` on Linux. macOS games always save to `~/Library/Application Support/Heaven3D/<Game>` (an app should never write inside itself).
 
+## 🛠️ Working on the engine itself
+
+`Heaven3D.py` is built from the modular source in [`src/`](src/README.md) (`core/`, `rendering/`, `physics/`, `gameplay/`, `editor/`, ...). Edit a file there, then run `python build.py`; players and exported games still get the single file. `python build.py --check` tells you if the built files are out of date, and `python build.py --where LINE` finds the source file behind a line number in a traceback.
+
 ## 📦 Requirements (running from source)
 
 - Python **3.10+**

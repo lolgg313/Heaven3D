@@ -25075,6 +25075,11 @@ if not globals().get("_FP2_GAMEPLAY_INSTALLED"):
     EnemyFlyShooter.on_tick = _fp2_fly_on_tick
 # [FINALPATCH2:gameplay END]
 
+# Heaven3D_runtime.py is built from this same source with this set to
+# "runtime" (build.py), so `python Heaven3D_runtime.py` starts the game.
+_H3D_DEFAULT_MODE = "editor"
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Heaven3D — a complete 3D game engine on ModernGL.")
@@ -25108,7 +25113,7 @@ def main():
         print(f"Heaven3D v{HEAVEN_VERSION}")
         return
 
-    mode = "runtime" if args.runtime else "editor"
+    mode = "runtime" if (args.runtime or _H3D_DEFAULT_MODE == "runtime") else "editor"
     engine = HeavenEngine(mode=mode, width=args.width, height=args.height,
                           project_path=args.project)
     engine.run()
