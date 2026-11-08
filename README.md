@@ -10,7 +10,7 @@
 
 Deferred PBR rendering · CPU physics · Built-in editor · Standalone runtime
 
-![Version](https://img.shields.io/badge/version-2.7.3-blue)
+![Version](https://img.shields.io/badge/version-3.1.3-blue)
 ![Python](https://img.shields.io/badge/python-3.10%2B-yellow)
 ![OpenGL](https://img.shields.io/badge/OpenGL-3.3%2B%20Core-green)
 ![License](https://img.shields.io/badge/license-Apache%202.0-orange)
@@ -25,7 +25,20 @@ Heaven3D is a from-scratch 3D game engine written in Python on top of [ModernGL]
 
 The whole engine ships as a single file, `Heaven3D.py`, so it is easy to bundle into your own projects; it is developed as modular source in `src/`. The editor's interface lives next to it in `h3d_editor/`.
 
-## 🆕 The new editor (Vitrail UI) and making games without leaving it
+## 🚀 What's new in 3.1.3: the biggest update yet
+
+Heaven3D 3.1.3 gives the editor a completely new interface and lets you make a whole game without leaving it: code, visual scripts, animation, assets and Play, all in one window. Your projects open as before, and exported games work as before.
+
+**In short:**
+- A **new editor interface** with a menu bar, toolbar, outliner, live inspector and undo / redo
+- **Coding inside the editor**: a script editor with hot reload, a Python console and an API reference
+- **Visual scripting** (no code) and **keyframe animation**, both running in exported games too
+- **Fixed** particles and see-through objects (no more square edges), and brought back the view gizmo's X / Y / Z letters
+- **Modular engine source** (issue #4)
+- **HQ FPS Arena fixes**
+- Tested on **Windows, Linux and macOS** builds
+
+### The new editor (Vitrail UI)
 
 The editor's interface is now built with [Vitrail](https://github.com/lolgg313/vitrail), a GPU-drawn widget toolkit for pygame + ModernGL (bundled in `vitrail/`, so there's nothing extra to install). It works the same on Windows, Linux and macOS. The whole interface is drawn in one draw call and is only rebuilt when something changes, so it costs well under a millisecond a frame.
 
@@ -41,15 +54,17 @@ The editor's interface is now built with [Vitrail](https://github.com/lolgg313/v
 - **API tab:** a searchable reference built from the engine itself: every engine and scene-object method, the blueprint hooks, every visual-script node and every blueprint you can attach. *Insert* puts an example into your script.
 - **Play in the editor** with Ctrl+P or F5. The panels step aside so the game gets the whole window, and a small Stop button floats on top.
 
-**Fixed:** particles (and every transparent object) used to show hard square or triangular edges and hide the particles behind them. The engine asked for depth writes to be turned off while drawing them, but ModernGL 5 has no such switch on the context, so the request was silently ignored. It now works. The view gizmo's X / Y / Z letters are back. The editor is tested on Windows too (the Windows edition's Python under Wine): `tests/test_vitrail_editor.py` passes there.
+### Fixes in 3.1.3
+
+**Particles look right again:** particles (and every transparent object) used to show hard square or triangular edges and hide the particles behind them. The engine asked for depth writes to be turned off while drawing them, but ModernGL 5 has no such switch on the context, so the request was silently ignored. It now works. The view gizmo's X / Y / Z letters are back. The editor is tested on Windows too (the Windows edition's Python under Wine): `tests/test_vitrail_editor.py` passes there.
 
 The terrain editor, particle studio and building editor open from the toolbar as before. `python Heaven3D.py --classic-ui` (or `HEAVEN3D_CLASSIC_UI=1`) brings back the previous interface, and the engine also falls back to it by itself if the new one can't start. Games, whether run with `Heaven3D_runtime.py` or exported, never load the editor.
 
-## 🧱 Modular source (issue #4)
+### 🧱 Modular source (issue #4)
 
 The 45,000-line engine is now kept as about 70 files in [`src/`](src/README.md) (`core/`, `rendering/`, `physics/`, `gameplay/`, `editor/`, `world/`, ...). `python build.py` puts them back together into the single `Heaven3D.py` that players and exported games use, so nothing changes for them. See [Working on the engine itself](#️-working-on-the-engine-itself).
 
-## 🆕 HQ FPS Arena fixes (HQ FPS Weapons 0.4.0, MakeHuman Characters 1.2.2)
+### HQ FPS Arena fixes (HQ FPS Weapons 0.4.0, MakeHuman Characters 1.2.2)
 
 - **Everything works from the Hub.** New project > *HQ FPS Arena* > Open / Play; no separate launcher. The template has its Hub preview, and the Hub always gives a project the newest copy of a package.
 - **Guns and ammo are real scene objects.** The weapons and ammo boxes lie in the arena with their HQ FPS models, visible in the editor, saved with the project and movable like anything else. You start empty-handed and pick your guns up off the floor. (An older arena project gets them added when you open it.)

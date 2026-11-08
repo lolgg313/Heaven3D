@@ -17,7 +17,7 @@ H3DImporters, H3DPortable = _h3d27_build_importers()
 # =================================================================
 #  Engine integration (runs at import time, before any shader compiles)
 # =================================================================
-HEAVEN_VERSION = "2.7.3"
+HEAVEN_VERSION = "3.1.3"
 
 class _H3D27Log:
     @staticmethod
