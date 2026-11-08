@@ -4,7 +4,7 @@
 
 <img src="branding/heaven3d_logo.png" width="140" alt="Heaven3D logo" />
 
-<img width="1690" height="979" alt="gameeglory" src="https://github.com/user-attachments/assets/f4865664-c6f7-41f7-b977-88398f1833ea" />
+<img width="1690" height="950" alt="The Heaven3D 3.1.3 editor with the Sponza atrium" src="docs/images/editor.png" />
 
 **A complete 3D game engine built from the metal up — in Python.**
 
