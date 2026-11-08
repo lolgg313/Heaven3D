@@ -51,6 +51,39 @@ except ImportError:
           "            Run:  pip install moderngl")
     sys.exit(1)
 
+
+# ModernGL 5 has no Context.depth_mask: `ctx.depth_mask = False` used to just
+# store a Python attribute, so depth writes were NEVER turned off.  Particles
+# and transparent objects then wrote depth over their whole quad and hid what
+# was behind them (the "square edges").  The engine sets it all over the place,
+# so give the context a real one: it drives the depth write mask of the bound
+# framebuffer, and turning it back on restores every framebuffer it turned off.
+if not isinstance(getattr(moderngl.Context, "depth_mask", None), property):
+    def _h3d_get_depth_mask(self):
+        fbo = getattr(self, "fbo", None)
+        return True if fbo is None else bool(fbo.depth_mask)
+
+    def _h3d_set_depth_mask(self, on):
+        on = bool(on)
+        off = self.__dict__.setdefault("_h3d_depth_off", [])
+        fbo = getattr(self, "fbo", None)
+        if on:
+            for f in off:
+                try:
+                    f.depth_mask = True
+                except Exception:
+                    pass
+            off.clear()
+        if fbo is not None:
+            try:
+                fbo.depth_mask = on
+                if not on and fbo not in off:
+                    off.append(fbo)
+            except Exception:
+                pass
+
+    moderngl.Context.depth_mask = property(_h3d_get_depth_mask, _h3d_set_depth_mask)
+
 # ---- numba (optional JIT acceleration for terrain) ----
 _HAS_NUMBA = False
 try:

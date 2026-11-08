@@ -109,7 +109,8 @@ class GraphTab:
         d = ed.add_node(ed.create("Actions/Print"), (300, 260))
         d.socket("Text", False).slot.field.set_value("Visual script running on " + self.node.name)
         ed.connect(c.socket("Then", True), d.socket("In", False))
-        self.ed.ui.call_later(0.05, ed.frame_all)
+        self.ed.ui.layout()             # the new nodes need their sizes before framing
+        ed.frame_all()
 
     # -- writing back ----------------------------------------------------------------------
     def _changed(self):

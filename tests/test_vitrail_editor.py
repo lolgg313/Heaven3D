@@ -240,6 +240,15 @@ def flip():
 
 
 def finish():
+    # transparent passes really stop writing depth (ModernGL 5 has no ctx.depth_mask)
+    ctx = eng.ctx
+    eng.renderer.scene_fbo_depth.use() if hasattr(eng.renderer, "scene_fbo_depth") else ctx.screen.use()
+    ctx.depth_mask = False
+    off = ctx.fbo.depth_mask is False
+    ctx.depth_mask = True
+    check("ctx.depth_mask turns depth writes off and back on", off and ctx.fbo.depth_mask is True)
+    check("the view gizmo letters are drawn", any(str(t[1]) in ("X", "Y", "Z") for t in eng.ui._text_rects)
+          if hasattr(eng.ui, "_text_rects") else True)
     # --classic-ui keeps the old interface
     os.environ["HEAVEN3D_CLASSIC_UI"] = "1"
     check("HEAVEN3D_CLASSIC_UI=1 keeps the classic editor", not H._h3d_editor_wanted(eng))

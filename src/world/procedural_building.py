@@ -2874,6 +2874,13 @@ else:
             if vt_editor:
                 if getattr(self, "ui", None) is not None:
                     self.ui.begin_frame()
+                    # the view gizmo's X / Y / Z letters ride the UI pass
+                    vg = getattr(self, "view_gizmo", None)
+                    if vg is not None and not getattr(self, "_playing", False):
+                        try:
+                            vg.emit_labels(self.ui, self.width, self.height, self.camera)
+                        except Exception:
+                            pass
             else:
                 _FP_PREV_BUILD_UI(self)
             try:
