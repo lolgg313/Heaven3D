@@ -4,6 +4,7 @@ drag to re-parent, right-click for actions, type in the box to filter."""
 from vitrail import Column, MenuItem, Row, TextField, TreeItem, TreeView, open_context_menu
 
 from .inspector import ICON_OF, node_kind
+from .prefabs import PREFAB_COLOR
 
 KIND_COLORS = {"sun": (1.0, 0.82, 0.35, 1), "point": (1.0, 0.9, 0.55, 1), "spot": (1.0, 0.9, 0.55, 1),
                "player": (0.45, 0.85, 0.55, 1), "enemy": (0.95, 0.45, 0.4, 1), "clouds": (0.8, 0.85, 0.95, 1),
@@ -42,7 +43,7 @@ class Outliner:
             for c in n.children:
                 if editor_only(c):
                     continue
-                out.append((id(c), c.name, depth, c.visible))
+                out.append((id(c), c.name, depth, c.visible, bool(getattr(c, "prefab", None))))
                 if depth < 6:
                     walk(c, depth + 1)
         walk(root, 0)
@@ -56,8 +57,11 @@ class Outliner:
         def make(n, depth):
             kids = [c for c in n.children if not editor_only(c)]
             kind = node_kind(n)
-            it = TreeItem(n.name if n.visible else n.name + "  (hidden)", icon=ICON_OF.get(kind, "cube"),
-                          icon_color=KIND_COLORS.get(kind), data=n, expanded=id(n) in expanded)
+            pref = getattr(n, "prefab", None)
+            it = TreeItem(n.name if n.visible else n.name + "  (hidden)",
+                          icon="prefab" if pref else ICON_OF.get(kind, "cube"),
+                          icon_color=PREFAB_COLOR if pref else KIND_COLORS.get(kind), data=n,
+                          expanded=id(n) in expanded)
             self._items[id(n)] = it
             if depth < 6:
                 for c in kids:
@@ -123,6 +127,8 @@ class Outliner:
                      MenuItem("Hide" if n.visible else "Show", lambda: ed.toggle_visible(n), icon="eye"),
                      MenuItem("Unparent", lambda: ed.reparent(n, self.engine.scene.root, None),
                               enabled=n.parent is not self.engine.scene.root),
+                     None,
+                     *ed.prefabs.menu_items(n),
                      None,
                      MenuItem("Add Visual Script", lambda: ed.add_blueprint(n, "VisualScript"), icon="node"),
                      MenuItem("Add Animator", lambda: ed.add_blueprint(n, "Animator"), icon="film"),

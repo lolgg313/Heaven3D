@@ -121,7 +121,8 @@ class Inspector:
         """What decides which panels exist (rebuild when it changes)."""
         if n is None:
             return None
-        return (id(n), n.material is not None, type(n.collider).__name__, n.rigidbody is not None,
+        return (id(n), bool(self.h3d.prefab_root(n)), n.material is not None, type(n.collider).__name__,
+                n.rigidbody is not None,
                 tuple(type(b).__name__ for b in n.blueprints), tuple(sorted(n.spawn_config or {})),
                 bool(n.mesh), n.is_sun, n.is_point_light, n.is_spot_light, n.is_clouds, n.is_ocean)
 
@@ -262,6 +263,12 @@ class Inspector:
         Button("Focus", lambda: ed.focus_selected(), icon="target", parent=acts)
         Button("Duplicate", lambda: ed.duplicate(), icon="copy", parent=acts)
         Button("Delete", lambda: ed.delete(), icon="trash", parent=acts)
+        if getattr(ed, "prefabs", None) is not None:
+            if self.h3d.prefab_root(n) is not None:
+                ed.prefabs.inspector_panel(self, n)
+            elif ed.prefabs.can_save(n):
+                Button("Save as Prefab...", lambda: ed.prefabs.save_dialog(n), icon="prefab", parent=head,
+                       tooltip="Save this object as a reusable .prefab in assets/prefabs")
 
         # transform
         p = self.panel("Transform", icon="move")

@@ -49,7 +49,7 @@ KINDS = {
     "material": ("material", rgb("#d07ad8"), ("vmat", "mat")),
     "prefab": ("prefab", rgb("#5ca8ff"), ("prefab",)),
     "image": ("image", rgb("#5fc77a"), ("png", "jpg", "jpeg", "bmp", "gif", "tga", "webp")),
-    "mesh": ("cube", rgb("#8fb3d9"), ("obj", "fbx", "gltf", "glb", "blend", "stl", "ply", "dae")),
+    "mesh": ("cube", rgb("#8fb3d9"), ("obj", "fbx", "gltf", "glb", "blend", "stl", "ply", "dae", "x")),
     "scene": ("scene", rgb("#f08a5d"), ("vscene", "scene", "unity", "tscn")),
     "anim": ("film", rgb("#e8605a"), ("vanim", "anim")),
     "audio": ("music", rgb("#4fd0c8"), ("wav", "mp3", "ogg", "flac", "aiff")),

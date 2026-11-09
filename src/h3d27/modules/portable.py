@@ -39,7 +39,7 @@ import time
 import zipfile
 
 MEDIA_EXTS = {
-    ".glb", ".gltf", ".blend", ".obj", ".egg", ".ply", ".stl", ".fbx", ".dae",
+    ".glb", ".gltf", ".blend", ".obj", ".egg", ".ply", ".stl", ".fbx", ".dae", ".x", ".prefab",
     ".png", ".jpg", ".jpeg", ".tga", ".bmp", ".webp", ".dds", ".hdr",
     ".tif", ".tiff", ".gif", ".ktx2",
     ".wav", ".ogg", ".mp3", ".flac", ".m4a",

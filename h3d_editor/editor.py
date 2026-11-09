@@ -35,6 +35,7 @@ from .animation_tab import AnimationTab
 from .graphs import GraphTab
 from .inspector import Inspector
 from .outliner import Outliner
+from .prefabs import PrefabTools
 from .scripting import ApiTab, Console, ScriptsTab, project_dir
 from .widgets import Bar, Dock, PassColumn, PassRow
 
@@ -146,6 +147,7 @@ class Editor:
         ui, e = self.ui, self.engine
         root = PassColumn(spacing=0)
         ui.set_root(root)
+        self.prefabs = PrefabTools(self)
         self.menubar = MenuBar(self.menus(), parent=root)
         self.toolbar = self.build_toolbar(root)
         mid = PassRow(spacing=0, fill=True, parent=root)
@@ -294,6 +296,8 @@ class Editor:
                 MenuItem("Duplicate", self.duplicate, icon="copy", shortcut="Ctrl+D"),
                 MenuItem("Delete", self.delete, icon="trash", shortcut="Delete"),
                 MenuItem("Rename...", lambda: self.rename_dialog(e.selected), icon="edit", shortcut="F2"),
+                MenuItem("Save as Prefab...", lambda: self.prefabs.save_dialog(), icon="prefab",
+                         enabled=lambda: self.prefabs.can_save(e.selected)),
                 hint(MenuItem("Focus selection", self.focus_selected, icon="target"), "F"),
                 hint(MenuItem("Deselect", lambda: self.select(None), icon="close"), "Esc"),
                 None,
@@ -512,6 +516,7 @@ class Editor:
                 self.outliner.sync()
             if self.right.visible:
                 self.inspector.sync()
+                self.prefabs.tick(now)
             self.graph.flush()
             if not playing:
                 self.anim.flush()
@@ -995,6 +1000,8 @@ class Editor:
             p = getattr(a, "path", None)
             if p and p.lower().endswith(MODEL_EXT):
                 self.import_model(p, at=at)
+            elif p and p.lower().endswith(".prefab"):
+                self.prefabs.place(p, at=at)
 
     # =================================================================== tabs
     def open_tab(self, title, focus=False):
@@ -1039,6 +1046,8 @@ class Editor:
         low = p.lower()
         if low.endswith(MODEL_EXT):
             self.import_model(p)
+        elif low.endswith(".prefab"):
+            self.prefabs.place(p)
         elif low.endswith(".py"):
             self.scripts.open(p)
         elif low.endswith(".heaven3d"):
