@@ -764,10 +764,18 @@ class CodeEditor(Widget):
 
 # =========================================================================== log view
 class LogView(Widget):
-    """Scrolling coloured lines (newest at the bottom, follows new output)."""
+    """Scrolling coloured lines (newest at the bottom, follows new output).
 
+    Drag the scrollbar or use the wheel to scroll.  Click / drag (Shift+click
+    to extend) selects lines; Ctrl+C copies them (everything when nothing is
+    selected), Ctrl+A selects all; right-click for Copy / Copy all / Clear.
+    Copies go to the system clipboard, so they paste into any app.
+    """
+
+    focusable = True
     COLORS = {"ERROR": rgb("#ff6b6b"), "WARN": rgb("#f0c060"), "DEBUG": rgb("#8a8f98"),
               "INFO": rgb("#d7dae0"), "IN": rgb("#7ab8ff"), "OUT": rgb("#98c379")}
+    SB = 10                         # scrollbar hit width (px)
 
     def __init__(self, *, max_lines=4000, **kw):
         kw.setdefault("height", 120)
@@ -776,24 +784,35 @@ class LogView(Widget):
         self.max_lines = max_lines
         self.offset = 0            # lines scrolled up from the bottom
         self.filter = ""
+        self.sel = None            # (anchor, end) indices into the shown lines
+        self._mode = None          # "scrollbar" / "select" while the mouse is down
+        self._grab = 0.0
+        self.cursor = IBEAM
 
+    # -- content ---------------------------------------------------------------
     def add(self, text, level="INFO"):
         col = self.COLORS.get(level, self.COLORS["INFO"])
+        n0 = len(self.lines)
         for ln in str(text).split("\n"):
             self.lines.append((ln, col))
-        if len(self.lines) > self.max_lines:
-            del self.lines[:len(self.lines) - self.max_lines]
+        added = len(self.lines) - n0
+        drop = len(self.lines) - self.max_lines
+        if drop > 0:
+            del self.lines[:drop]
+            if self.sel is not None and not self.filter:
+                a, b = self.sel[0] - drop, self.sel[1] - drop
+                self.sel = (a, b) if max(a, b) >= 0 else None
+                if self.sel is not None:
+                    self.sel = (max(0, self.sel[0]), max(0, self.sel[1]))
         if self.offset:
-            self.offset += 1
+            self.offset += added   # keep the view still while reading older lines
         self.invalidate()
 
     def clear(self):
         self.lines.clear()
         self.offset = 0
+        self.sel = None
         self.invalidate()
-
-    def text(self):
-        return "\n".join(t for t, _c in self._shown())
 
     def _shown(self):
         if not self.filter:
@@ -801,32 +820,179 @@ class LogView(Widget):
         f = self.filter.lower()
         return [l for l in self.lines if f in l[0].lower()]
 
+    def text(self):
+        return "\n".join(t for t, _c in self._shown())
+
+    def selected_text(self):
+        rows = self._shown()
+        if self.sel is None or not rows:
+            return ""
+        a, b = sorted(self.sel)
+        a, b = max(0, a), min(len(rows) - 1, b)
+        return "\n".join(t for t, _c in rows[a:b + 1])
+
+    def copy(self, ui, everything=False):
+        t = self.text() if (everything or self.sel is None) else self.selected_text()
+        ui.clipboard.put(t)
+        return t
+
+    # -- geometry ----------------------------------------------------------------
+    def _metrics(self, ui):
+        f = mono_font(ui, 12)
+        lh = round(f.line_height * 1.12)
+        n = max(1, int((self.h - 6) // lh))
+        return f, lh, n
+
+    def _window(self, ui):
+        """(rows, first, last+1, y of the first drawn row, line height, visible rows)"""
+        f, lh, n = self._metrics(ui)
+        rows = self._shown()
+        self.offset = max(0, min(self.offset, max(0, len(rows) - n)))
+        end = max(0, len(rows) - self.offset)
+        start = max(0, end - n)
+        y0 = self.y + 3 + (n - (end - start)) * lh
+        return rows, start, end, y0, lh, n
+
+    def _row_at(self, ui, py):
+        rows, start, end, y0, lh, n = self._window(ui)
+        if not rows:
+            return None
+        i = start + int((py - y0) // lh)
+        return max(0, min(len(rows) - 1, i))
+
+    def _thumb(self, ui):
+        rows, start, end, y0, lh, n = self._window(ui)
+        if len(rows) <= n:
+            return None
+        th = max(16, self.h * n / len(rows))
+        frac = 1.0 - self.offset / max(1, len(rows) - n)
+        return self.y + (self.h - th) * frac, th, len(rows) - n
+
+    def _scroll_to_thumb(self, ui, py):
+        t = self._thumb(ui)
+        if t is None:
+            return
+        _ty, th, maxoff = t
+        frac = (py - self._grab - self.y) / max(1.0, self.h - th)
+        self.offset = int(round((1.0 - max(0.0, min(1.0, frac))) * maxoff))
+        self.invalidate()
+
     def preferred_size(self, ui):
         return (200 * ui.theme.scale, 80 * ui.theme.scale)
 
+    # -- drawing -------------------------------------------------------------------
     def draw(self, dl, ui):
-        f = mono_font(ui, 12)
-        lh = round(f.line_height * 1.12)
-        dl.box(self.x, self.y, self.w, self.h, SYNTAX["bg"], border=ui.theme.outline)
-        rows = self._shown()
-        n = max(1, int((self.h - 6) // lh))
-        end = max(0, len(rows) - self.offset)
-        start = max(0, end - n)
+        f, lh, n = self._metrics(ui)
+        rows, start, end, y0, lh, n = self._window(ui)
+        dl.box(self.x, self.y, self.w, self.h, SYNTAX["bg"],
+               border=ui.theme.accent if ui.focus is self else ui.theme.outline)
         base = (lh - (f.ascender - f.descender)) * 0.5 + f.ascender
+        sel = sorted(self.sel) if self.sel is not None else None
         dl.push_clip(self.x + 2, self.y + 2, self.w - 4, self.h - 4)
-        y = self.y + 3 + (n - (end - start)) * lh
-        for text, col in rows[start:end]:
+        y = y0
+        for i in range(start, end):
+            text, col = rows[i]
+            if sel is not None and sel[0] <= i <= sel[1]:
+                dl.box(self.x + 2, y, self.w - self.SB - 4, lh, SYNTAX["sel"])
             if text:
-                dl.text_run(f.run(f.elide(text, self.w - 16)), round(self.x + 6), round(y + base), col)
+                dl.text_run(f.run(f.elide(text, self.w - 22)), round(self.x + 6), round(y + base), col)
             y += lh
         dl.pop_clip()
-        if len(rows) > n:
-            th = max(16, self.h * n / len(rows))
-            frac = 1.0 - self.offset / max(1, len(rows) - n)
-            dl.box(self.x + self.w - 7, self.y + (self.h - th) * frac, 5, th, ui.theme.scrollbar, radius=2.5)
+        t = self._thumb(ui)
+        if t is not None:
+            ty, th, _m = t
+            hot = self._mode == "scrollbar" or self.hovered
+            dl.box(self.x + self.w - 8, ty, 6, th,
+                   ui.theme.scrollbar_hover if hot else ui.theme.scrollbar, radius=3)
 
+    # -- input --------------------------------------------------------------------------
     def on_wheel(self, ui, dx, dy):
-        n = max(1, int((self.h - 6) // round(mono_font(ui, 12).line_height * 1.12)))
-        self.offset = max(0, min(max(0, len(self._shown()) - n), self.offset + int(dy) * 3))
+        self.offset = max(0, self.offset + int(dy) * 3)
         self.invalidate()
         return True
+
+    def on_mouse_down(self, ui, ev):
+        t = self._thumb(ui)
+        if ev.button == 1 and t is not None and ev.x >= self.x + self.w - self.SB:
+            ty, th, _m = t
+            # grab the thumb where it was clicked; a click on the track jumps there
+            self._grab = (ev.y - ty) if ty <= ev.y <= ty + th else th * 0.5
+            self._mode = "scrollbar"
+            self._scroll_to_thumb(ui, ev.y)
+            return True
+        if ev.button == 1:
+            ui.set_focus(self)
+            i = self._row_at(ui, ev.y)
+            if i is None:
+                self.sel = None
+            elif ev.shift and self.sel is not None:
+                self.sel = (self.sel[0], i)
+            else:
+                self.sel = (i, i)
+            self._mode = "select"
+            self.invalidate()
+            return True
+        if ev.button == 3:
+            from vitrail import MenuItem, open_context_menu
+            ui.set_focus(self)
+            i = self._row_at(ui, ev.y)
+            if i is not None and (self.sel is None or not (min(self.sel) <= i <= max(self.sel))):
+                self.sel = (i, i)
+                self.invalidate()
+            open_context_menu(ui, [
+                MenuItem("Copy", lambda: self.copy(ui), icon="copy", shortcut="Ctrl+C"),
+                MenuItem("Copy all", lambda: self.copy(ui, everything=True), icon="copy"),
+                MenuItem("Select all", lambda: self.select_all(), shortcut="Ctrl+A"),
+                None,
+                MenuItem("Clear", self.clear, icon="trash"),
+            ], at=(ev.x, ev.y))
+            return True
+        return False
+
+    def on_mouse_move(self, ui, ev):
+        if self._mode == "scrollbar":
+            self._scroll_to_thumb(ui, ev.y)
+        elif self._mode == "select" and self.sel is not None:
+            # dragging above / below the view scrolls it
+            if ev.y < self.y + 4:
+                self.offset += 1
+            elif ev.y > self.y + self.h - 4:
+                self.offset = max(0, self.offset - 1)
+            i = self._row_at(ui, ev.y)
+            if i is not None and i != self.sel[1]:
+                self.sel = (self.sel[0], i)
+            self.invalidate()
+        return True
+
+    def on_mouse_up(self, ui, ev):
+        self._mode = None
+        self.invalidate()
+        return True
+
+    def select_all(self):
+        rows = self._shown()
+        self.sel = (0, len(rows) - 1) if rows else None
+        self.invalidate()
+
+    def on_key(self, ui, e):
+        ctrl = bool(e.mod & CTRL)
+        if ctrl and e.key in (pygame.K_c, pygame.K_INSERT):
+            self.copy(ui)
+            return True
+        if ctrl and e.key == pygame.K_a:
+            self.select_all()
+            return True
+        if e.key == pygame.K_ESCAPE and self.sel is not None:
+            self.sel = None
+            self.invalidate()
+            return True
+        if e.key in (pygame.K_PAGEUP, pygame.K_PAGEDOWN):
+            n = self._metrics(ui)[2]
+            self.offset = max(0, self.offset + (n - 1) * (1 if e.key == pygame.K_PAGEUP else -1))
+            self.invalidate()
+            return True
+        if e.key == pygame.K_END:                      # back to the newest line
+            self.offset = 0
+            self.invalidate()
+            return True
+        return False

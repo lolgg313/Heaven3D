@@ -217,7 +217,55 @@ def _play():
 def _stop():
     check("Ctrl+P stops Play", not eng._playing)
     check("the panels come back", ed.left.visible and ed.right.visible)
-    ed.engine.scene.root  # noqa
+    # the Edit menu (its Undo / Redo entries used to crash the UI when drawn)
+    mb = ed.menubar
+    x, y, w, h = mb._title_rects(ed.ui)[[t for t, _ in mb.menus].index("Edit")]
+    click(int(x + w / 2), int(y + h / 2))
+    st["errors_before"] = len(ed.__dict__.get("_seen_errors", ()))
+
+
+@at(116)
+def _edit_menu():
+    check("the Edit menu opens and draws without errors",
+          bool(ed.ui.overlays) and len(ed.__dict__.get("_seen_errors", ())) == st["errors_before"],
+          ed.__dict__.get("_seen_errors"))
+    key(pygame.K_ESCAPE)
+    ed.open_tab("Console")
+    for i in range(300):
+        ed.log("console line %d" % i)
+
+
+@at(120)
+def _console_scroll():
+    lv = ed.console.log
+    ed.ui.layout()
+    ty, th, _m = lv._thumb(ed.ui)
+    x, y = int(lv.x + lv.w - 4), int(ty + th / 2)
+    post(pygame.MOUSEMOTION, pos=(x, y), rel=(0, 0), buttons=(0, 0, 0))
+    post(pygame.MOUSEBUTTONDOWN, pos=(x, y), button=1)
+    post(pygame.MOUSEMOTION, pos=(x, y - 60), rel=(0, -60), buttons=(1, 0, 0))
+    post(pygame.MOUSEBUTTONUP, pos=(x, y - 60), button=1)
+
+
+@at(124)
+def _console_copy():
+    lv = ed.console.log
+    check("dragging the console scrollbar scrolls the log", lv.offset > 0, lv.offset)
+    x, y = int(lv.x + 60), int(lv.y + 12)
+    post(pygame.MOUSEMOTION, pos=(x, y), rel=(0, 0), buttons=(0, 0, 0))
+    post(pygame.MOUSEBUTTONDOWN, pos=(x, y), button=1)
+    post(pygame.MOUSEMOTION, pos=(x, y + 30), rel=(0, 30), buttons=(1, 0, 0))
+    post(pygame.MOUSEBUTTONUP, pos=(x, y + 30), button=1)
+    key(pygame.K_c, mod=pygame.KMOD_LCTRL)
+
+
+@at(128)
+def _copied():
+    lv = ed.console.log
+    sel = lv.selected_text()
+    check("console lines can be selected and copied (Ctrl+C)", sel.count("\n") >= 1
+          and ed.ui.clipboard.get() == sel, repr(sel))
+    check("the copy goes to the system clipboard", ed.ui.clipboard._lib() is not None)
     st["done"] = True
 
 

@@ -412,7 +412,8 @@ class Console:
         self.filter = TextField("", placeholder="Filter log", parent=bar, width=220, expand=0)
         self.filter.edited.connect(self._filter)
         Button("Clear", lambda: self.log.clear(), icon="trash", expand=0, parent=bar)
-        Button("Copy", lambda: editor.ui.clipboard.put(self.log.text()), icon="copy", expand=0, parent=bar)
+        Button("Copy", self._copy, icon="copy", expand=0, parent=bar,
+               tooltip="Copy the selected lines (all of them when none are selected)")
         self.errors = Label("", dim=True, parent=bar)
         self.log = LogView(fill=True, parent=page)
         self.prompt = PromptField(self, parent=page)
@@ -423,7 +424,13 @@ class Console:
 
     def _filter(self, t):
         self.log.filter = t or ""
+        self.log.sel = None
         self.log.invalidate()
+
+    def _copy(self):
+        t = self.log.copy(self.ed.ui)
+        n = t.count("\n") + 1 if t else 0
+        self.ed.toast("Copied %d line%s to the clipboard" % (n, "" if n == 1 else "s"))
 
     def add(self, line, level=None):
         if level is None:

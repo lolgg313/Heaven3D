@@ -286,9 +286,9 @@ class Editor:
             ]),
             ("Edit", [
                 MenuItem("Undo", lambda: self.ui.undo.undo(), icon="undo", shortcut="Ctrl+Z",
-                         enabled=lambda: self.ui.undo.can_undo()),
+                         enabled=lambda: self.ui.undo.can_undo),
                 MenuItem("Redo", lambda: self.ui.undo.redo(), icon="redo", shortcut="Ctrl+Y",
-                         enabled=lambda: self.ui.undo.can_redo()),
+                         enabled=lambda: self.ui.undo.can_redo),
                 None,
                 MenuItem("Duplicate", self.duplicate, icon="copy", shortcut="Ctrl+D"),
                 MenuItem("Delete", self.delete, icon="trash", shortcut="Delete"),

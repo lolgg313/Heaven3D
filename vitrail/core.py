@@ -121,24 +121,147 @@ class UndoStack:
         return bool(self._redo)
 
 
+def _load_sdl_clipboard():
+    """SDL's own clipboard calls, through the SDL2 library pygame itself
+    loaded (Windows: SDL2.dll next to pygame, Linux: pygame.libs/libSDL2-2*,
+    macOS: pygame/.dylibs).  Loading the same file gives the same, already
+    initialised library, so this is the real OS clipboard on all three."""
+    import ctypes
+    import ctypes.util
+    import glob
+    import os
+    here = os.path.dirname(os.path.abspath(pygame.__file__))
+    cands = []
+    for pat in ("SDL2.dll", ".dylibs/libSDL2*.dylib", "libSDL2*.so*", "../pygame.libs/libSDL2*.so*",
+                "../pygame.libs/SDL2*.dll"):
+        cands += sorted(glob.glob(os.path.join(here, pat)))
+    cands = [c for c in cands if not any(x in os.path.basename(c) for x in ("image", "ttf", "mixer"))]
+    sys_lib = ctypes.util.find_library("SDL2") or ctypes.util.find_library("SDL2-2.0")
+    if sys_lib:
+        cands.append(sys_lib)
+    for path in cands:
+        try:
+            lib = ctypes.CDLL(path)
+            lib.SDL_SetClipboardText.argtypes = [ctypes.c_char_p]
+            lib.SDL_SetClipboardText.restype = ctypes.c_int
+            lib.SDL_GetClipboardText.argtypes = []
+            lib.SDL_GetClipboardText.restype = ctypes.c_void_p
+            lib.SDL_free.argtypes = [ctypes.c_void_p]
+            lib.SDL_free.restype = None
+            return lib
+        except (OSError, AttributeError):
+            continue
+    return None
+
+
+_X11_GUARD = []
+
+
+def _guard_x11_clipboard_errors():
+    """Linux/X11: another app that asks for our clipboard and quits before
+    the answer arrives makes the X server report BadWindow for that reply,
+    and Xlib's default error handler then EXITS the program.  Ignore exactly
+    that case (BadWindow on ChangeProperty / SendEvent), pass every other
+    error on to the previous handler."""
+    import os
+    import sys
+    if _X11_GUARD or not sys.platform.startswith("linux") or not os.environ.get("DISPLAY"):
+        return
+    import ctypes
+    try:
+        x11 = ctypes.CDLL("libX11.so.6")
+    except OSError:
+        return
+
+    class XErrorEvent(ctypes.Structure):
+        _fields_ = [("type", ctypes.c_int), ("display", ctypes.c_void_p), ("resourceid", ctypes.c_ulong),
+                    ("serial", ctypes.c_ulong), ("error_code", ctypes.c_ubyte),
+                    ("request_code", ctypes.c_ubyte), ("minor_code", ctypes.c_ubyte)]
+    HANDLER = ctypes.CFUNCTYPE(ctypes.c_int, ctypes.c_void_p, ctypes.POINTER(XErrorEvent))
+    x11.XSetErrorHandler.restype = ctypes.c_void_p
+    x11.XSetErrorHandler.argtypes = [ctypes.c_void_p]
+    prev = [None]
+
+    def handler(display, ev):
+        e = ev.contents
+        if e.error_code == 3 and e.request_code in (18, 25):   # BadWindow on ChangeProperty / SendEvent
+            return 0
+        if prev[0]:
+            return HANDLER(prev[0])(display, ev)
+        return 0
+    cb = HANDLER(handler)
+    prev[0] = x11.XSetErrorHandler(ctypes.cast(cb, ctypes.c_void_p))
+    _X11_GUARD.extend((x11, cb, prev))       # keep the callback alive
+
+
 class Clipboard:
-    """System clipboard through pygame.scrap when available, else in-process."""
+    """The system clipboard (copy here, paste in any app, and back), with an
+    in-process fallback.  Tries pygame-ce's scrap.put_text, then SDL's own
+    clipboard functions, then the legacy pygame.scrap API."""
 
     def __init__(self):
         self._local = ""
+        self._sdl = False      # not looked up yet
+
+    def _lib(self):
+        if self._sdl is False:
+            try:
+                self._sdl = _load_sdl_clipboard()
+                if self._sdl is not None:
+                    _guard_x11_clipboard_errors()
+            except Exception:
+                self._sdl = None
+        return self._sdl
 
     def put(self, text: str):
+        text = str(text)
         self._local = text
+        if hasattr(pygame.scrap, "put_text"):
+            try:
+                pygame.scrap.put_text(text)
+                return
+            except Exception:
+                pass
+        lib = self._lib()
+        if lib is not None:
+            try:
+                if lib.SDL_SetClipboardText(text.encode("utf-8")) == 0:
+                    return
+            except Exception:
+                pass
         try:
-            pygame.scrap.put_text(text)
+            if not pygame.scrap.get_init():
+                pygame.scrap.init()
+            pygame.scrap.put(pygame.SCRAP_TEXT, text.encode("utf-8"))
         except Exception:
             pass
 
     def get(self) -> str:
+        if hasattr(pygame.scrap, "get_text"):
+            try:
+                t = pygame.scrap.get_text()
+                if t:
+                    return t
+            except Exception:
+                pass
+        lib = self._lib()
+        if lib is not None:
+            try:
+                ptr = lib.SDL_GetClipboardText()
+                if ptr:
+                    import ctypes
+                    t = ctypes.string_at(ptr).decode("utf-8", "replace")
+                    lib.SDL_free(ptr)
+                    if t:
+                        return t.replace("\r\n", "\n")
+            except Exception:
+                pass
         try:
-            t = pygame.scrap.get_text()
-            if t:
-                return t
+            if not pygame.scrap.get_init():
+                pygame.scrap.init()
+            raw = pygame.scrap.get(pygame.SCRAP_TEXT)
+            if raw:
+                return raw.decode("utf-8", "replace").rstrip("\x00").replace("\r\n", "\n")
         except Exception:
             pass
         return self._local
