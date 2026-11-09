@@ -1258,8 +1258,9 @@ class Editor:
             dst = os.path.join(folder, os.path.basename(path))
             stem, ext = os.path.splitext(dst)
             k = 2
+            sep = "_" if low.endswith(".py") else " "      # a script name must stay importable
             while os.path.exists(dst):
-                dst = "%s %d%s" % (stem, k, ext)
+                dst = "%s%s%d%s" % (stem, sep, k, ext)
                 k += 1
             if low.endswith(MODEL_EXT):
                 try:

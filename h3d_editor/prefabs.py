@@ -39,8 +39,9 @@ class PrefabTools:
 
     def can_save(self, n):
         e = self.engine
-        return (n is not None and n is not e.scene.root and not (n.is_sun or n.is_clouds or n.is_ocean)
-                and getattr(n, "spawn_kind", None) != "player")
+        return (n is not None and n is not e.scene.root
+                and not any(c.is_sun or c.is_clouds or c.is_ocean or getattr(c, "spawn_kind", None) == "player"
+                            for c in n.traverse()))
 
     # -- actions -------------------------------------------------------------------------
     def save_dialog(self, n=None):

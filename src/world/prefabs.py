@@ -238,8 +238,10 @@ def _pf_save_prefab(self, node, path, link=True):
         raise ValueError("select an object first")
     if node.is_sun or node.is_clouds or node.is_ocean:
         raise ValueError(f"the {node.name} can't be a prefab")
-    if getattr(node, "spawn_kind", None) == "player":
-        raise ValueError("the Player Spawn can't be a prefab (only one per scene)")
+    if any(getattr(n, "spawn_kind", None) == "player" for n in node.traverse()):
+        raise ValueError("the Player Spawn can't be in a prefab (only one per scene)")
+    if any(n.is_sun or n.is_clouds or n.is_ocean for n in node.traverse()):
+        raise ValueError("the Sun, Clouds and Ocean can't be in a prefab")
     path = _pf_abs(self, path)
     if not path.lower().endswith(PREFAB_EXT):
         path += PREFAB_EXT

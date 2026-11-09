@@ -187,17 +187,21 @@ def _mg_image(path, base_dir, n, scale):
     key = (os.path.abspath(p), os.path.getmtime(p))
     img = _MG_IMG_CACHE.get(key)
     if img is None:
-        s = pygame.image.load(p)
+        img = None
         try:
-            s = s.convert_alpha() if pygame.display.get_init() and pygame.display.get_surface() else s
-        except pygame.error:
-            pass
-        rgb = pygame.surfarray.array3d(s).transpose(1, 0, 2).astype(np.float32) / 255.0
-        try:
-            a = pygame.surfarray.array_alpha(s).T.astype(np.float32) / 255.0
-        except (ValueError, pygame.error):
-            a = np.ones(rgb.shape[:2], dtype=np.float32)
-        img = np.concatenate([rgb, a[..., None]], axis=2)
+            s = pygame.image.load(p)
+            w0, h0 = s.get_size()
+            raw = pygame.image.tostring(s, "RGBA")          # palette / grey / RGB / RGBA alike
+            img = np.frombuffer(raw, np.uint8).reshape(h0, w0, 4).astype(np.float32) / 255.0
+        except Exception:
+            img = None
+        if img is None:
+            try:                                             # DDS, WebP, 16-bit PNG ...
+                from PIL import Image as _PILImage
+                with _PILImage.open(p) as im:
+                    img = np.asarray(im.convert("RGBA"), np.float32) / 255.0
+            except Exception:
+                return None
         _MG_IMG_CACHE.clear()               # keep one generation of images only
         _MG_IMG_CACHE[key] = img
     h, w = img.shape[:2]
@@ -523,9 +527,10 @@ def _mg_sources_sig(graph, base_dir):
         if f:
             p = f if os.path.isabs(f) else os.path.join(base_dir, *str(f).replace("\\", "/").split("/"))
             try:
-                sig.append((f, os.path.getmtime(p), os.path.getsize(p)))
-            except OSError:
-                sig.append((f, 0, 0))
+                with open(p, "rb") as fh:
+                    sig.append((f, _mg_hashlib.sha1(fh.read()).hexdigest()))   # content, not dates:
+            except OSError:                                                    # unzipping keeps no mtimes
+                sig.append((f, None))
     return sig
 
 
@@ -558,6 +563,24 @@ def material_asset_build(path, force=False, resolution=None):
                 vals["rebaked"] = False
                 vals["name"] = stem
                 return vals
+    try:
+        return _mg_bake(path, graph, res, base_dir, stem, bdir, meta_p, key)
+    except OSError as ex:
+        # a read-only install (e.g. Program Files): use what was baked before
+        meta = material_vmat_read(meta_p)
+        vals = dict(meta.get("values") or {})
+        if not vals:
+            raise
+        for slot in ("base_color_tex", "metallic_roughness_tex", "normal_tex", "emissive_tex"):
+            if vals.get(slot):
+                vals[slot] = os.path.join(bdir, vals[slot])
+        vals["rebaked"] = False
+        vals["name"] = stem
+        Log.warn(f"[Material] {stem}: couldn't re-bake ({ex}); using the saved bake")
+        return vals
+
+
+def _mg_bake(path, graph, res, base_dir, stem, bdir, meta_p, key):
     out = material_graph_eval(graph, res, base_dir)
     vals = {"name": stem, "base_color": [0.8, 0.8, 0.8, 1.0], "metallic": 0.0, "roughness": 0.5,
             "emissive": [0.0, 0.0, 0.0], "emissive_intensity": 1.0, "alpha_mode": "OPAQUE",

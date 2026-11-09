@@ -68,7 +68,7 @@ h3d27/end.py
 patches/perf_274.py
 gameplay/visual_scripts.py
 gameplay/animator.py
-world/prefabs.py
 world/material_graph.py
+world/prefabs.py
 editor/vitrail_hook.py
 engine/run.py
