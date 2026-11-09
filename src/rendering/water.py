@@ -230,6 +230,7 @@ uniform vec4 u_ripples[OCEAN_MAX_RIPPLES];   // xz, birth_time, strength
 uniform int  u_ripple_count;
 
 const float PI = 3.14159265359;
+""" + CLOUD_GLSL + """
 
 // ---- 3-octave Gerstner wave field (mirrored on the CPU for buoyancy) --
 const float WL[3] = float[3](23.0, 11.0, 5.5);    // wavelengths (m)
@@ -273,25 +274,100 @@ vec2 ripple_grad(vec2 xz){
     return g;
 }
 
-// Analytic Gerstner normal (derivative of the same sum) + ripple rings.
-vec3 wave_normal(vec2 xz){
+float ws_hash(vec2 p){
+    p = fract(p * vec2(234.34, 435.345));
+    p += dot(p, p + 34.23);
+    return fract(p.x * p.y);
+}
+// gradient of a quintic value-noise field (height range about -0.5..0.5)
+vec2 noise_grad(vec2 p){
+    vec2 i = floor(p);
+    vec2 f = fract(p);
+    vec2 u  = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
+    vec2 du = 30.0 * f * f * (f * (f - 2.0) + 1.0);
+    float a = ws_hash(i);
+    float b = ws_hash(i + vec2(1.0, 0.0));
+    float c = ws_hash(i + vec2(0.0, 1.0));
+    float d = ws_hash(i + vec2(1.0, 1.0));
+    return du * (vec2(b - a, c - a) + (a - b - c + d) * u.yx);
+}
+
+// Surface normal: the 3 Gerstner waves (the same ones physics floats things
+// on) plus a 12-wave detail spectrum that only shapes the normal (heights
+// and buoyancy are unchanged).  Every wave is faded out once it gets smaller
+// than about two pixels (fp = metres per pixel at the hit), which is what
+// keeps distant water from shimmering or showing a lattice; the slope
+// energy that fades out is returned as roughness (var) so the far ocean
+// gets a wider, softer sun path and blurrier reflections instead.
+vec3 wave_normal(vec2 xz, float fp, out float var){
     vec2 wd = normalize(u_wind_dir + vec2(1e-5, 0.0));
     float spd = u_wave_speed * (0.35 + 0.65 * u_wind_strength);
     vec3 n = vec3(0.0, 1.0, 0.0);
+    var = 0.0;
+    float q = clamp(u_choppiness, 0.0, 1.5) * 0.25;
+    vec2 disp = vec2(0.0);                       // big waves' horizontal sway
     for (int i = 0; i < 3; ++i){
         vec2 d = wave_dir(i, wd);
         float k = 2.0 * PI / WL[i];
         float om = sqrt(9.81 * k) * spd;
         float A = u_wave_height * FR[i];
-        float ph = k * dot(d, xz) + om * u_time;
         float wa = k * A;
-        n.x -= d.x * wa * cos(ph);
-        n.z -= d.y * wa * cos(ph);
-        n.y -= u_choppiness * wa * sin(ph) / 3.0;   // crest sharpening
+        float ph = k * dot(d, xz) + om * u_time;
+        float c = cos(ph);
+        float fade = 1.0 - smoothstep(0.12, 0.45, fp / WL[i]);
+        n.x -= d.x * wa * c * fade;
+        n.z -= d.y * wa * c * fade;
+        n.y -= q * wa * sin(ph) * fade;          // crest sharpening
+        var += wa * wa * 0.5 * (1.0 - fade);
+        disp += d * (A * 1.6 * c);
+    }
+    // detail: 2 swell waves (3.6, 2.5 m) + 3 octaves of wind-driven
+    // noise ripples (1.6 m .. 0.13 m).  Both ride the big waves (disp), and
+    // the noise has no direction pattern, so the surface never tiles.
+    vec2 dx = xz + disp;
+    float wang = atan(wd.y, wd.x);
+    float calm = sqrt(clamp(u_wave_height / 0.45, 0.0, 3.0));
+    float s = 0.085 * (0.3 + 0.7 * clamp(u_wind_strength, 0.0, 2.0)) * calm;
+    float wl = 3.6;
+    for (int i = 0; i < 2; ++i){
+        if (fp > 0.45 * wl){ var += s * s * 0.5; wl *= 0.70; s *= 0.92; continue; }   // fully faded
+        float ang = wang + sin(float(i) * 2.39996 + 0.5) * 1.25;
+        vec2 d = vec2(cos(ang), sin(ang));
+        float k = 2.0 * PI / wl;
+        float om = sqrt(9.81 * k) * spd;
+        float ph = k * dot(d, dx) + om * u_time + float(i) * 1.7;
+        float fade = 1.0 - smoothstep(0.12, 0.45, fp / wl);
+        float sl = s * cos(ph) * fade;
+        n.x -= d.x * sl;
+        n.z -= d.y * sl;
+        var += s * s * 0.5 * (1.0 - fade);
+        wl *= 0.70;
+        s *= 0.92;
+    }
+    mat2 rot = mat2(0.8, 0.6, -0.6, 0.8);
+    vec2 np = vec2(dot(dx, wd), dot(dx, vec2(-wd.y, wd.x)) * 1.6) / 1.6
+            - vec2(u_time * 0.55 * spd, 0.0);
+    float sz = 1.6;
+    float ns = s * 0.75;
+    for (int i = 0; i < 3; ++i){
+        if (fp > 0.45 * sz){                          // this and smaller octaves are sub-pixel
+            var += ns * ns * 0.35 * (i == 0 ? 1.879 : (i == 1 ? 1.5625 : 1.0));
+            break;
+        }
+        vec2 g = noise_grad(np) / sz;                 // slope of the noise height field
+        g = vec2(g.x * wd.x - g.y * wd.y * 1.6, g.x * wd.y + g.y * wd.x * 1.6);
+        float fade = 1.0 - smoothstep(0.12, 0.45, fp / sz);
+        n.x -= g.x * ns * fade;
+        n.z -= g.y * ns * fade;
+        var += ns * ns * 0.35 * (1.0 - fade);
+        np = rot * np * 2.3 + vec2(5.2, 1.3) - vec2(u_time * 0.4, 0.0);
+        sz /= 2.3;
+        ns *= 0.75;
     }
     vec2 rg = ripple_grad(xz);
     n.x -= rg.x;
     n.z -= rg.y;
+    n.y = max(n.y, 0.25);                        // never tip past ~75 degrees
     return normalize(n);
 }
 
@@ -309,14 +385,34 @@ vec3 env_sample(vec3 d){
     return textureLod(u_env, uv, 0.0).rgb;
 }
 
-float hash21(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+float hash21(vec2 p){
+    p = fract(p * vec2(234.34, 435.345));
+    p += dot(p, p + 34.23);
+    return fract(p.x * p.y);
+}
 float vnoise(vec2 p){
     vec2 i = floor(p);
     vec2 f = fract(p);
-    f = f * f * (3.0 - 2.0 * f);
+    f = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
     return mix(mix(hash21(i),                  hash21(i + vec2(1.0, 0.0)), f.x),
                mix(hash21(i + vec2(0.0, 1.0)), hash21(i + vec2(1.0, 1.0)), f.x),
                f.y);
+}
+float fnoise(vec2 p){                            // 3-octave, rotated: soft foam patterns
+    mat2 r = mat2(0.8, 0.6, -0.6, 0.8);
+    float v = vnoise(p) * 0.55;
+    p = r * p * 2.1 + 7.3;
+    v += vnoise(p) * 0.3;
+    p = r * p * 2.1 + 3.1;
+    v += vnoise(p) * 0.15;
+    return v;
+}
+// metres covered by one pixel at distance t along D, on the water plane
+// px_ang: angle one pixel spans (from fwidth(D), taken at the top of main()
+// where all pixels of a quad run together - derivatives inside branches
+// are undefined in GLSL)
+float pixel_footprint(float t, vec3 D, float px_ang){
+    return t * px_ang / max(abs(D.y), 0.03);
 }
 
 void main(){
@@ -324,6 +420,7 @@ void main(){
     vec3 scene_col = texture(u_scene, v_uv).rgb;
     vec3 O = u_camera_pos;
     vec3 D = world_dir_from_uv(v_uv);
+    float px_ang = length(fwidth(D));
     bool has_geom = gp.w > 0.5;
     float scene_t = has_geom ? distance(gp.xyz, O) : 1e9;
 
@@ -371,17 +468,36 @@ void main(){
     bool water_visible = (t_hit > 0.0 && t_hit < scene_t);
     if (water_visible){
         vec3 P = O + D * t_hit;
-        vec3 N = wave_normal(P.xz);
+        float fp = pixel_footprint(t_hit, D, px_ang);
+        float var;
+        vec3 N = wave_normal(P.xz, fp, var);
         vec3 V = -D;
         float ndv = clamp(dot(N, V), 0.0, 1.0);
         float fres = 0.02 + 0.98 * pow(1.0 - ndv, 5.0);
         vec3 L = -u_sun_dir;                     // direction TOWARD the sun
+        float rough = clamp(0.04 + sqrt(var) * 1.3, 0.04, 0.55);
 
         vec3 R = reflect(D, N);
-        vec3 refl = env_sample(R);
-        // Sun glint: tight Blinn-ish specular along the reflection dir.
-        float spec = pow(max(dot(R, L), 0.0), 420.0) * u_sun_intensity;
-        refl += u_sun_color * spec * 4.0;
+        R.y = abs(R.y);                          // the sea never reflects the ground below the horizon
+        vec3 refl = textureLod(u_env, cloud_eq(R), rough * 6.0).rgb;
+        // The sky's clouds, mirrored.  Faded out where the water is far
+        // enough that a pixel covers a lot of wavy surface (fp) - there the
+        // reflected clouds would be sub-pixel noise that sparkles as the
+        // waves move; the blurred sky above is what the eye sees anyway.
+        float cl_w = (1.0 - smoothstep(0.12, 0.7, fp)) * smoothstep(0.03, 0.06, fres)
+                   * smoothstep(0.05, 0.22, R.y);   // low reflected rays hit far-off, sub-pixel clouds
+        if (!under && cl_w > 0.0){
+            vec4 cl = cloud_layer(P, R, true);
+            refl = mix(refl, cl.rgb, cl.a * cl_w);
+        }
+        // Sun glitter: normalised Blinn-Phong whose width follows the
+        // roughness -> a sharp glint nearby, a wide glittering path far off.
+        vec3 Hh = normalize(L + V);
+        float a2 = rough * rough;
+        float shin = clamp(2.0 / max(a2 * a2, 1e-5) - 2.0, 8.0, 6000.0);
+        float spec = (shin + 8.0) / (8.0 * PI) * pow(max(dot(N, Hh), 0.0), shin)
+                   * smoothstep(-0.02, 0.06, L.y);
+        refl += u_sun_color * u_sun_intensity * min(spec * 0.08, 40.0);
 
         // Water column between the surface and the scene geometry behind
         // it drives Beer-Lambert absorption + the shallow/deep gradient.
@@ -394,7 +510,19 @@ void main(){
         if (!has_geom) behind = u_water_deep * 0.5;
         vec3 body = mix(u_water_shallow, u_water_deep,
                         1.0 - exp(-wdepth * 0.10));
-        vec3 trans = behind * absorb + body * (1.0 - absorb) * 0.6;
+        // lit body: the water itself catches some sun and sky
+        float sky_lum = 0.35 + 0.65 * max(L.y, 0.0);
+        vec3 trans = behind * absorb + body * (1.0 - absorb) * 0.6 * (0.55 + 0.45 * sky_lum);
+
+        // Subsurface scattering: sunlight shining through the thin top of
+        // a wave toward the viewer turns crests a luminous green-blue.
+        float h01 = clamp((P.y - u_sea_level) / max(u_wave_height, 1e-3) * 0.5 + 0.5, 0.0, 1.0);
+        vec3 Lh = normalize(vec3(L.x, max(L.y, 0.0) * 0.3, L.z));
+        float sss = pow(clamp(dot(V, -Lh), 0.0, 1.0), 3.0) * (0.25 + 0.75 * h01 * h01)
+                  + 0.25 * h01 * h01 * h01;
+        vec3 sss_col = mix(u_water_shallow, vec3(0.10, 0.55, 0.50), 0.5);
+        trans += sss_col * u_sun_color * u_sun_intensity * sss * 0.11
+               * smoothstep(-0.05, 0.2, L.y) * (1.0 - fres);
 
         vec3 wcol;
         if (!under){
@@ -413,24 +541,40 @@ void main(){
                        clamp(f2 * 1.8, 0.0, 1.0));
         }
 
-        // ---- foam: shoreline (geometry pierces the surface), wave
-        // crests and ripple rings, broken up by animated noise ----
+        // ---- foam: shoreline (geometry pierces the surface), wind-streaked
+        // whitecaps on the crests and ripple rings.  Its pattern is averaged
+        // out with distance (fp) so far foam is a soft sheen, never noise.
+        float far = smoothstep(0.08, 0.6, fp);
         float foam = 0.0;
         if (has_geom){
             float shore = 1.0 - smoothstep(0.0, 1.2, wdepth);
-            float fn = vnoise(P.xz * 3.0 + vec2(u_time * 0.7,
-                                                -u_time * 0.5));
+            float fn = mix(fnoise(P.xz * 2.2 + vec2(u_time * 0.5, -u_time * 0.35)), 0.5, far);
             foam += shore * smoothstep(0.35, 0.75, fn + shore * 0.35);
         }
-        float crest = smoothstep(0.55, 0.95,
-                                 (P.y - u_sea_level) / max(u_wave_height, 1e-3));
-        foam += crest * vnoise(P.xz * 5.0 - vec2(u_time * 1.3)) * 0.5;
+        float crest = smoothstep(0.80, 1.0, h01) * clamp(u_wind_strength, 0.0, 2.0);
+        if (crest > 0.0){                        // whitecaps only where crests are
+            vec2 wdir = normalize(u_wind_dir + vec2(1e-5, 0.0));
+            vec2 fq = vec2(dot(P.xz, wdir), dot(P.xz, vec2(-wdir.y, wdir.x)) * 2.6) * 0.9
+                    + vec2(-u_time * 0.6, 0.0);
+            float streak = mix(fnoise(fq), 0.5, far);
+            foam += crest * smoothstep(0.42, 0.78, streak) * 0.8;
+        }
         foam += length(ripple_grad(P.xz)) * 2.0;
         foam = clamp(foam * u_foam_amount, 0.0, 1.0);
-        vec3 foam_rgb = vec3(0.9, 0.96, 1.0)
-                      * (0.25 + u_sun_intensity * 0.3 * max(L.y, 0.0));
-        wcol = mix(wcol, foam_rgb, foam);
+        if (foam > 0.0){
+            // lit like everything else: sky light + sun (dark at night)
+            vec3 zen = textureLod(u_env, cloud_eq(vec3(0.0, 1.0, 0.0)), 4.0).rgb;
+            vec3 foam_rgb = vec3(0.9, 0.96, 1.0)
+                          * (dot(zen, vec3(0.3, 0.5, 0.2)) * 0.6 + u_sun_intensity * 0.3 * max(L.y, 0.0));
+            wcol = mix(wcol, foam_rgb, foam);
+        }
 
+        // Aerial perspective: far water melts into the horizon haze
+        // instead of ending in a hard line.
+        if (!under){
+            vec3 haze = env_sample(normalize(vec3(D.x, 0.015, D.z)));
+            wcol = mix(wcol, haze, (1.0 - exp(-t_hit * 0.0011)) * 0.6);
+        }
         col = wcol;
     }
 

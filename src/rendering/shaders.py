@@ -299,6 +299,128 @@ void main(){
     v_uv = p * 0.5 + 0.5;
 }
 """
+CLOUD_GLSL = """
+// ---------------------------------------------------------------- clouds
+// Procedural cumulus deck, shared by the sky (lighting
+// pass) and the ocean's reflections, so the water mirrors the same clouds.
+// One analytic ray/plane hit (no ray march): a domain-warped FBM
+// shape with detail erosion, lit with a Beer-Lambert optical depth toward
+// the sun, a powder term, a two-lobe Henyey-Greenstein phase
+// (silver lining + forward glow) and aerial perspective toward the horizon.
+// Needs from the including shader: PI, u_env (equirect, mipmapped),
+// u_sun_dir / u_sun_color / u_sun_intensity and u_time.
+uniform int   u_clouds_enabled;
+uniform float u_cloud_coverage;   // 0..1 - fraction of sky filled
+uniform float u_cloud_density;    // opacity + belly darkening
+uniform float u_cloud_scale;      // noise scale (larger = bigger masses)
+uniform float u_cloud_altitude;   // world height of the cloud plane
+uniform float u_cloud_speed;      // wind drift (UV units / second)
+uniform vec3  u_cloud_tint;       // base colour multiplier
+uniform vec2  u_cloud_wind;       // wind direction on XZ
+
+float cloud_hash(vec2 p){
+    p = fract(p * vec2(234.34, 435.345));
+    p += dot(p, p + 34.23);
+    return fract(p.x * p.y);
+}
+float cloud_noise(vec2 p){
+    vec2 i = floor(p);
+    vec2 f = fract(p);
+    vec2 u = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);   // quintic: no grid creases
+    float a = cloud_hash(i);
+    float b = cloud_hash(i + vec2(1.0, 0.0));
+    float c = cloud_hash(i + vec2(0.0, 1.0));
+    float d = cloud_hash(i + vec2(1.0, 1.0));
+    return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
+}
+float cloud_fbm(vec2 p, int oct){
+    float v = 0.0;
+    float a = 0.5;
+    float n = 0.0;
+    mat2 rot = mat2(0.8, 0.6, -0.6, 0.8);   // rotate+scale kills grid alignment
+    for (int i = 0; i < 6; ++i){
+        if (i >= oct) break;
+        v += a * cloud_noise(p);
+        n += a;
+        p = rot * p * 2.03 + vec2(11.5);
+        a *= 0.5;
+    }
+    return v / max(n, 1e-4);
+}
+vec2 cloud_warp(vec2 p){
+    return p + (vec2(cloud_noise(p * 0.37 + vec2(3.1, 7.7)),
+                     cloud_noise(p * 0.37 + vec2(8.3, 1.9))) - 0.5) * 1.1;
+}
+// coverage threshold: 0 = clear sky, 1 = overcast
+float cloud_threshold(){ return mix(0.80, 0.30, clamp(u_cloud_coverage, 0.0, 1.0)); }
+// Cumulus density at (warped) deck coordinates.  detail = extra erosion octaves.
+float cloud_density(vec2 w, int detail){
+    float c = cloud_fbm(w, 4) - cloud_threshold();
+    if (c <= -0.06) return 0.0;                    // clear sky: skip the detail
+    if (detail > 0){
+        float det = cloud_fbm(w * 4.3 + vec2(17.0, 5.0), detail);
+        c -= (1.0 - det) * 0.16 * (1.0 - smoothstep(0.0, 0.22, c));
+    }
+    return clamp(c * (3.2 + u_cloud_density * 2.4), 0.0, 1.0);
+}
+// cheap version for the light taps (shape only)
+float cloud_density_lo(vec2 w){
+    return clamp((cloud_fbm(w, 3) - cloud_threshold()) * (3.2 + u_cloud_density * 2.4), 0.0, 1.0);
+}
+float cloud_hg(float c, float g){
+    float g2 = g * g;
+    return (1.0 - g2) / (4.0 * PI * pow(max(1.0 + g2 - 2.0 * g * c, 1e-4), 1.5));
+}
+vec2 cloud_eq(vec3 d){
+    return vec2(atan(d.z, d.x) / (2.0 * PI) + 0.5, asin(clamp(d.y, -1.0, 1.0)) / PI + 0.5);
+}
+// rgb = cloud colour, a = coverage, for a ray from ro along rd.
+// refl = true: the cheaper version used for the ocean's reflections (no
+// erosion detail, no light taps) - waves blur it anyway.
+vec4 cloud_layer(vec3 ro, vec3 rd, bool refl){
+    if (u_clouds_enabled != 1 || rd.y <= 0.012) return vec4(0.0);
+    float t = (u_cloud_altitude - ro.y) / rd.y;
+    if (t <= 0.0) return vec4(0.0);
+    t = min(t, 60000.0);
+    float sc = 0.0012 * u_cloud_scale;
+    vec2 w = cloud_warp((ro.xz + rd.xz * t) * sc + u_cloud_wind * (u_time * u_cloud_speed));
+    float den;
+    if (refl)
+        den = clamp((cloud_fbm(w, 3) - cloud_threshold()) * (3.2 + u_cloud_density * 2.4), 0.0, 1.0);
+    else
+        den = cloud_density(w, 2);
+    den *= smoothstep(0.012, 0.13, rd.y);
+    if (den <= 0.003) return vec4(0.0);
+
+    vec3 to_sun = normalize(-u_sun_dir);
+    float mu = dot(rd, to_sun);
+    float day = smoothstep(-0.10, 0.30, to_sun.y);
+    vec3 amb_top = textureLod(u_env, cloud_eq(vec3(0.0, 1.0, 0.0)), 3.0).rgb;
+    vec3 amb_hor = refl ? amb_top * 1.1
+                        : textureLod(u_env, cloud_eq(normalize(vec3(rd.x, 0.06, rd.z))), 3.0).rgb;
+    vec3 sun_rad = u_sun_color * u_sun_intensity;
+    // optical depth toward the sun: one shape tap sunward (sky only)
+    float od = den * 0.35;
+    if (!refl){
+        vec2 sd = normalize(to_sun.xz + vec2(1e-4)) * (0.06 + 0.08 * (1.0 - abs(to_sun.y)));
+        od += cloud_density_lo(w + sd);
+    } else {
+        od += den * 0.6;
+    }
+    float T = exp(-od * (0.8 + 1.2 * u_cloud_density));
+    float powder = 1.0 - exp(-den * 3.5);
+    float phase = mix(cloud_hg(mu, 0.6), cloud_hg(mu, -0.25), 0.4) * 4.0 * PI;   // ~1 on average
+    vec3 amb = mix(amb_hor, amb_top, 0.6) * (1.30 - 0.38 * den * u_cloud_density)
+             + vec3(0.02, 0.02, 0.035);
+    vec3 col = u_cloud_tint * (amb + sun_rad * 0.42 * T * mix(1.0, powder, 0.35) * phase * day);
+    col += sun_rad * 0.20 * pow(max(mu, 0.0), 10.0) * (1.0 - den) * day;      // silver lining
+    float fog = 1.0 - exp(-t * 0.00003);                                       // aerial perspective
+    col = mix(col, amb_hor * 1.08, fog * 0.75);
+    return vec4(col, clamp(den * (0.82 + 0.18 * u_cloud_density), 0.0, 0.98) * (1.0 - fog * 0.5));
+}
+"""
+
+
 LIGHTING_FRAG = """#version 330 core
 in vec2 v_uv;
 out vec4 frag_color;
@@ -489,58 +611,8 @@ float local_light_attenuation(float distance_to_light, float range){
     return (t * t) / (d * d + 1.0);
 }
 
-// ---------------------------------------------------------------- clouds
-// Procedural EEVEE-quality cloud layer.  A wind-animated FBM noise field
-// is projected onto a plane at u_cloud_altitude and ray-marched ZERO times
-// — one analytic ray/plane hit + two shaped samples per pixel keeps the
-// cost trivial while the coverage/erosion shaping, density-gradient silver
-// lining and belly shading give the soft, lit, volumetric read.
-uniform int   u_clouds_enabled;
-uniform float u_cloud_coverage;   // 0..1 — fraction of sky filled
-uniform float u_cloud_density;    // opacity + belly darkening
-uniform float u_cloud_scale;      // noise scale (larger = bigger masses)
-uniform float u_cloud_altitude;   // world height of the cloud plane
-uniform float u_cloud_speed;      // wind drift (UV units / second)
-uniform vec3  u_cloud_tint;       // base colour multiplier
-uniform vec2  u_cloud_wind;       // wind direction on XZ
-uniform float u_time;             // seconds — drives the drift
-
-float cloud_hash(vec2 p){
-    p = fract(p * vec2(234.34, 435.345));
-    p += dot(p, p + 34.23);
-    return fract(p.x * p.y);
-}
-float cloud_noise(vec2 p){
-    vec2 i = floor(p);
-    vec2 f = fract(p);
-    vec2 u = f * f * (3.0 - 2.0 * f);
-    float a = cloud_hash(i);
-    float b = cloud_hash(i + vec2(1.0, 0.0));
-    float c = cloud_hash(i + vec2(0.0, 1.0));
-    float d = cloud_hash(i + vec2(1.0, 1.0));
-    return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
-}
-float cloud_fbm(vec2 p){
-    float v = 0.0;
-    float a = 0.5;
-    mat2 rot = mat2(0.8, 0.6, -0.6, 0.8);   // rotate+scale kills grid alignment
-    for (int i = 0; i < 5; ++i){
-        v += a * cloud_noise(p);
-        p = rot * p * 2.02 + vec2(11.5);
-        a *= 0.5;
-    }
-    return v;
-}
-float cloud_shape(vec2 p){
-    // Large-scale billows eroded by high-frequency detail → fluffy,
-    // cauliflower-like silhouettes instead of blurry fog patches.
-    float base = cloud_fbm(p);
-    float detail = cloud_fbm(p * 3.7 + vec2(31.4));
-    float c = base - (1.0 - u_cloud_coverage) * 1.15;
-    c -= detail * 0.28 * (1.0 - clamp(c * 3.0, 0.0, 1.0));
-    return clamp(c * (2.2 + u_cloud_density * 2.5), 0.0, 1.0);
-}
-
+uniform float u_time;             // seconds - drives the cloud drift
+""" + CLOUD_GLSL + """
 void main(){
     vec4 gp = texture(g_position, v_uv);
     vec3 world_pos = gp.xyz;
@@ -564,39 +636,10 @@ void main(){
         // Visibility fade when sun drops below horizon
         float sun_vis = smoothstep(-0.05, 0.05, sun_elev);
 
-        // ---- procedural cloud layer (default scene feature) -----------
-        float cloud_alpha = 0.0;
-        vec3 cloud_rgb = vec3(0.0);
-        if (u_clouds_enabled == 1 && ray_dir.y > 0.02){
-            // Analytic ray/plane intersection with the cloud deck.
-            float t = (u_cloud_altitude - u_camera_pos.y) / max(ray_dir.y, 0.02);
-            t = min(t, 60000.0);
-            vec2 cuv = (u_camera_pos.xz + ray_dir.xz * t) * (0.0012 * u_cloud_scale)
-                     + u_cloud_wind * (u_time * u_cloud_speed);
-            float den = cloud_shape(cuv);
-            // Dissolve into the haze band so clouds never hard-clip the horizon.
-            den *= smoothstep(0.02, 0.14, ray_dir.y);
-            if (den > 0.004){
-                // Silver lining: density gradient toward the sun — a second
-                // shaped sample one step sunward.  Edges facing the sun glow.
-                float den_sun = cloud_shape(cuv + to_sun.xz * 0.06);
-                float lining = clamp((den - den_sun) * 6.0, 0.0, 1.0);
-                float day = smoothstep(-0.10, 0.30, sun_elev);
-                // Ambient: zenith sky colour + a small floor so night clouds
-                // read as dark blue-grey instead of pure black.
-                vec3 amb = textureLod(u_env, dir_to_equirect(vec3(0.0, 1.0, 0.0)), 2.0).rgb
-                         + vec3(0.02, 0.02, 0.035);
-                // Belly shading: dense cores absorb more light than thin rims.
-                float shade = 1.0 - den * 0.55 * u_cloud_density;
-                vec3 col = u_cloud_tint * amb * 1.35 * shade;
-                // Sun-lit rims (the classic EEVEE silver lining).
-                col += u_sun_color * (u_sun_intensity * 0.5) * lining * day;
-                // Warm forward-scattering when looking toward a low sun.
-                col += u_sun_color * pow(max(sun_cos, 0.0), 4.0) * day * 0.35;
-                cloud_rgb = col;
-                cloud_alpha = clamp(den * (0.7 + u_cloud_density * 0.3), 0.0, 0.97);
-            }
-        }
+        // ---- procedural clouds (default scene feature, see CLOUD_GLSL) ----
+        vec4 cl = cloud_layer(u_camera_pos, ray_dir, false);
+        float cloud_alpha = cl.a;
+        vec3 cloud_rgb = cl.rgb;
 
         // Sun, partially occluded by whatever cloud covers this pixel.
         float sun_block = 1.0 - cloud_alpha * 0.92;

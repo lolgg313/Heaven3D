@@ -1092,6 +1092,19 @@ class Renderer:
                     except (KeyError, ValueError):
                         pass
                     _oprog["u_ripple_count"] = len(_rip)
+                    # The same cloud deck as the sky, so the sea reflects it.
+                    _cl = getattr(scene, "clouds", None)
+                    if _cl is not None and _cl.enabled:
+                        _oprog["u_clouds_enabled"] = 1
+                        _oprog["u_cloud_coverage"] = float(_cl.coverage)
+                        _oprog["u_cloud_density"] = float(_cl.density)
+                        _oprog["u_cloud_scale"] = float(_cl.scale)
+                        _oprog["u_cloud_altitude"] = float(_cl.altitude)
+                        _oprog["u_cloud_speed"] = float(_cl.speed)
+                        _oprog["u_cloud_tint"].write(glm.vec3(*_cl.tint).to_bytes())
+                        _oprog["u_cloud_wind"] = (float(_cl.wind_dir[0]), float(_cl.wind_dir[1]))
+                    else:
+                        _oprog["u_clouds_enabled"] = 0
                     self._quad.render(_oprog)
                     # Blit the composited ocean frame back onto the HDR scene.
                     self.scene_fbo.use()

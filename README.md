@@ -54,6 +54,14 @@ The editor's interface is now built with [Vitrail](https://github.com/lolgg313/v
 - **API tab:** a searchable reference built from the engine itself: every engine and scene-object method, the blueprint hooks, every visual-script node and every blueprint you can attach. *Insert* puts an example into your script.
 - **Play in the editor** with Ctrl+P or F5. The panels step aside so the game gets the whole window, and a small Stop button floats on top.
 
+### Ocean and clouds, rebuilt (about +3.6% GPU time)
+
+<img src="docs/images/ocean_clouds_before_after.jpg" width="900" alt="Ocean and clouds before (left) and after (right)" />
+
+- **Ocean:** small swells and wind ripples on top of the big waves (the big waves, and so buoyancy, are unchanged), so the surface no longer shows a repeating grid. It also gets a real sun-glitter path, light shining through wave crests, wind-streaked whitecaps, and the sky's clouds reflected in the water. Distant water melts into the horizon haze, foam dims at night, and the old grey streaks and square foam blotches are gone.
+- **Clouds:** puffy cumulus with bright sun-lit tops and soft grey bellies, silver linings toward the sun and haze toward the horizon. The same Clouds settings (coverage, density, scale, altitude, speed, tint) still drive them.
+- **No new shimmer:** every wave detail fades out before it gets smaller than a pixel, and the mirrored clouds fade with distance, so distant water flickers less than before.
+
 ### Fixes in 3.1.3
 
 **Particles look right again:** particles (and every transparent object) used to show hard square or triangular edges and hide the particles behind them. The engine asked for depth writes to be turned off while drawing them, but ModernGL 5 has no such switch on the context, so the request was silently ignored. It now works. The view gizmo's X / Y / Z letters are back. The editor is tested on Windows too (the Windows edition's Python under Wine): `tests/test_vitrail_editor.py` passes there.
