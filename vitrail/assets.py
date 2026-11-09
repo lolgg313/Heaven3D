@@ -189,7 +189,7 @@ def scan(folder, show_hidden=False):
     out = []
     with os.scandir(folder) as it:
         for e in it:
-            if not show_hidden and e.name.startswith("."):
+            if not show_hidden and (e.name.startswith(".") or e.name == "__pycache__"):
                 continue
             try:
                 is_dir = e.is_dir()
@@ -204,7 +204,7 @@ def scan(folder, show_hidden=False):
 def walk(root, limit=5000):
     n = 0
     for dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = sorted(d for d in dirnames if not d.startswith("."))
+        dirnames[:] = sorted(d for d in dirnames if not d.startswith(".") and d != "__pycache__")
         for name in sorted(dirnames) + sorted(filenames):
             if name.startswith("."):
                 continue
@@ -292,6 +292,7 @@ class AssetGrid(Widget):
         self.activated = Signal()
         self.context = Signal()       # (asset or None, x, y)
         self.dropped = Signal()       # (assets, target_asset)
+        self.dropped_here = Signal()  # (assets, target asset or None): dropped on a file / empty space
 
     def set_assets(self, assets, keep_selection=True):
         old = {a.path for a in self.selection}
@@ -514,6 +515,8 @@ class AssetGrid(Widget):
         moving = [a for a in payload.get("assets", []) if target is None or a.path != target.path]
         if target is not None and target.is_dir and moving:
             self.dropped.emit(moving, target)
+        elif moving:
+            self.dropped_here.emit(moving, target)
 
     # -- keyboard -------------------------------------------------------------------------
     def on_key(self, ui, e):

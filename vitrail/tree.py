@@ -112,6 +112,9 @@ class TreeView(Widget):
         self.sorter = None             # fn(items, column, descending) -> list
         self.drop_filter = None        # fn(payload) -> bool: accept external drag & drop payloads
         self.payload_dropped = Signal()  # (payload, item or None, "before"/"into"/"after")
+        # fn(items) -> (payload, label, icon) or None: dragging rows out of the tree
+        # starts an app-wide drag (ui.start_drag) other widgets can accept
+        self.drag_out = None
         self.selection_changed = Signal()
         self.activated = Signal()      # (item) double-click / Enter
         self.expanded_changed = Signal()
@@ -467,6 +470,15 @@ class TreeView(Widget):
             if abs(ev.x - x0) + abs(ev.y - y0) < 6:
                 return
             self._press = (x0, y0, item, True)
+        if self.drag_out is not None and not (self.x <= ev.x < self.x + self.w):
+            moving = list(self.selection) or [item]
+            out = self.drag_out(moving)
+            if out:
+                payload, label, icon = out
+                self._press, self._drop = None, None
+                ui.start_drag(payload, label, icon, source=self)
+                self.invalidate()
+                return
         # auto-scroll near the edges
         top = self.y + 1 + self.header_h(ui)
         if ev.y < top + 8:

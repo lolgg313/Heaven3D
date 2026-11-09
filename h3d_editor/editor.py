@@ -35,6 +35,7 @@ from .animation_tab import AnimationTab
 from .graphs import GraphTab
 from .inspector import Inspector
 from .outliner import Outliner
+from .materials import MaterialTab
 from .prefabs import PrefabTools
 from .scripting import ApiTab, Console, ScriptsTab, project_dir
 from .widgets import Bar, Dock, PassColumn, PassRow
@@ -172,6 +173,7 @@ class Editor:
         self.assets = None
         self.scripts = ScriptsTab(self, self.tabs.tab("Script", icon="code"))
         self.graph = GraphTab(self, self.tabs.tab("Graph", icon="node"))
+        self.materials = MaterialTab(self, self.tabs.tab("Material", icon="material"))
         self.anim = AnimationTab(self, self.tabs.tab("Animation", icon="film"))
         self.api = ApiTab(self, self.tabs.tab("API", icon="help"))
         self.tabs.changed.connect(self._tab_changed)
@@ -394,6 +396,13 @@ class Editor:
             if t == pygame.QUIT:
                 out.append(ev)
                 continue
+            if t == pygame.DROPFILE:                # a file dropped from the desktop / file manager
+                if not playing:
+                    try:
+                        self.drop_file(ev.file)
+                    except Exception as ex:
+                        self._report(ex)
+                continue
             if t == pygame.KEYDOWN and (ev.key == pygame.K_F5 or (
                     ev.key == pygame.K_p and getattr(ev, "mod", 0) & (pygame.KMOD_CTRL | pygame.KMOD_META))) and not ui.overlays:
                 self.toggle_play()                 # works in play too, mouse captured or not
@@ -518,6 +527,7 @@ class Editor:
                 self.inspector.sync()
                 self.prefabs.tick(now)
             self.graph.flush()
+            self.materials.flush()
             if not playing:
                 self.anim.flush()
             if self._pkg_count != len(getattr(self.h3d, "_H3D27_PKG_STATE", {}).get("tools", ())):
@@ -996,12 +1006,318 @@ class Editor:
                     at = ro + rd * t
         except Exception:
             at = None
-        for a in payload.get("assets", []):
-            p = getattr(a, "path", None)
-            if p and p.lower().endswith(MODEL_EXT):
+        target = None
+        paths = [getattr(a, "path", None) or "" for a in payload.get("assets", [])]
+        if any(p.lower().endswith((".vmat", ".py")) for p in paths):
+            target = self.object_at(pos)
+        for p in paths:
+            low = p.lower()
+            if low.endswith(MODEL_EXT):
                 self.import_model(p, at=at)
-            elif p and p.lower().endswith(".prefab"):
+            elif low.endswith(".prefab"):
                 self.prefabs.place(p, at=at)
+            elif low.endswith(".vmat"):
+                if target is None:
+                    self.toast("Drop the material onto an object", error=True)
+                else:
+                    self.assign_material(target, p)
+            elif low.endswith(".py"):
+                if target is None:
+                    self.toast("Drop the script onto an object", error=True)
+                else:
+                    self.attach_script(target, p)
+
+    # ======================================================== drag & drop onto objects
+    def object_at(self, pos):
+        """The object under a viewport point (selects it, like a click)."""
+        e = self.engine
+        try:
+            e._pick_scene(pos)
+        except Exception:
+            return None
+        n = e.selected
+        if n is None or n.is_sun or n.is_clouds or n.is_ocean:
+            return None
+        return n
+
+    def assign_material(self, n, path):
+        """Give object ``n`` the material asset ``path`` (undoable)."""
+        e = self.engine
+        if n is None:
+            return False
+        targets = [n] + [c for c in n.children if getattr(c, "_heaven3d_imported_part", False)]
+        before = [(t, t.material) for t in targets]
+        old_asset = getattr(n, "material_asset", None)
+        try:
+            e.assign_material_asset(n, path)
+        except Exception as ex:
+            self._report(ex)
+            self.toast("Couldn't use %s: %s" % (os.path.basename(path), ex), error=True)
+            return False
+        after = [(t, t.material) for t in targets]
+        new_asset = n.material_asset
+
+        def undo():
+            for t, m in before:
+                t.material = m
+            n.material_asset = old_asset
+            self.inspector.show(e.selected, force=True)
+
+        def redo():
+            for t, m in after:
+                t.material = m
+            n.material_asset = new_asset
+            self.inspector.show(e.selected, force=True)
+        self.ui.undo.push("Material " + os.path.basename(path), undo, redo)
+        self.select(n)
+        self.inspector.show(n, force=True)
+        self.toast("%s now uses %s" % (n.name, os.path.basename(path)))
+        return True
+
+    def attach_script(self, n, path, only=None):
+        """Attach a script file's blueprint to object ``n`` (Unity-style): the
+        class named after the file, the only class, or - when a file holds
+        several - the one picked from a menu.  ``only``: class names to use."""
+        if n is None:
+            return 0
+        from .scripting import hot_reload
+        ok, msg, _line = hot_reload(self.h3d, self.engine, path)
+        if not ok:
+            self.toast("%s has an error: %s" % (os.path.basename(path), msg), error=True)
+            self.log("[Script] " + msg, "ERROR")
+            return 0
+        try:
+            with open(path, encoding="utf-8") as fh:
+                src = fh.read()
+        except OSError:
+            src = ""
+        import re
+        names = [c for c in re.findall(r"^class\s+(\w+)\s*\(", src, re.M)
+                 if self.h3d.BlueprintRegistry.get(c) is not None]
+        if not names:
+            self.toast("%s has no blueprint class to attach" % os.path.basename(path), error=True)
+            return 0
+        if only is not None:
+            names = [c for c in names if c in only]
+        elif len(names) > 1:
+            key = lambda t: t.replace("_", "").lower()  # noqa: E731
+            stem = key(os.path.splitext(os.path.basename(path))[0])
+            same = [c for c in names if key(c) == stem]
+            if same:
+                names = same
+            else:
+                items = [MenuItem(c, lambda c=c: self.attach_script(n, path, only=[c]), icon="blueprint")
+                         for c in names]
+                items += [None, MenuItem("All of them", lambda: self.attach_script(n, path, only=names),
+                                         icon="add")]
+                vt.open_context_menu(self.ui, items, at=pygame.mouse.get_pos())
+                return 0
+        added = []
+        for name in names:
+            if any(type(b).__name__ == name for b in n.blueprints):
+                continue
+            bp = self.add_blueprint(n, name, quiet=True)
+            if bp is not None:
+                added.append(bp)
+        if not added:
+            self.toast("%s already has %s" % (n.name, ", ".join(names)))
+            return 0
+
+        def undo():
+            for bp in added:
+                self.remove_blueprint(n, bp) if bp in n.blueprints else None
+            self.inspector.show(self.engine.selected, force=True)
+
+        def redo():
+            for bp in added:
+                if bp not in n.blueprints:
+                    self.engine.attach_blueprint(n, bp)
+            self.inspector.show(self.engine.selected, force=True)
+        self.ui.undo.push("Add script " + os.path.basename(path), undo, redo)
+        self.select(n)
+        self.inspector.show(n, force=True)
+        self.toast("%s added to %s" % (", ".join(type(b).__name__ for b in added), n.name))
+        return len(added)
+
+    def drop_assets_on_object(self, n, payload):
+        """Assets dragged onto an object (Outliner row or Inspector)."""
+        done = False
+        for a in payload.get("assets", []):
+            p = getattr(a, "path", "") or ""
+            if p.lower().endswith(".vmat"):
+                done = self.assign_material(n, p) or done
+            elif p.lower().endswith(".py"):
+                done = bool(self.attach_script(n, p)) or done
+        return done
+
+    @staticmethod
+    def object_drop_ok(payload):
+        return (isinstance(payload, dict) and payload.get("type") == "asset"
+                and any((getattr(a, "path", "") or "").lower().endswith((".vmat", ".py"))
+                        for a in payload.get("assets", [])))
+
+    def model_to_prefab(self, path, folder=None):
+        """Make <folder>/<model name>.prefab from a model file (no scene change)."""
+        e = self.engine
+        folder = folder or os.path.dirname(path)
+        stem = os.path.splitext(os.path.basename(path))[0]
+        out = os.path.join(folder, stem + ".prefab")
+        k = 2
+        while os.path.exists(out):
+            out = os.path.join(folder, "%s %d.prefab" % (stem, k))
+            k += 1
+        sel = e.selected
+        node = e.load_model(path)
+        if node is None:
+            raise ValueError("couldn't import " + os.path.basename(path))
+        try:
+            e.save_prefab(node, out, link=False)
+        finally:
+            e._delete_node(node)
+            if sel is not None and sel.parent is not None:
+                e.select_node(sel)
+            else:
+                e.deselect()
+        return out
+
+    def models_dropped_in_assets(self, assets, target=None):
+        """Model files dropped on empty space in Assets become prefabs."""
+        if target is not None and getattr(target, "is_dir", False):
+            return
+        made = []
+        folder = self.assets.cwd if self.assets is not None else self._pdir()
+        for a in assets:
+            p = getattr(a, "path", "") or ""
+            if p.lower().endswith(MODEL_EXT):
+                try:
+                    made.append(self.model_to_prefab(p, folder))
+                except Exception as ex:
+                    self._report(ex)
+                    self.toast("Couldn't make a prefab of %s: %s" % (os.path.basename(p), ex), error=True)
+        if made:
+            self.refresh_assets()
+            try:
+                self.assets.select_path(made[-1])
+            except Exception:
+                pass
+            self.toast("Prefab%s made: %s" % ("s" if len(made) > 1 else "",
+                                              ", ".join(os.path.basename(m) for m in made)))
+
+    def nodes_dropped_in_assets(self, payload):
+        """Objects dragged from the Outliner into Assets become prefabs."""
+        folder = self.assets.cwd if self.assets is not None else self._pdir()
+        made = []
+        for n in payload.get("nodes", []):
+            if not self.prefabs.can_save(n):
+                continue
+            path = os.path.join(folder, self.prefabs_name(n, folder))
+            p = self.prefabs.save(n, path)
+            if p:
+                made.append(p)
+        if made:
+            self.refresh_assets()
+            try:
+                self.assets.select_path(made[-1])
+            except Exception:
+                pass
+
+    @staticmethod
+    def prefabs_name(n, folder):
+        base = "".join(c if (c.isalnum() or c in " _-") else "_" for c in n.name).strip() or "Prefab"
+        name, k = base + ".prefab", 2
+        while os.path.exists(os.path.join(folder, name)):
+            name, k = "%s %d.prefab" % (base, k), k + 1
+        return name
+
+    def drop_file(self, path):
+        """A file dropped onto the window from the desktop / file manager."""
+        import shutil
+        path = os.path.abspath(path)
+        if not os.path.isfile(path):
+            return
+        ui = self.ui
+        mx, my = pygame.mouse.get_pos()
+        w = ui.widget_at(mx, my)
+        over_assets = over_inspector = over_outliner = False
+        while w is not None:
+            if self.assets is not None and w is self.assets:
+                over_assets = True
+            if w is self.inspector.scroll:
+                over_inspector = True
+            if w is self.outliner.tree:
+                over_outliner = True
+            w = w.parent
+        low = path.lower()
+        pdir = self._pdir()
+
+        def bring_in(folder):
+            """Copy the file (and a model's textures) into the project."""
+            if os.path.normcase(os.path.abspath(path)).startswith(os.path.normcase(os.path.abspath(pdir)) + os.sep):
+                return path
+            os.makedirs(folder, exist_ok=True)
+            dst = os.path.join(folder, os.path.basename(path))
+            stem, ext = os.path.splitext(dst)
+            k = 2
+            while os.path.exists(dst):
+                dst = "%s %d%s" % (stem, k, ext)
+                k += 1
+            if low.endswith(MODEL_EXT):
+                try:
+                    col = self.h3d.H3DPortable.Collector(pdir, lambda m: None, dest_root=pdir)
+                    col.dest = folder
+                    rel = col.add(path)
+                    return os.path.join(pdir, *rel.split("/"))
+                except Exception:
+                    pass
+            shutil.copy2(path, dst)
+            return dst
+        if over_assets:
+            folder = self.assets.cwd
+            try:
+                p = bring_in(folder)
+                if low.endswith(MODEL_EXT):
+                    pf = self.model_to_prefab(p, folder)
+                    self.toast("Imported %s + prefab %s" % (os.path.basename(p), os.path.basename(pf)))
+                else:
+                    self.toast("Copied %s into the project" % os.path.basename(p))
+            except Exception as ex:
+                self._report(ex)
+                self.toast("Couldn't add %s: %s" % (os.path.basename(path), ex), error=True)
+            self.refresh_assets()
+            return
+        if low.endswith(".py"):
+            n = self.engine.selected if (over_inspector or over_outliner) else self.object_at((mx, my))
+            if n is None:
+                self.toast("Drop the script onto an object (or the Inspector)", error=True)
+                return
+            p = bring_in(os.path.join(pdir, "scripts"))
+            self.attach_script(n, p)
+            return
+        if low.endswith(".vmat"):
+            n = self.engine.selected if (over_inspector or over_outliner) else self.object_at((mx, my))
+            if n is None:
+                self.toast("Drop the material onto an object", error=True)
+                return
+            self.assign_material(n, bring_in(os.path.join(pdir, "assets", "materials")))
+            return
+        if low.endswith(MODEL_EXT):
+            p = bring_in(os.path.join(pdir, "assets", "models"))
+            at = None
+            try:
+                ro, rd = self.engine._mouse_ray((mx, my))
+                if abs(rd.y) > 1e-4 and 0 < -ro.y / rd.y < 500:
+                    at = ro + rd * (-ro.y / rd.y)
+            except Exception:
+                at = None
+            self.import_model(p, at=at)
+            return
+        if low.endswith(".prefab"):
+            self.prefabs.place(bring_in(os.path.join(pdir, "assets", "prefabs")))
+            return
+        if low.endswith(".heaven3d"):
+            self.open_project(path)
+            return
+        self.toast("Drop it on the Assets panel to copy it into the project")
 
     # =================================================================== tabs
     def open_tab(self, title, focus=False):
@@ -1034,12 +1350,21 @@ class Editor:
                 return
             self.assets = AssetBrowser(root, fill=True, parent=self.assets_page)
             self.assets.activated.connect(self._asset_activated)
+            self._hook_assets()
         elif self.assets.root != os.path.abspath(root):
             self.assets_page.clear()
             self.assets = AssetBrowser(root, fill=True, parent=self.assets_page)
             self.assets.activated.connect(self._asset_activated)
+            self._hook_assets()
         else:
             self.assets.refresh()
+
+    def _hook_assets(self):
+        """Assets: model dropped on empty space -> prefab; Outliner objects -> prefab."""
+        ab = self.assets
+        ab.grid.dropped_here.connect(self.models_dropped_in_assets)
+        ab.accepts_drop = lambda payload: isinstance(payload, dict) and payload.get("type") == "scene_nodes"
+        ab.on_drop = lambda ui, payload, x, y: self.nodes_dropped_in_assets(payload)
 
     def _asset_activated(self, a):
         p = a.path
@@ -1048,6 +1373,8 @@ class Editor:
             self.import_model(p)
         elif low.endswith(".prefab"):
             self.prefabs.place(p)
+        elif low.endswith(".vmat"):
+            self.materials.open(p)
         elif low.endswith(".py"):
             self.scripts.open(p)
         elif low.endswith(".heaven3d"):

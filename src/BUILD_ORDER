@@ -69,5 +69,6 @@ patches/perf_274.py
 gameplay/visual_scripts.py
 gameplay/animator.py
 world/prefabs.py
+world/material_graph.py
 editor/vitrail_hook.py
 engine/run.py

@@ -30,6 +30,10 @@ class Outliner:
         self.tree.activated.connect(lambda it: (self.ed.select(it.data), self.ed.focus_selected()))
         self.tree.moved.connect(self._moved)
         self.tree.context.connect(self._context)
+        # drag objects out to Assets (-> prefab); drop materials / scripts onto rows
+        self.tree.drag_out = self._drag_out
+        self.tree.drop_filter = editor.object_drop_ok
+        self.tree.payload_dropped.connect(self._payload_dropped)
         self._sig = None
         self._items = {}
         self._quiet = False
@@ -115,6 +119,20 @@ class Outliner:
         if parent is None:
             parent = self.engine.scene.root
         self.ed.reparent(n, parent, index)
+
+    def _drag_out(self, items):
+        nodes = [it.data for it in items if it.data is not None and self.ed.prefabs.can_save(it.data)]
+        if not nodes:
+            return None
+        label = nodes[0].name if len(nodes) == 1 else "%d objects" % len(nodes)
+        return {"type": "scene_nodes", "nodes": nodes}, label + "  -> prefab", "prefab"
+
+    def _payload_dropped(self, payload, item, where):
+        n = item.data if item is not None else self.engine.selected
+        if n is None:
+            self.ed.toast("Drop it onto an object", error=True)
+            return
+        self.ed.drop_assets_on_object(n, payload)
 
     def _context(self, item, x, y):
         ed = self.ed

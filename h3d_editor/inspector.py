@@ -104,6 +104,9 @@ class Inspector:
         self.h3d = editor.h3d
         self.body = Column(padding=4, spacing=6)
         self.scroll = ScrollArea(self.body, fill=True)
+        # drop a material (.vmat) or a script (.py) from Assets onto the Inspector
+        self.scroll.accepts_drop = lambda payload: self.node is not None and editor.object_drop_ok(payload)
+        self.scroll.on_drop = lambda ui, payload, x, y: editor.drop_assets_on_object(self.node, payload)
         self.node = None
         self.binds = []            # (widget, getter)
         self._sig = None
@@ -121,7 +124,8 @@ class Inspector:
         """What decides which panels exist (rebuild when it changes)."""
         if n is None:
             return None
-        return (id(n), bool(self.h3d.prefab_root(n)), n.material is not None, type(n.collider).__name__,
+        return (id(n), bool(self.h3d.prefab_root(n)), getattr(n, "material_asset", None),
+                n.material is not None, type(n.collider).__name__,
                 n.rigidbody is not None,
                 tuple(type(b).__name__ for b in n.blueprints), tuple(sorted(n.spawn_config or {})),
                 bool(n.mesh), n.is_sun, n.is_point_light, n.is_spot_light, n.is_clouds, n.is_ocean)
@@ -310,8 +314,19 @@ class Inspector:
                 Button("Custom mesh...", lambda: ed.change_spawn_mesh(n), icon="cube", parent=p)
 
         mat = n.material
-        if mat is not None:
+        asset = getattr(n, "material_asset", None)
+        if asset:
             p = self.panel("Material", icon="material")
+            Label(os.path.basename(asset) + ("" if os.path.isfile(asset) else "  (file missing)"), icon="material",
+                  parent=p)
+            Label("Edit it in the Material tab; every object using it updates.", dim=True, parent=p)
+            r = Row(spacing=3, parent=p)
+            Button("Edit", lambda: ed.materials.open(asset), icon="edit", parent=r, enabled=os.path.isfile(asset))
+            Button("Detach", lambda: (e.detach_material_asset(n), self.show(n, force=True)), icon="close",
+                   parent=r, tooltip="Keep the look but make the material this object's own")
+        elif mat is not None:
+            p = self.panel("Material", icon="material")
+            Label("Drop a material (.vmat) here from Assets", dim=True, parent=p)
             self.field(p, mat, "alpha_mode", options=["OPAQUE", "MASK", "BLEND"])
             self.object_fields(p, mat, skip=("alpha_mode",))
             tex = [k for k in vars(mat) if k.endswith("_tex")]
@@ -401,6 +416,7 @@ class Inspector:
         r = Row(spacing=3, parent=p)
         Button("Add blueprint", lambda: ed.add_blueprint(n, pick.value), icon="add", primary=True, parent=r)
         Button("New script...", lambda: ed.scripts.new_script_dialog(attach_to=n), icon="file-plus", parent=r)
+        Label("Tip: drag a script (.py) or a material (.vmat) from Assets onto this panel.", dim=True, parent=p)
 
 
 def _source_of(cls):
