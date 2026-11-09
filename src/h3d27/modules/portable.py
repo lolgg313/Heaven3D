@@ -924,6 +924,7 @@ def export_game(project_file, out_dir, targets, engine_dir, game_name=None, widt
         edir = os.path.join(base, "engine")
         os.makedirs(edir)
         shutil.copy2(os.path.join(engine_dir, "Heaven3D.py"), edir)
+        _copy_engine_packages(engine_dir, edir, log)
         for extra in ("LICENSE",):
             if os.path.isfile(os.path.join(engine_dir, extra)):
                 shutil.copy2(os.path.join(engine_dir, extra), edir)
@@ -1003,6 +1004,27 @@ def export_game(project_file, out_dir, targets, engine_dir, game_name=None, widt
         results.append((target, stage, zpath))
         log(f"[Export] {title} done.")
     return results
+
+
+# Python packages a game's engine folder must carry next to Heaven3D.py
+# (the in-game UI is drawn with Vitrail).  The editor (h3d_editor) stays out.
+GAME_PACKAGES = ("vitrail",)
+
+
+def _copy_engine_packages(engine_dir, edir, log=print):
+    for pkg in GAME_PACKAGES:
+        src = os.path.join(engine_dir, pkg)
+        if not os.path.isfile(os.path.join(src, "__init__.py")):
+            raise FileNotFoundError(
+                f"The '{pkg}' folder is missing next to Heaven3D.py ({src}).\n"
+                f"Exported games need it - reinstall Heaven3D or copy the {pkg} folder back.")
+        dst = os.path.join(edir, pkg)
+        shutil.copytree(src, dst, ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "*.pyo", ".*"))
+        want = sorted(n for n in os.listdir(src) if n.endswith(".py") or n in ("LICENSE", "NOTICE"))
+        got = sorted(n for n in os.listdir(dst) if n.endswith(".py") or n in ("LICENSE", "NOTICE"))
+        if want != got:
+            raise OSError(f"copying {pkg} into the game failed (missing: {sorted(set(want) - set(got))})")
+        log(f"[Export]   {pkg} ({len(got)} files) included")
 
 
 def _is_unix_exec(rel):
