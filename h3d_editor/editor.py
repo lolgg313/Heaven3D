@@ -38,8 +38,9 @@ from .outliner import Outliner
 from .scripting import ApiTab, Console, ScriptsTab, project_dir
 from .widgets import Bar, Dock, PassColumn, PassRow
 
-MODEL_EXT = (".glb", ".gltf", ".obj", ".blend", ".fbx")
-MODEL_FILTERS = [("3D models", "*.glb;*.gltf;*.obj;*.blend"), ("glTF", "*.glb;*.gltf"), ("OBJ", "*.obj"),
+MODEL_EXT = (".glb", ".gltf", ".obj", ".blend", ".fbx", ".x")
+MODEL_FILTERS = [("3D models", "*.glb;*.gltf;*.obj;*.blend;*.fbx;*.x"), ("glTF", "*.glb;*.gltf"), ("FBX", "*.fbx"),
+                 ("DirectX / GameGuru", "*.x"), ("OBJ", "*.obj"),
                  ("Blender", "*.blend"), ("All files", "*")]
 PROJECT_FILTERS = [("Heaven3D project", "*.heaven3d"), ("All files", "*")]
 PREFS_FILE = os.path.join(os.path.expanduser("~"), ".heaven3d", "editor.json")

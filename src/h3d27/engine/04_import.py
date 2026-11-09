@@ -6,6 +6,10 @@ def _h3d27_load_parts(path):
     ext = os.path.splitext(path)[1].lower()
     if ext == ".blend":
         return H3DImporters.load_blend(path, _H3D27Log)
+    if ext == ".fbx":
+        return load_fbx_parts(path, _H3D27Log)
+    if ext == ".x":
+        return load_x_parts(path, _H3D27Log)
     return H3DImporters.load_gltf(path, _H3D27Log)
 
 def _h3d27_nodes_from_parts(parts):
@@ -40,7 +44,7 @@ def _h3d27_load_model_into(self, node, path):
     part is a locked child (hidden in the Hierarchy, never selectable,
     moved/deleted/duplicated/saved together with the root)."""
     ext = os.path.splitext(path)[1].lower()
-    if ext not in (".blend", ".gltf", ".glb"):
+    if ext not in (".blend", ".gltf", ".glb", ".fbx", ".x"):
         return _H3D27_PREV_LOAD_INTO(self, node, path)
     try:
         parts, lights = _h3d27_load_parts(path)

@@ -1206,7 +1206,7 @@ class HeavenEngine:
             # FinalPatch removes the Blender subprocess path completely.
             if ext not in (".glb", ".gltf", ".obj", ".blend"):
                 Log.warn(f"Unsupported model format '{ext}' — supported: "
-                         ".glb, .gltf, .obj and .blend.")
+                         ".glb, .gltf, .obj, .blend, .fbx and .x.")
                 return False
             if ext in (".glb", ".gltf", ".obj", ".blend"):
                 roots = (BlendImporter.build_nodes(path) if ext == ".blend"
@@ -2155,7 +2155,7 @@ class HeavenEngine:
         # [TRIPLEA:p3_spawn_mesh_dialog_filters]
         path = self._native_dialog(
             "open", "Import Custom Mesh",
-            filetypes=[("All supported", "*.glb *.gltf *.obj *.blend"),
+            filetypes=[("All supported", "*.glb *.gltf *.obj *.blend *.fbx *.x"),
                        ("glTF binary", "*.glb"),
                        ("glTF", "*.gltf"),
                        ("Wavefront OBJ", "*.obj"),
@@ -3429,7 +3429,7 @@ class HeavenEngine:
         # [TRIPLEA:p3_import_dialog_filters]
         path = self._native_dialog(
             "open", "Import Model",
-            filetypes=[("All supported", "*.glb *.gltf *.obj *.blend"),
+            filetypes=[("All supported", "*.glb *.gltf *.obj *.blend *.fbx *.x"),
                        ("glTF binary", "*.glb"),
                        ("glTF", "*.gltf"),
                        ("Wavefront OBJ", "*.obj"),
@@ -3440,7 +3440,7 @@ class HeavenEngine:
             assets = os.path.join(os.getcwd(), "assets")
             if os.path.isdir(assets):
                 for f in os.listdir(assets):
-                    if f.lower().endswith((".glb", ".gltf", ".obj", ".blend")):
+                    if f.lower().endswith((".glb", ".gltf", ".obj", ".blend", ".fbx", ".x")):
                         path = os.path.join(assets, f)
                         break
         if not path:

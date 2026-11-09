@@ -300,6 +300,8 @@ def sidecars(path):
                     refs.append((r, r))
     elif ext == ".blend":
         refs = [(r, r[2:]) for r in _blend_images(path)]
+    elif ext in (".fbx", ".x"):
+        refs = list(model_texture_files(path))
     out = []
     for stored, rel in refs:
         p = to_posix(rel)
@@ -360,7 +362,7 @@ class Collector:
         if hit and os.path.isfile(os.path.join(self.dest_root, *hit.split("/"))):
             return hit
         ext = os.path.splitext(src)[1].lower()
-        scs = sidecars(src) if ext in (".gltf", ".obj", ".blend") else []
+        scs = sidecars(src) if ext in (".gltf", ".obj", ".blend", ".fbx", ".x") else []
         if scs:
             # Assets with side files get their own folder so their internal
             # relative references keep working.

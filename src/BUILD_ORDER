@@ -6,6 +6,8 @@ core/scene_graph.py
 importers/glb_classic.py
 importers/obj.py
 importers/blend_classic.py
+importers/fbx.py
+importers/xfile.py
 rendering/mesh.py
 rendering/material.py
 gameplay/blueprint.py

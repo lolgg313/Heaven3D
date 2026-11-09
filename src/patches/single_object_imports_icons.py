@@ -15,9 +15,9 @@ def _finalpatch_is_imported_glb_node(node) -> bool:
     try:
         marker = getattr(node, "_heaven3d_imported_part", None)
         if isinstance(marker, str):
-            return marker.lower() in (".glb", ".gltf", ".blend")
+            return marker.lower() in (".glb", ".gltf", ".blend", ".fbx", ".x")
         path = str(getattr(node, "source_path", "") or "")
-        return os.path.splitext(path)[1].lower() in (".glb", ".gltf", ".blend")
+        return os.path.splitext(path)[1].lower() in (".glb", ".gltf", ".blend", ".fbx", ".x")
     except Exception:
         return False
 
