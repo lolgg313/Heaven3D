@@ -96,6 +96,24 @@ import argparse
 from dataclasses import dataclass, field
 from typing import Any, Optional, Callable, Dict, List, Tuple, Union
 
+# ---- no console (pythonw.exe: "Heaven3D Editor.exe", double-clicked .pyw) ----
+# sys.stdout / sys.stderr are None there, so every message - including a
+# FATAL "numpy not installed" or a crash traceback - simply vanished and the
+# window closed without a word.  Keep them in ~/.heaven3d/logs instead.
+if (__name__ == "__main__" and (sys.stdout is None or sys.stderr is None)
+        and "--game" not in sys.argv):        # exported games keep their own saves/last_run.log
+    try:
+        _h3d_logdir = os.path.join(os.path.expanduser("~"), ".heaven3d", "logs")
+        os.makedirs(_h3d_logdir, exist_ok=True)
+        _h3d_logfh = open(os.path.join(_h3d_logdir, "last_run.log"), "w",
+                          encoding="utf-8", errors="replace", buffering=1)
+        if sys.stdout is None:
+            sys.stdout = _h3d_logfh
+        if sys.stderr is None:
+            sys.stderr = _h3d_logfh
+    except OSError:
+        pass
+
 # ---- numpy ----
 try:
     import numpy as np
@@ -199,7 +217,19 @@ class Log:
     @classmethod
     def _emit(cls, level, msg):
         line = f"[Heaven3D][{level}] {msg}"
-        print(line)
+        try:
+            print(line)
+        except UnicodeEncodeError:
+            # stdout redirected into an ANSI code page (Windows cmd > file):
+            # an asset or project name in Persian, Cyrillic, CJK... must not
+            # crash the engine from inside a log call.
+            enc = getattr(sys.stdout, "encoding", None) or "ascii"
+            try:
+                print(line.encode(enc, "replace").decode(enc, "replace"))
+            except Exception:
+                pass
+        except (OSError, ValueError):
+            pass                     # closed / broken stdout (parent gone)
         if cls._console_cb:
             try: cls._console_cb(line)
             except Exception: pass
@@ -217,7 +247,7 @@ class Log:
 # --------------------------------------------------------------------------- #
 #  Constants
 # --------------------------------------------------------------------------- #
-HEAVEN_VERSION = "3.1.3"
+HEAVEN_VERSION = "3.1.4"
 PROJECT_EXT = ".heaven3d"
 
 
@@ -5251,9 +5281,10 @@ class Mesh:
         tan_acc = np.zeros((n, 3), dtype=np.float32)
         bitan_acc = np.zeros((n, 3), dtype=np.float32)
         if indices is not None and len(indices) >= 3:
-            tris = np.asarray(indices, dtype=np.uint32).reshape(-1, 3)
+            flat = np.asarray(indices, dtype=np.uint32).reshape(-1)
+            tris = flat[:len(flat) - len(flat) % 3].reshape(-1, 3)
         else:
-            tris = np.arange(n, dtype=np.uint32).reshape(-1, 3)
+            tris = np.arange(n - n % 3, dtype=np.uint32).reshape(-1, 3)
         i1, i2, i3 = tris[:, 0], tris[:, 1], tris[:, 2]
         v1, v2, v3 = positions[i1], positions[i2], positions[i3]
         w1, w2, w3 = uvs[i1], uvs[i2], uvs[i3]
@@ -5278,7 +5309,7 @@ class Mesh:
         dot_nt = np.sum(nrm * tan_acc, axis=1, keepdims=True)
         t = tan_acc - nrm * dot_nt
         t_len = np.linalg.norm(t, axis=1)
-        bad = t_len < 1e-8
+        bad = ~(t_len >= 1e-8)                       # also catches NaN
         if np.any(bad):
             # Fallback: any unit vector perpendicular to the normal.
             up = np.where(np.abs(nrm[:, 1:2]) < 0.999,
@@ -5286,9 +5317,16 @@ class Mesh:
                           np.array([[1.0, 0.0, 0.0]], dtype=np.float32))
             alt = np.cross(nrm, up)
             alt_len = np.linalg.norm(alt, axis=1, keepdims=True)
-            alt_len[alt_len < 1e-8] = 1.0
+            alt_len[~(alt_len >= 1e-8)] = 1.0
             t[bad] = (alt / alt_len)[bad]
             t_len = np.linalg.norm(t, axis=1)
+            # A zero-length (or NaN) normal has no perpendicular: any unit
+            # tangent will do, but never divide by zero (NaN tangents turn
+            # normal-mapped pixels black and bloom spreads them).
+            still = ~(t_len >= 1e-8)
+            if np.any(still):
+                t[still] = (1.0, 0.0, 0.0)
+                t_len[still] = 1.0
         t = t / t_len[:, None]
         # Handedness of the bitangent: w = sign(dot(cross(N, T), B))
         cross_nt = np.cross(nrm, t)
@@ -12798,11 +12836,20 @@ def _mesh_shape_view(node: "SceneNode", col: MeshCollider) -> dict:
     geometry builds exactly once, then every query is a dict lookup."""
     mesh = node.mesh
     if mesh is None:
-        if not col._warned_no_mesh:
+        # Generated geometry (a Spline Roads road, a package's terrain...)
+        # gets its mesh a moment after the project loads, so only warn when
+        # the mesh is STILL missing a couple of seconds later; warning on the
+        # first query told users a perfectly working road "will not collide".
+        now = time.perf_counter()
+        since = getattr(col, "_h3d_no_mesh_since", None)
+        if since is None:
+            col._h3d_no_mesh_since = now
+        elif not col._warned_no_mesh and now - since > 2.0:
             Log.warn(f"MeshCollider on '{node.name}' has no mesh — "
                      f"it will not collide with anything.")
             col._warned_no_mesh = True
         return {"kind": "none"}
+    col._h3d_no_mesh_since = None
     positions, indices = _mesh_cpu_triangles(mesh)
     if positions is None:
         if not col._warned_no_mesh:
@@ -43759,26 +43806,26 @@ if not globals().get("_H3D27_IMPORTERS_INSTALLED"):
         def info_plist(name, exe, bundle_id, version="1.0", icon="icon"):
             e = _plist_escape
             return f"""<?xml version="1.0" encoding="UTF-8"?>
-        <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-        <plist version="1.0">
-        <dict>
-          <key>CFBundleName</key><string>{e(name)}</string>
-          <key>CFBundleDisplayName</key><string>{e(name)}</string>
-          <key>CFBundleExecutable</key><string>{e(exe)}</string>
-          <key>CFBundleIdentifier</key><string>{e(bundle_id)}</string>
-          <key>CFBundleIconFile</key><string>{e(icon)}</string>
-          <key>CFBundlePackageType</key><string>APPL</string>
-          <key>CFBundleShortVersionString</key><string>{e(version)}</string>
-          <key>CFBundleVersion</key><string>{e(version)}</string>
-          <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
-          <key>LSMinimumSystemVersion</key><string>11.0</string>
-          <key>LSApplicationCategoryType</key><string>public.app-category.games</string>
-          <key>NSHighResolutionCapable</key><false/>
-          <key>NSSupportsAutomaticGraphicsSwitching</key><true/>
-          <key>NSHumanReadableCopyright</key><string>Made with Heaven3D</string>
-        </dict>
-        </plist>
-        """
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleName</key><string>{e(name)}</string>
+  <key>CFBundleDisplayName</key><string>{e(name)}</string>
+  <key>CFBundleExecutable</key><string>{e(exe)}</string>
+  <key>CFBundleIdentifier</key><string>{e(bundle_id)}</string>
+  <key>CFBundleIconFile</key><string>{e(icon)}</string>
+  <key>CFBundlePackageType</key><string>APPL</string>
+  <key>CFBundleShortVersionString</key><string>{e(version)}</string>
+  <key>CFBundleVersion</key><string>{e(version)}</string>
+  <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
+  <key>LSMinimumSystemVersion</key><string>11.0</string>
+  <key>LSApplicationCategoryType</key><string>public.app-category.games</string>
+  <key>NSHighResolutionCapable</key><false/>
+  <key>NSSupportsAutomaticGraphicsSwitching</key><true/>
+  <key>NSHumanReadableCopyright</key><string>Made with Heaven3D</string>
+</dict>
+</plist>
+"""
 
 
         def bundle_id_for(name):
@@ -43789,11 +43836,11 @@ if not globals().get("_H3D27_IMPORTERS_INSTALLED"):
             # The real program is Contents/MacOS/python3 (Python's home is Contents/),
             # so macOS shows the game's name and icon in the Dock and menu bar.
             return f"""#!/bin/sh
-        # {game} - made with Heaven3D
-        C="$(cd "$(dirname "$0")/.." && pwd)"
-        export PYTHONNOUSERSITE=1
-        exec "$C/MacOS/python3" -E -s "$C/Resources/engine/Heaven3D.py" --game "$C/Resources" "$@"
-        """
+# {game} - made with Heaven3D
+C="$(cd "$(dirname "$0")/.." && pwd)"
+export PYTHONNOUSERSITE=1
+exec "$C/MacOS/python3" -X utf8 -E -s "$C/Resources/engine/Heaven3D.py" --game "$C/Resources" "$@"
+"""
 
 
         def _copy_mac_python(player, contents, log):
@@ -43816,31 +43863,53 @@ if not globals().get("_H3D27_IMPORTERS_INSTALLED"):
 
         def _linux_launcher(game):
             return f"""#!/bin/sh
-        # {game} - made with Heaven3D
-        HERE="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
-        exec "$HERE/engine/python/bin/python3" -E -s "$HERE/engine/Heaven3D.py" --game "$HERE" "$@"
-        """
+# {game} - made with Heaven3D
+HERE="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
+exec "$HERE/engine/python/bin/python3" -X utf8 -E -s "$HERE/engine/Heaven3D.py" --game "$HERE" "$@"
+"""
 
 
         def _install_shortcut_sh(game):
+            # The game's name goes into a shell here-document and a .desktop Exec=
+            # line: `$`, backquotes and backslashes in it would be expanded by the
+            # shell (a name like "Money$Maker" lost "$Maker", a backquote even ran a
+            # command), and the .desktop spec wants `"` `$` `` ` `` `\` escaped
+            # inside a quoted Exec argument and `%` doubled.
+            def heredoc(s):                                 # literal text inside <<EOF
+                return s.replace("\\", "\\\\").replace("$", "\\$").replace("`", "\\`")
+
+            def exec_arg(s):
+                # desktop-entry quoting rule, then its general string escape (which
+                # doubles every backslash), then field codes; finally the shell level
+                q = "".join("\\" + c if c in '"`$\\' else c for c in s)
+                return heredoc(q.replace("\\", "\\\\").replace("%", "%%"))
+
+            def sq(s):                                      # one shell word, single-quoted
+                return "'" + s.replace("'", "'\"'\"'") + "'"
+            slug = re.sub(r'[^a-z0-9]+', '-', game.lower()).strip('-') or bundle_id_for(game).rsplit(".", 1)[-1]
+            # The folder the game sits in usually carries the game's name too, so
+            # the same escaping is applied to it at install time (X: inside the
+            # quoted Exec argument, P: plain Path= / Icon= values).
             return f"""#!/bin/sh
-        # Adds "{game}" to your applications menu (with its icon).
-        HERE="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
-        APPS="${{XDG_DATA_HOME:-$HOME/.local/share}}/applications"
-        mkdir -p "$APPS"
-        cat > "$APPS/heaven3d-{re.sub(r'[^a-z0-9]+', '-', game.lower()).strip('-')}.desktop" <<EOF
-        [Desktop Entry]
-        Type=Application
-        Name={game}
-        Comment=Made with Heaven3D
-        Exec="$HERE/{game}"
-        Path=$HERE
-        Icon=$HERE/icon.png
-        Terminal=false
-        Categories=Game;
-        EOF
-        echo "Added {game} to the applications menu."
-        """
+# Adds this game to your applications menu (with its icon).
+HERE="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
+X="$(printf '%s' "$HERE" | sed -e 's/\\\\/\\\\\\\\\\\\\\\\/g' -e 's/["`$]/\\\\\\\\&/g' -e 's/%/%%/g')"
+P="$(printf '%s' "$HERE" | sed -e 's/\\\\/\\\\\\\\/g')"
+APPS="${{XDG_DATA_HOME:-$HOME/.local/share}}/applications"
+mkdir -p "$APPS"
+cat > "$APPS/heaven3d-{slug}.desktop" <<EOF
+[Desktop Entry]
+Type=Application
+Name={heredoc(game)}
+Comment=Made with Heaven3D
+Exec="$X/{exec_arg(game)}"
+Path=$P
+Icon=$P/icon.png
+Terminal=false
+Categories=Game;
+EOF
+echo "Added "{sq(game)}" to the applications menu."
+"""
 
 
         def export_game(project_file, out_dir, targets, engine_dir, game_name=None, width=1600, height=900,
@@ -43959,19 +44028,19 @@ if not globals().get("_H3D27_IMPORTERS_INSTALLED"):
                         f.write(make_icns(img))
                     exe_name = re.sub(r"[^A-Za-z0-9 _.-]+", "", game).strip() or "Game"
                     lp = os.path.join(contents, "MacOS", exe_name)
-                    with open(lp, "w", newline="\n") as f:
+                    with open(lp, "w", encoding="utf-8", newline="\n") as f:
                         f.write(_mac_launcher(game))
                     os.chmod(lp, 0o755)
-                    with open(os.path.join(contents, "Info.plist"), "w", newline="\n") as f:
+                    with open(os.path.join(contents, "Info.plist"), "w", encoding="utf-8", newline="\n") as f:
                         f.write(info_plist(game, exe_name, bundle_id_for(game), str(meta.get("version") or "1.0")))
                     with open(os.path.join(contents, "PkgInfo"), "w") as f:
                         f.write("APPL????")
                     log(f"[Export]   {game}.app (icon: {'yours' if icon_img is not None else 'Heaven3D'})")
                 else:
                     lp = os.path.join(stage, game)
-                    with open(lp, "w", newline="\n") as f:
+                    with open(lp, "w", encoding="utf-8", newline="\n") as f:
                         f.write(_linux_launcher(game))
-                    with open(os.path.join(stage, "install-shortcut.sh"), "w", newline="\n") as f:
+                    with open(os.path.join(stage, "install-shortcut.sh"), "w", encoding="utf-8", newline="\n") as f:
                         f.write(_install_shortcut_sh(game))
                     for p in (lp, os.path.join(stage, "install-shortcut.sh")):
                         os.chmod(p, 0o755)
@@ -43981,7 +44050,8 @@ if not globals().get("_H3D27_IMPORTERS_INSTALLED"):
                         shutil.copy2(os.path.join(brand, "icons", "logo_256.png"), os.path.join(stage, "icon.png"))
                 if target != "macos":
                     os.makedirs(os.path.join(stage, "saves"), exist_ok=True)
-                with open(os.path.join(stage, "README.txt"), "w", newline="\r\n" if target == "windows" else "\n") as f:
+                with open(os.path.join(stage, "README.txt"), "w", encoding="utf-8",
+                          newline="\r\n" if target == "windows" else "\n") as f:
                     if target == "macos":
                         f.write(f"{game}\nMade with Heaven3D.\n\n"
                                 f"Play: double-click {game}.app (drag it to Applications if you like).\n\n"
@@ -44083,7 +44153,7 @@ if not globals().get("_H3D27_IMPORTERS_INSTALLED"):
     # =================================================================
     #  Engine integration (runs at import time, before any shader compiles)
     # =================================================================
-    HEAVEN_VERSION = "3.1.3"
+    HEAVEN_VERSION = "3.1.4"
 
     class _H3D27Log:
         @staticmethod
@@ -44914,6 +44984,13 @@ vec2 h3d_uv(int s){
     def _h3d27_cli():
         argv = sys.argv[1:]
         if "--export-game" in argv:
+            # Game names and paths can be in any script; a Windows pipe or an
+            # old console code page must not end the export on a log line.
+            for _s in (sys.stdout, sys.stderr):
+                try:
+                    _s.reconfigure(errors="replace")
+                except (AttributeError, ValueError):
+                    pass
             import argparse
             ap = argparse.ArgumentParser(prog="Heaven3D.py --export-game")
             ap.add_argument("--export-game", dest="project", required=True)

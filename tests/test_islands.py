@@ -125,7 +125,15 @@ def phase_editor(project):
             check("no GL errors while drawing the island", err == "GL_NO_ERROR", err)
             img = shot("island_aerial")
             W, Hh = img.get_size()
-            px = [img.get_at((int(W * u), int(Hh * v)))[:3] for u in (0.45, 0.5, 0.55) for v in (0.55, 0.62, 0.7)]
+            # Sample inside the 3D view: with the Vitrail editor the view is
+            # only part of the window (panels and the console around it).
+            vp = getattr(getattr(eng, "_vt", None), "viewport", None)
+            if vp is not None and getattr(vp, "w", 0) > 0 and getattr(vp, "h", 0) > 0:
+                vx, vy, vw, vh = vp.x, vp.y, vp.w, vp.h
+            else:
+                vx, vy, vw, vh = 0, 0, W, Hh
+            px = [img.get_at((int(vx + vw * u), int(vy + vh * v)))[:3]
+                  for u in (0.45, 0.5, 0.55) for v in (0.55, 0.62, 0.7)]
             green = sum(1 for r, g, b in px if g > b and g > r * 0.9)
             check("island is visible (green land in the middle of the view)", green >= 5, px[:3])
             lods = {ch["lod"] for ch in rt.chunks.values()}

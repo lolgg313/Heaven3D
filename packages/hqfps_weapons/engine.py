@@ -603,25 +603,15 @@ def _sounds(weapon, what):
     return out
 
 
-_FLESH_BPS = ("Health", "MHEnemy", "MHCharacter", "EnemyAI", "EnemyFlyShooter",
-              "FlyingEnemyAI", "FPSController", "NPCWalker")
-
-
 def _is_flesh(node):
     """True if the thing that was hit is a creature rather than scenery.
 
     Bullet holes belong on walls, not on people -- and HQFPS has separate
-    flesh and surface impact sounds for the same reason.
+    flesh and surface impact sounds for the same reason.  The sound follows
+    the same rule as the hole: a crate with a Health blueprint is scenery
+    (hole + surface sound), never a wet thud with a hole in it.
     """
-    n = node
-    while n is not None:
-        for b in getattr(n, "blueprints", ()):
-            if b.__class__.__name__ in _FLESH_BPS:
-                return True
-        if getattr(n, "spawn_kind", None) in ("enemy", "player", "flying_enemy"):
-            return True
-        n = getattr(n, "parent", None)
-    return False
+    return _is_creature(node)
 
 
 # Character blueprints only: a crate with a Health blueprint is still a

@@ -54,6 +54,12 @@ def phase(project, label):
 
 def main():
     import subprocess
+    if len(sys.argv) < 2 or not os.path.isfile(sys.argv[1]):
+        # This check needs an arena saved by an older Heaven3D; without one
+        # there is nothing to test (it used to crash with an IndexError).
+        print("SKIP needs an old HQ FPS Arena scene:  python tests/test_hqfps_old_arena.py "
+              "path/to/old/main.heaven3d  [old/scripts/hqfps_arena.py]", flush=True)
+        return 0
     old_scene = sys.argv[1]
     proj = tempfile.mkdtemp(prefix="h3d_oldarena_")
     shutil.copy(old_scene, os.path.join(proj, "main.heaven3d"))

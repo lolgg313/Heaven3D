@@ -14,6 +14,24 @@ import argparse
 from dataclasses import dataclass, field
 from typing import Any, Optional, Callable, Dict, List, Tuple, Union
 
+# ---- no console (pythonw.exe: "Heaven3D Editor.exe", double-clicked .pyw) ----
+# sys.stdout / sys.stderr are None there, so every message - including a
+# FATAL "numpy not installed" or a crash traceback - simply vanished and the
+# window closed without a word.  Keep them in ~/.heaven3d/logs instead.
+if (__name__ == "__main__" and (sys.stdout is None or sys.stderr is None)
+        and "--game" not in sys.argv):        # exported games keep their own saves/last_run.log
+    try:
+        _h3d_logdir = os.path.join(os.path.expanduser("~"), ".heaven3d", "logs")
+        os.makedirs(_h3d_logdir, exist_ok=True)
+        _h3d_logfh = open(os.path.join(_h3d_logdir, "last_run.log"), "w",
+                          encoding="utf-8", errors="replace", buffering=1)
+        if sys.stdout is None:
+            sys.stdout = _h3d_logfh
+        if sys.stderr is None:
+            sys.stderr = _h3d_logfh
+    except OSError:
+        pass
+
 # ---- numpy ----
 try:
     import numpy as np
@@ -117,7 +135,19 @@ class Log:
     @classmethod
     def _emit(cls, level, msg):
         line = f"[Heaven3D][{level}] {msg}"
-        print(line)
+        try:
+            print(line)
+        except UnicodeEncodeError:
+            # stdout redirected into an ANSI code page (Windows cmd > file):
+            # an asset or project name in Persian, Cyrillic, CJK... must not
+            # crash the engine from inside a log call.
+            enc = getattr(sys.stdout, "encoding", None) or "ascii"
+            try:
+                print(line.encode(enc, "replace").decode(enc, "replace"))
+            except Exception:
+                pass
+        except (OSError, ValueError):
+            pass                     # closed / broken stdout (parent gone)
         if cls._console_cb:
             try: cls._console_cb(line)
             except Exception: pass
@@ -135,7 +165,7 @@ class Log:
 # --------------------------------------------------------------------------- #
 #  Constants
 # --------------------------------------------------------------------------- #
-HEAVEN_VERSION = "3.1.3"
+HEAVEN_VERSION = "3.1.4"
 PROJECT_EXT = ".heaven3d"
 
 

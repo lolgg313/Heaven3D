@@ -790,7 +790,7 @@ def _mac_launcher(game):
 # {game} - made with Heaven3D
 C="$(cd "$(dirname "$0")/.." && pwd)"
 export PYTHONNOUSERSITE=1
-exec "$C/MacOS/python3" -E -s "$C/Resources/engine/Heaven3D.py" --game "$C/Resources" "$@"
+exec "$C/MacOS/python3" -X utf8 -E -s "$C/Resources/engine/Heaven3D.py" --game "$C/Resources" "$@"
 """
 
 
@@ -816,28 +816,50 @@ def _linux_launcher(game):
     return f"""#!/bin/sh
 # {game} - made with Heaven3D
 HERE="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
-exec "$HERE/engine/python/bin/python3" -E -s "$HERE/engine/Heaven3D.py" --game "$HERE" "$@"
+exec "$HERE/engine/python/bin/python3" -X utf8 -E -s "$HERE/engine/Heaven3D.py" --game "$HERE" "$@"
 """
 
 
 def _install_shortcut_sh(game):
+    # The game's name goes into a shell here-document and a .desktop Exec=
+    # line: `$`, backquotes and backslashes in it would be expanded by the
+    # shell (a name like "Money$Maker" lost "$Maker", a backquote even ran a
+    # command), and the .desktop spec wants `"` `$` `` ` `` `\` escaped
+    # inside a quoted Exec argument and `%` doubled.
+    def heredoc(s):                                 # literal text inside <<EOF
+        return s.replace("\\", "\\\\").replace("$", "\\$").replace("`", "\\`")
+
+    def exec_arg(s):
+        # desktop-entry quoting rule, then its general string escape (which
+        # doubles every backslash), then field codes; finally the shell level
+        q = "".join("\\" + c if c in '"`$\\' else c for c in s)
+        return heredoc(q.replace("\\", "\\\\").replace("%", "%%"))
+
+    def sq(s):                                      # one shell word, single-quoted
+        return "'" + s.replace("'", "'\"'\"'") + "'"
+    slug = re.sub(r'[^a-z0-9]+', '-', game.lower()).strip('-') or bundle_id_for(game).rsplit(".", 1)[-1]
+    # The folder the game sits in usually carries the game's name too, so
+    # the same escaping is applied to it at install time (X: inside the
+    # quoted Exec argument, P: plain Path= / Icon= values).
     return f"""#!/bin/sh
-# Adds "{game}" to your applications menu (with its icon).
+# Adds this game to your applications menu (with its icon).
 HERE="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
+X="$(printf '%s' "$HERE" | sed -e 's/\\\\/\\\\\\\\\\\\\\\\/g' -e 's/["`$]/\\\\\\\\&/g' -e 's/%/%%/g')"
+P="$(printf '%s' "$HERE" | sed -e 's/\\\\/\\\\\\\\/g')"
 APPS="${{XDG_DATA_HOME:-$HOME/.local/share}}/applications"
 mkdir -p "$APPS"
-cat > "$APPS/heaven3d-{re.sub(r'[^a-z0-9]+', '-', game.lower()).strip('-')}.desktop" <<EOF
+cat > "$APPS/heaven3d-{slug}.desktop" <<EOF
 [Desktop Entry]
 Type=Application
-Name={game}
+Name={heredoc(game)}
 Comment=Made with Heaven3D
-Exec="$HERE/{game}"
-Path=$HERE
-Icon=$HERE/icon.png
+Exec="$X/{exec_arg(game)}"
+Path=$P
+Icon=$P/icon.png
 Terminal=false
 Categories=Game;
 EOF
-echo "Added {game} to the applications menu."
+echo "Added "{sq(game)}" to the applications menu."
 """
 
 
@@ -957,19 +979,19 @@ def export_game(project_file, out_dir, targets, engine_dir, game_name=None, widt
                 f.write(make_icns(img))
             exe_name = re.sub(r"[^A-Za-z0-9 _.-]+", "", game).strip() or "Game"
             lp = os.path.join(contents, "MacOS", exe_name)
-            with open(lp, "w", newline="\n") as f:
+            with open(lp, "w", encoding="utf-8", newline="\n") as f:
                 f.write(_mac_launcher(game))
             os.chmod(lp, 0o755)
-            with open(os.path.join(contents, "Info.plist"), "w", newline="\n") as f:
+            with open(os.path.join(contents, "Info.plist"), "w", encoding="utf-8", newline="\n") as f:
                 f.write(info_plist(game, exe_name, bundle_id_for(game), str(meta.get("version") or "1.0")))
             with open(os.path.join(contents, "PkgInfo"), "w") as f:
                 f.write("APPL????")
             log(f"[Export]   {game}.app (icon: {'yours' if icon_img is not None else 'Heaven3D'})")
         else:
             lp = os.path.join(stage, game)
-            with open(lp, "w", newline="\n") as f:
+            with open(lp, "w", encoding="utf-8", newline="\n") as f:
                 f.write(_linux_launcher(game))
-            with open(os.path.join(stage, "install-shortcut.sh"), "w", newline="\n") as f:
+            with open(os.path.join(stage, "install-shortcut.sh"), "w", encoding="utf-8", newline="\n") as f:
                 f.write(_install_shortcut_sh(game))
             for p in (lp, os.path.join(stage, "install-shortcut.sh")):
                 os.chmod(p, 0o755)
@@ -979,7 +1001,8 @@ def export_game(project_file, out_dir, targets, engine_dir, game_name=None, widt
                 shutil.copy2(os.path.join(brand, "icons", "logo_256.png"), os.path.join(stage, "icon.png"))
         if target != "macos":
             os.makedirs(os.path.join(stage, "saves"), exist_ok=True)
-        with open(os.path.join(stage, "README.txt"), "w", newline="\r\n" if target == "windows" else "\n") as f:
+        with open(os.path.join(stage, "README.txt"), "w", encoding="utf-8",
+                  newline="\r\n" if target == "windows" else "\n") as f:
             if target == "macos":
                 f.write(f"{game}\nMade with Heaven3D.\n\n"
                         f"Play: double-click {game}.app (drag it to Applications if you like).\n\n"

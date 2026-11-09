@@ -53,9 +53,10 @@ class Mesh:
         tan_acc = np.zeros((n, 3), dtype=np.float32)
         bitan_acc = np.zeros((n, 3), dtype=np.float32)
         if indices is not None and len(indices) >= 3:
-            tris = np.asarray(indices, dtype=np.uint32).reshape(-1, 3)
+            flat = np.asarray(indices, dtype=np.uint32).reshape(-1)
+            tris = flat[:len(flat) - len(flat) % 3].reshape(-1, 3)
         else:
-            tris = np.arange(n, dtype=np.uint32).reshape(-1, 3)
+            tris = np.arange(n - n % 3, dtype=np.uint32).reshape(-1, 3)
         i1, i2, i3 = tris[:, 0], tris[:, 1], tris[:, 2]
         v1, v2, v3 = positions[i1], positions[i2], positions[i3]
         w1, w2, w3 = uvs[i1], uvs[i2], uvs[i3]
@@ -80,7 +81,7 @@ class Mesh:
         dot_nt = np.sum(nrm * tan_acc, axis=1, keepdims=True)
         t = tan_acc - nrm * dot_nt
         t_len = np.linalg.norm(t, axis=1)
-        bad = t_len < 1e-8
+        bad = ~(t_len >= 1e-8)                       # also catches NaN
         if np.any(bad):
             # Fallback: any unit vector perpendicular to the normal.
             up = np.where(np.abs(nrm[:, 1:2]) < 0.999,
@@ -88,9 +89,16 @@ class Mesh:
                           np.array([[1.0, 0.0, 0.0]], dtype=np.float32))
             alt = np.cross(nrm, up)
             alt_len = np.linalg.norm(alt, axis=1, keepdims=True)
-            alt_len[alt_len < 1e-8] = 1.0
+            alt_len[~(alt_len >= 1e-8)] = 1.0
             t[bad] = (alt / alt_len)[bad]
             t_len = np.linalg.norm(t, axis=1)
+            # A zero-length (or NaN) normal has no perpendicular: any unit
+            # tangent will do, but never divide by zero (NaN tangents turn
+            # normal-mapped pixels black and bloom spreads them).
+            still = ~(t_len >= 1e-8)
+            if np.any(still):
+                t[still] = (1.0, 0.0, 0.0)
+                t_len[still] = 1.0
         t = t / t_len[:, None]
         # Handedness of the bitangent: w = sign(dot(cross(N, T), B))
         cross_nt = np.cross(nrm, t)

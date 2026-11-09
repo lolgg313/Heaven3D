@@ -777,11 +777,20 @@ def _mesh_shape_view(node: "SceneNode", col: MeshCollider) -> dict:
     geometry builds exactly once, then every query is a dict lookup."""
     mesh = node.mesh
     if mesh is None:
-        if not col._warned_no_mesh:
+        # Generated geometry (a Spline Roads road, a package's terrain...)
+        # gets its mesh a moment after the project loads, so only warn when
+        # the mesh is STILL missing a couple of seconds later; warning on the
+        # first query told users a perfectly working road "will not collide".
+        now = time.perf_counter()
+        since = getattr(col, "_h3d_no_mesh_since", None)
+        if since is None:
+            col._h3d_no_mesh_since = now
+        elif not col._warned_no_mesh and now - since > 2.0:
             Log.warn(f"MeshCollider on '{node.name}' has no mesh — "
                      f"it will not collide with anything.")
             col._warned_no_mesh = True
         return {"kind": "none"}
+    col._h3d_no_mesh_since = None
     positions, indices = _mesh_cpu_triangles(mesh)
     if positions is None:
         if not col._warned_no_mesh:

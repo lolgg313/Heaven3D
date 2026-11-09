@@ -301,7 +301,7 @@ esac
 PY="$ROOT/runtime/python"
 export TCL_LIBRARY="$PY/lib/tcl8.6" TK_LIBRARY="$PY/lib/tk8.6" PYTHONNOUSERSITE=1
 cd "$ROOT"
-exec "$PY/bin/python3" -E -s "$ROOT/{script}" "$@"
+exec "$PY/bin/python3" -X utf8 -E -s "$ROOT/{script}" "$@"
 """
 MAC_FIX = """#!/bin/sh
 # Removes the "downloaded from the internet" flag from this Heaven3D folder,
@@ -391,9 +391,22 @@ def padded_ico(out_path):
     return out_path
 
 
-def build_launchers(work):
+def engine_version():
+    """HEAVEN_VERSION of the engine being packaged (the last assignment wins)."""
+    ver = "0.0.0"
+    with open(os.path.join(REPO, "Heaven3D.py"), encoding="utf-8") as fh:
+        for line in fh:
+            m = re.match(r'\s*HEAVEN_VERSION\s*=\s*"([^"]+)"', line)
+            if m:
+                ver = m.group(1)
+    return ver
+
+
+def build_launchers(work, version):
     out = os.path.join(work, "launchers")
     os.makedirs(out, exist_ok=True)
+    nums = [int(x) for x in re.findall(r"\d+", version)[:4]]
+    nums += [0] * (4 - len(nums))
     for define, desc, name in (("HUB", "Heaven3D Hub", "hub"), ("EDITOR", "Heaven3D Editor", "editor"),
                                ("GAME", "Made with Heaven3D", "game")):
         # the game launcher gets roomy icon slots (custom game icons on export)
@@ -402,7 +415,8 @@ def build_launchers(work):
         else:
             shutil.copy2(os.path.join(REPO, "branding", "heaven3d.ico"), out)
         obj = os.path.join(out, name + ".o")
-        sh("x86_64-w64-mingw32-windres", f'-DH3D_DESC=\\"{desc}\\"', "-I", out,
+        sh("x86_64-w64-mingw32-windres", f'-DH3D_DESC=\\"{desc}\\"', f'-DH3D_VER_STR=\\"{version}\\"',
+           "-DH3D_VER=" + ",".join(str(n) for n in nums), "-I", out,
            os.path.join(HERE, "launcher.rc"), "-O", "coff", "-o", obj)
         sh("x86_64-w64-mingw32-gcc", f"-DH3D_{define}", "-municode", "-mwindows", "-Os", "-s",
            os.path.join(HERE, "launcher.c"), obj, "-o", os.path.join(out, name + ".exe"))
@@ -427,16 +441,19 @@ def prune_player(src, dst):
 LINUX_HUB = """#!/bin/sh
 # Heaven3D Hub (standalone, no install needed)
 HERE="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
-exec "$HERE/runtime/python/bin/python3" -E -s "$HERE/Heaven3D_Hub.py" "$@"
+exec "$HERE/runtime/python/bin/python3" -X utf8 -E -s "$HERE/Heaven3D_Hub.py" "$@"
 """
 LINUX_EDITOR = """#!/bin/sh
 # Heaven3D editor (standalone, no install needed)
 HERE="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
-exec "$HERE/runtime/python/bin/python3" -E -s "$HERE/Heaven3D.py" "$@"
+exec "$HERE/runtime/python/bin/python3" -X utf8 -E -s "$HERE/Heaven3D.py" "$@"
 """
 LINUX_SHORTCUTS = """#!/bin/sh
 # Adds Heaven3D Hub and Heaven3D Editor to your applications menu (with the logo).
 HERE="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
+# .desktop escaping of the install folder (X: quoted Exec argument, P: plain values)
+X="$(printf '%s' "$HERE" | sed -e 's/\\\\/\\\\\\\\\\\\\\\\/g' -e 's/["`$]/\\\\\\\\&/g' -e 's/%/%%/g')"
+P="$(printf '%s' "$HERE" | sed -e 's/\\\\/\\\\\\\\/g')"
 APPS="${XDG_DATA_HOME:-$HOME/.local/share}/applications"
 mkdir -p "$APPS"
 for app in Hub Editor; do
@@ -445,11 +462,11 @@ cat > "$APPS/heaven3d-$(echo $app | tr A-Z a-z).desktop" <<EOF
 Type=Application
 Name=Heaven3D $app
 Comment=Heaven3D game engine
-Exec="$HERE/Heaven3D-$app"
-Path=$HERE
-Icon=$HERE/branding/heaven3d_logo.png
+Exec="$X/Heaven3D-$app"
+Path=$P
+Icon=$P/branding/heaven3d_logo.png
 Terminal=false
-Categories=Development;Game;
+Categories=Development;
 StartupWMClass=Heaven3D
 EOF
 chmod +x "$APPS/heaven3d-$(echo $app | tr A-Z a-z).desktop"
@@ -586,7 +603,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--work", default="/tmp/heaven3d-standalone")
     ap.add_argument("--out", default=os.path.join(REPO, "dist"))
-    ap.add_argument("--version", default="3.1.3")
+    ap.add_argument("--version", default=engine_version())
     ap.add_argument("--python312", default=shutil.which("python3.12") or sys.executable)
     ap.add_argument("--platforms", default="windows,linux,macos-arm64,macos-x86_64")
     ap.add_argument("--no-zip", action="store_true")
@@ -599,7 +616,7 @@ def main():
     macpys = {p: build_mac_python(a.work, p.split("-", 1)[1]) for p in plats if p.startswith("macos")}
     for py in (winpy, linpy, *macpys.values()):
         byte_compile(py, a.python312)
-    launchers = build_launchers(a.work)
+    launchers = build_launchers(a.work, a.version)
     for plat in plats:
         root = assemble(plat, a.version, a.work, a.out, winpy, linpy, launchers, macpys.get(plat))
         # Only the bundled runtimes are pre-compiled (unchecked pycs are

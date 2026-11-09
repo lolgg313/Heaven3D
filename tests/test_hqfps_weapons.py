@@ -375,15 +375,26 @@ def run(project):
         yield from wait(lambda: len(decals()) > before, "shooting a wall leaves a bullet hole",
                         200, lambda: "%d decals" % len(decals()))
         shot("13_bullet_hole")
+        # A crate with only a Health blueprint is scenery: it takes a hole.
         n_wall = len(decals())
-        aim_at(target)                       # the target carries Health
+        aim_at(target)
+        for _ in range(3):
+            yield
+        yield from click()
+        yield from wait(lambda: len(decals()) > n_wall, "a Health crate still takes a bullet hole",
+                        200, lambda: "%d -> %d decals" % (n_wall, len(decals())))
+        # A creature (EnemyAI) is a body: no hole stuck to it.
+        n_crate = len(decals())
+        zhp0 = zhp.hp
+        aim_at(zombie)
         for _ in range(3):
             yield
         yield from click()
         for _ in range(30):
             yield
-        check("shooting a body leaves no bullet hole", len(decals()) == n_wall,
-              "%d -> %d decals" % (n_wall, len(decals())))
+        check("the shot at the zombie hit it", zhp.hp < zhp0, "%.0f -> %.0f hp" % (zhp0, zhp.hp))
+        check("shooting a body leaves no bullet hole", len(decals()) == n_crate,
+              "%d -> %d decals" % (n_crate, len(decals())))
 
         # ---- throwables ----
         yield from switch_to("FragGrenade")

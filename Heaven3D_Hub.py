@@ -162,6 +162,12 @@ class Config:
                 self.data.update(d)
         except (OSError, ValueError):
             pass
+        # A hand-edited or half-written hub.json must not stop the Hub from opening.
+        for key, kind in (("projects", list), ("tutorials_done", list), ("settings", dict)):
+            if not isinstance(self.data.get(key), kind):
+                self.data[key] = kind()
+        self.data["projects"] = [p for p in self.data["projects"]
+                                 if isinstance(p, dict) and isinstance(p.get("path"), str)]
         s = self.data.setdefault("settings", {})
         s.setdefault("engine_path", _detect_engine())
         s.setdefault("python_path", _detect_python())
@@ -260,6 +266,8 @@ def list_templates():
 
 
 _BAD_NAME = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
+_WIN_RESERVED_NAMES = ({"con", "prn", "aux", "nul"} | {f"com{i}" for i in range(1, 10)}
+                       | {f"lpt{i}" for i in range(1, 10)})
 
 
 def validate_project_name(name):
@@ -270,6 +278,10 @@ def validate_project_name(name):
         return 'A project name can\'t contain any of  < > : " / \\ | ? *'
     if name in (".", "..") or name.endswith(".") or name.endswith(" "):
         return "A project name can't end with a dot or a space."
+    # Windows reserves these device names (also with an extension: "con.txt"),
+    # so such a folder can't be created there or copied there from Linux.
+    if name.split(".", 1)[0].strip().lower() in _WIN_RESERVED_NAMES:
+        return f"\"{name}\" is a reserved name on Windows. Please pick another name."
     if len(name) > 80:
         return "Please use a shorter name (80 characters max)."
     return None
@@ -700,10 +712,11 @@ def project_meta(path):
     mp = os.path.join(path, PROJECT_META)
     if os.path.isfile(mp):
         try:
-            meta = json.load(open(mp, encoding="utf-8"))
-        except ValueError:
+            with open(mp, encoding="utf-8") as fh:
+                meta = json.load(fh)
+        except (OSError, ValueError):
             meta = {}
-    return meta
+    return meta if isinstance(meta, dict) else {}
 
 
 def project_mtime(path):
@@ -751,7 +764,9 @@ class Launcher:
                                "Set it in Settings > Engine file (Heaven3D.py).")
         py = s.get("python_path") or _detect_python()
         # -u: unbuffered, so the log is complete even when Stop ends the engine
-        iso = (["-E", "-s"] if py == _bundled_python() else []) + ["-u"]
+        # -X utf8: UTF-8 logs, pipes and open() on every OS (Windows would use
+        # its ANSI code page, and -E ignores PYTHONIOENCODING)
+        iso = (["-E", "-s"] if py == _bundled_python() else []) + ["-X", "utf8", "-u"]
         cmd = [py] + iso + [engine, "--project", os.path.join(project_path, PROJECT_FILE),
                "--width", str(int(s.get("editor_width", 1690))),
                "--height", str(int(s.get("editor_height", 950))), "--no-splash"]
@@ -785,8 +800,11 @@ class Launcher:
         env = dict(os.environ)
         env["PYTHONUNBUFFERED"] = "1"
         env.setdefault("PYTHONIOENCODING", "utf-8")
-        proc = subprocess.Popen(cmd, cwd=path, stdout=logf, stderr=subprocess.STDOUT,
-                                stdin=subprocess.DEVNULL, creationflags=flags, env=env)
+        try:
+            proc = subprocess.Popen(cmd, cwd=path, stdout=logf, stderr=subprocess.STDOUT,
+                                    stdin=subprocess.DEVNULL, creationflags=flags, env=env)
+        finally:
+            logf.close()          # the engine has its own handle; the Hub leaked one per launch
         self.running[path] = (proc, mode, log_path)
         project["last_opened"] = _now()
         self.cfg.save()
@@ -2348,7 +2366,7 @@ def run_gui():
             state["out"] = out
             engine = cfg.settings.get("engine_path") or ""
             py = cfg.settings.get("python_path") or _detect_python()
-            iso = (["-E", "-s"] if py == _bundled_python() else []) + ["-u"]
+            iso = (["-E", "-s"] if py == _bundled_python() else []) + ["-X", "utf8", "-u"]
             cmd = [py] + iso + [engine, "--export-game", os.path.join(path, PROJECT_FILE),
                                 "--targets", ",".join(targets), "--out", out, "--name", name_var.get().strip(),
                                 "--width", str(wv), "--height", str(hv)] + ([] if zip_var.get() else ["--no-zip"]) + \
@@ -2356,9 +2374,14 @@ def run_gui():
             go.set_enabled(False)
             status.configure(text="Exporting… this can take a minute.", fg=C["muted"])
             log("Exporting " + ", ".join(t.title() for t in targets) + " build(s)…")
+            # The pipe is read as UTF-8, so the exporter must write UTF-8: on
+            # Windows a pipe defaults to the ANSI code page, and a game named
+            # in Cyrillic, Persian, Chinese... made the export crash on its
+            # first log line.
+            xenv = dict(os.environ, PYTHONIOENCODING="utf-8", PYTHONUNBUFFERED="1")
             try:
                 proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
-                                        encoding="utf-8", errors="replace", cwd=path,
+                                        encoding="utf-8", errors="replace", cwd=path, env=xenv,
                                         creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0) if IS_WIN else 0)
             except Exception as ex:
                 log(str(ex))
@@ -2850,7 +2873,7 @@ def run_gui():
     klist_o.pack(fill="both", expand=True, padx=(px(20), px(8)), pady=(0, px(16)))
 
     def restart_hub():
-        args = [sys.executable] + (["-E", "-s"] if sys.flags.ignore_environment else []) + \
+        args = [sys.executable] + (["-E", "-s"] if sys.flags.ignore_environment else []) + ["-X", "utf8"] + \
                [os.path.abspath(__file__)] + [a for a in sys.argv[1:] if a == "--safe-mode"]
         try:
             subprocess.Popen(args, cwd=HERE, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0) if IS_WIN else 0)
@@ -3253,7 +3276,10 @@ def run_gui():
 
         def work():
             try:
-                r = subprocess.run([py, "-c", CHECK], capture_output=True, text=True, timeout=120,
+                iso = (["-E", "-s"] if py == _bundled_python() else []) + ["-X", "utf8"]
+                r = subprocess.run([py] + iso + ["-c", CHECK], capture_output=True, text=True, timeout=120,
+                                   encoding="utf-8", errors="replace",
+                                   env=dict(os.environ, PYTHONIOENCODING="utf-8"),
                                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0) if IS_WIN else 0)
                 txt = (r.stdout or "") + (r.stderr or "")
                 ok = "MISSING" not in txt and r.returncode == 0

@@ -2,9 +2,9 @@
  * Heaven3D launcher for Windows: a tiny .exe (with the Heaven3D logo as its
  * icon) that starts the bundled Python next to it.  No console window.
  *
- *   HUB    : runtime\python\pythonw.exe -E -s Heaven3D_Hub.py
- *   EDITOR : runtime\python\pythonw.exe -E -s Heaven3D.py
- *   GAME   : engine\python\pythonw.exe  -E -s engine\Heaven3D.py --game "<folder>"
+ *   HUB    : runtime\python\pythonw.exe -X utf8 -E -s Heaven3D_Hub.py
+ *   EDITOR : runtime\python\pythonw.exe -X utf8 -E -s Heaven3D.py
+ *   GAME   : engine\python\pythonw.exe  -X utf8 -E -s engine\Heaven3D.py --game "<folder>"
  *
  * Build (see build_standalone.py):
  *   x86_64-w64-mingw32-windres launcher.rc -O coff -o icon.o
@@ -45,10 +45,17 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE hp, PWSTR args, int show) {
     swprintf(script, 32768, L"%ls\\%ls", dir, SCRIPT);
     if (GetFileAttributesW(py) == INVALID_FILE_ATTRIBUTES) { fail(L"The bundled Python runtime is missing:", py); return 2; }
     if (GetFileAttributesW(script) == INVALID_FILE_ATTRIBUTES) { fail(L"The " WHAT L" files are missing:", script); return 3; }
+    /* Started from the root of a drive (E:\Game.exe on a USB stick): "E:" alone
+       means "the current folder of drive E", not its root - use "E:\".  In the
+       quoted --game argument the trailing backslash must be doubled, or it
+       would escape the closing quote. */
+    int root = (wcslen(dir) == 2 && dir[1] == L':');
+    if (root) wcscat(dir, L"\\");
 #if defined(H3D_GAME)
-    swprintf(cmd, 65536, L"\"%ls\" -E -s \"%ls\" --game \"%ls\" %ls", py, script, dir, args ? args : L"");
+    swprintf(cmd, 65536, L"\"%ls\" -X utf8 -E -s \"%ls\" --game \"%ls%ls\" %ls", py, script, dir,
+             root ? L"\\" : L"", args ? args : L"");
 #else
-    swprintf(cmd, 65536, L"\"%ls\" -E -s \"%ls\" %ls", py, script, args ? args : L"");
+    swprintf(cmd, 65536, L"\"%ls\" -X utf8 -E -s \"%ls\" %ls", py, script, args ? args : L"");
 #endif
     STARTUPINFOW si; PROCESS_INFORMATION pi;
     ZeroMemory(&si, sizeof si); si.cb = sizeof si;

@@ -207,6 +207,13 @@ def _h3d27_project_icon(project_file):
 def _h3d27_cli():
     argv = sys.argv[1:]
     if "--export-game" in argv:
+        # Game names and paths can be in any script; a Windows pipe or an
+        # old console code page must not end the export on a log line.
+        for _s in (sys.stdout, sys.stderr):
+            try:
+                _s.reconfigure(errors="replace")
+            except (AttributeError, ValueError):
+                pass
         import argparse
         ap = argparse.ArgumentParser(prog="Heaven3D.py --export-game")
         ap.add_argument("--export-game", dest="project", required=True)

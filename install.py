@@ -2,15 +2,17 @@
 # -*- coding: utf-8 -*-
 """
 ================================================================================
-  Heaven3D — install.py   (Linux edition)
+  Heaven3D — install.py   (Linux, Windows and macOS)
 ================================================================================
 
   One command:
 
-      python3 install.py
+      python3 install.py        (Windows: py install.py)
 
-  …and a Linux user goes from a fresh OS to a running Heaven3D engine with
-  ZERO manual steps.  The script:
+  …and a user goes from a fresh OS to a running Heaven3D engine with
+  ZERO manual steps.  On Windows and macOS step 2 is skipped (python.org
+  Python already has tkinter + venv, OpenGL comes with the driver) and the
+  launcher is run_heaven3d.bat on Windows.  The script:
 
     1. Verifies the Python version (3.10+).
     2. Installs OS-level packages with the distro's own package manager
@@ -62,6 +64,15 @@ PIP_PACKAGES = [
 
 VENV_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                         ".venv-heaven3d")
+IS_WIN = platform.system() == "Windows"
+IS_MAC = platform.system() == "Darwin"
+
+# A Windows console or a redirected log may not be UTF-8: never crash on ✓ / …
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(errors="replace")
+    except (AttributeError, ValueError):
+        pass
 
 # ----------------------------------------------------------------------------
 # small helpers
@@ -70,7 +81,8 @@ VENV_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)),
 class Step:
     """Coloured, silent-failure-proof console output."""
     GREEN, YELLOW, RED, BLUE, RESET = ("", "", "", "", "")
-    if sys.stdout.isatty():
+    # (the classic Windows console prints ANSI codes as garbage)
+    if sys.stdout.isatty() and (not IS_WIN or os.environ.get("WT_SESSION")):
         GREEN, YELLOW, RED, BLUE, RESET = (
             "\033[92m", "\033[93m", "\033[91m", "\033[94m", "\033[0m")
 
@@ -100,10 +112,19 @@ def run(cmd, *, as_root=False, capture=False, check=True, env=None):
         if not have("sudo"):
             Step.die("This step needs root privileges but 'sudo' is not "
                      "installed.\n  Re-run as root, or install sudo.")
-        full = ["sudo", "-n"] + full   # -n: fail fast instead of hanging
+        # In a terminal, let sudo ask for the password (with -n it failed at
+        # once for every normal desktop user, so nothing was ever installed).
+        # Without a terminal, -n fails fast instead of hanging.
+        interactive = sys.stdin is not None and sys.stdin.isatty()
+        full = ["sudo"] + ([] if interactive else ["-n"]) + full
+    if capture:
+        # read child output as UTF-8 (and have Python children write it):
+        # a Windows pipe would otherwise use the ANSI code page
+        env = dict(env or os.environ, PYTHONIOENCODING="utf-8")
     try:
         return subprocess.run(full, check=check, capture_output=capture,
-                              text=True, env=env)
+                              text=True, env=env,
+                              **({"encoding": "utf-8", "errors": "replace"} if capture else {}))
     except subprocess.CalledProcessError as ex:
         if check:
             out = (ex.stderr or ex.stdout or "").strip()
@@ -237,7 +258,8 @@ def create_venv():
             os.path.join(VENV_DIR, "pyvenv.cfg")):
         Step.ok("Virtual environment already exists — reusing it.")
         return
-    builder = venv.EnvBuilder(with_pip=True, clear=False, symlinks=True)
+    # Windows: symlinks need admin rights / developer mode, so copy instead.
+    builder = venv.EnvBuilder(with_pip=True, clear=False, symlinks=not IS_WIN)
     try:
         builder.create(VENV_DIR)
     except Exception as ex:
@@ -247,6 +269,8 @@ def create_venv():
 
 
 def venv_python():
+    if IS_WIN:
+        return os.path.join(VENV_DIR, "Scripts", "python.exe")
     return os.path.join(VENV_DIR, "bin", "python")
 
 
@@ -266,8 +290,19 @@ def install_python_packages():
                       "pip==25.1.1", "setuptools==80.9.0", "wheel==0.45.1"],
         check=True)
 
-    run(venv_pip() + ["install", "--upgrade", "--only-binary", ":all:"] +
-        [spec for _, spec in PIP_PACKAGES], check=True)
+    try:
+        run(venv_pip() + ["install", "--upgrade", "--only-binary", ":all:"] +
+            [spec for _, spec in PIP_PACKAGES], check=True)
+    except subprocess.CalledProcessError:
+        # The pins only have wheels for the Python versions that existed when
+        # they were chosen (numba 0.61 / numpy 2.2 stop at 3.13, pygame 2.6.1
+        # too), so a newer Python used to abort the whole install here.  Fall
+        # back to the newest releases that have wheels for THIS Python.
+        Step.warn("The pinned versions have no wheels for Python "
+                  f"{platform.python_version()} - installing the newest "
+                  "compatible releases instead …")
+        run(venv_pip() + ["install", "--upgrade", "--only-binary", ":all:"] +
+            [name for name, _ in PIP_PACKAGES], check=True)
 
     Step.ok("Python packages installed.")
 
@@ -291,7 +326,6 @@ mods = {
     "trimesh":  "trimesh",
     "PIL":      "Pillow",
     "zstandard": "zstandard",
-    "tkinter":  "tkinter",
 }
 for module, label in mods.items():
     try:
@@ -301,22 +335,42 @@ for module, label in mods.items():
     except Exception as ex:
         failures.append(f"{label}: {ex}")
         print(f"  [FAIL] {label}: {ex}")
+# tkinter is only used by the Hub and FILE BURNER windows - the engine and
+# the editor run without it, so its absence is a warning, not a failure.
+try:
+    import tkinter
+    have_tk = True
+    print(f"  [OK] tkinter    {tkinter.TkVersion}")
+except Exception as ex:
+    have_tk = False
+    print(f"  [WARN] tkinter: {ex}  (needed for the Hub only: install your "
+          f"distro's python3-tk for this Python; the editor works without it)")
 
 # Import the engine modules themselves (syntax + import-time checks).
 import os, importlib.util
-here = os.path.dirname(os.path.abspath(sys.argv[1])) if len(sys.argv) > 1 else os.getcwd()
+# argv[1] IS the Heaven3D folder (taking its dirname looked one level up,
+# so the engine files were never found and never checked)
+here = os.path.abspath(sys.argv[1]) if len(sys.argv) > 1 else os.getcwd()
 for fname in ("Heaven3D.py", "Heaven3D_runtime.py", "FILEBURNER.py", "Heaven3D_Hub.py"):
     path = os.path.join(here, fname)
     if not os.path.isfile(path):
         print(f"  [SKIP] {fname} not found next to install.py")
+        continue
+    if fname == "FILEBURNER.py" and not have_tk:
+        print(f"  [SKIP] {fname} (needs tkinter)")
         continue
     try:
         spec = importlib.util.spec_from_file_location(fname[:-3], path)
         mod = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(mod)
         print(f"  [OK] {fname} imports cleanly")
-    except SystemExit:
-        print(f"  [OK] {fname} imports cleanly")
+    except SystemExit as ex:
+        # the engine exits with 1 after "FATAL: numpy not installed" etc.
+        if ex.code in (0, None):
+            print(f"  [OK] {fname} imports cleanly")
+        else:
+            failures.append(f"{fname}: exited with {ex.code}")
+            print(f"  [FAIL] {fname}: exited with {ex.code}")
     except Exception as ex:
         failures.append(f"{fname}: {ex}")
         print(f"  [FAIL] {fname}: {ex}")
@@ -329,7 +383,9 @@ if failures:
 """
     res = run([venv_python(), "-c", code, os.path.dirname(os.path.abspath(__file__))],
               capture=True, check=False)
-    print(res.stdout or res.stderr or "")
+    print(res.stdout or "")
+    if res.returncode != 0 and res.stderr:
+        print(res.stderr[-3000:])
     if res.returncode != 0:
         Step.die("Verification failed — see the import errors above.")
 
@@ -338,6 +394,10 @@ if failures:
 
 def check_opengl():
     Step.info("Checking OpenGL 3.3+ availability …")
+    if IS_WIN or IS_MAC:
+        Step.ok("OpenGL comes with the graphics driver (macOS: built in) - it is "
+                "checked the first time the engine opens a window.")
+        return
     glxinfo = shutil.which("glxinfo")
     if glxinfo is None:
         Step.warn("glxinfo not available — cannot verify the GPU/driver. "
@@ -375,21 +435,35 @@ def check_opengl():
 # 6. Launcher helper
 # ----------------------------------------------------------------------------
 
+LAUNCHER = "run_heaven3d.bat" if IS_WIN else "run_heaven3d.sh"
+
+
 def write_launcher():
     """A tiny convenience script so users never have to type the venv path."""
-    launcher = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                            "run_heaven3d.sh")
-    body = f"""#!/usr/bin/env bash
+    launcher = os.path.join(os.path.dirname(os.path.abspath(__file__)), LAUNCHER)
+    venv_name = os.path.basename(VENV_DIR)
+    if IS_WIN:
+        body = f"""@echo off
+rem Auto-generated by install.py - launches Heaven3D inside its venv.
+cd /d "%~dp0"
+if not exist "%~dp0{venv_name}\\Scripts\\python.exe" (
+    echo Virtual environment missing - run: python install.py
+    exit /b 1
+)
+"%~dp0{venv_name}\\Scripts\\python.exe" %*
+"""
+    else:
+        body = f"""#!/usr/bin/env bash
 # Auto-generated by install.py — launches Heaven3D inside its venv.
 cd "$(dirname "$0")"
-if [ ! -x "{VENV_DIR}/bin/python" ]; then
+if [ ! -x "./{venv_name}/bin/python" ]; then
     echo "Virtual environment missing — run: python3 install.py"
     exit 1
 fi
-exec "{VENV_DIR}/bin/python" "$@"
+exec "./{venv_name}/bin/python" "$@"
 """
     try:
-        with open(launcher, "w", encoding="utf-8") as fh:
+        with open(launcher, "w", encoding="utf-8", newline="\r\n" if IS_WIN else "\n") as fh:
             fh.write(body)
         os.chmod(launcher, 0o755)
         Step.ok(f"Launcher written: {launcher}")
@@ -402,16 +476,18 @@ exec "{VENV_DIR}/bin/python" "$@"
 # ----------------------------------------------------------------------------
 
 def main():
-    if platform.system() != "Linux":
-        Step.die("This installer is for Linux. On Windows/macOS install the "
-                 "packages listed in the engine docstring with pip.")
-
+    system = "Windows" if IS_WIN else ("macOS" if IS_MAC else platform.system())
     print("=" * 70)
-    print("  Heaven3D — one-shot Linux installer")
+    print(f"  Heaven3D — one-shot installer ({system})")
     print("=" * 70)
 
     check_python()
-    install_system_packages()
+    if IS_WIN or IS_MAC:
+        # Python from python.org already has tkinter and venv; OpenGL comes
+        # with the graphics driver.  Only the pip packages are needed.
+        Step.ok("No system packages needed on " + system + ".")
+    else:
+        install_system_packages()
     create_venv()
     install_python_packages()
     verify_installation()
@@ -419,26 +495,29 @@ def main():
     write_launcher()
 
     here = os.path.dirname(os.path.abspath(__file__))
+    run_ = LAUNCHER if IS_WIN else "./" + LAUNCHER
+    activate = (f"{VENV_DIR}\\Scripts\\activate" if IS_WIN
+                else f"source {VENV_DIR}/bin/activate")
     print()
     print("=" * 70)
     Step.ok("INSTALLATION COMPLETE — your engine is ready.")
     print("=" * 70)
     print(f"""
   Open the Heaven3D Hub (projects + offline tutorials):
-      cd {here}
-      ./{os.path.basename(os.path.join(here, 'run_heaven3d.sh'))} Heaven3D_Hub.py
+      cd "{here}"
+      {run_} Heaven3D_Hub.py
 
   Run the editor directly:
-      ./{os.path.basename(os.path.join(here, 'run_heaven3d.sh'))} Heaven3D.py
+      {run_} Heaven3D.py
 
   Run a game (standalone runtime, no editor UI):
-      ./{os.path.basename(os.path.join(here, 'run_heaven3d.sh'))} Heaven3D.py --runtime
+      {run_} Heaven3D.py --runtime
 
   Burn a project portable (FILE BURNER):
-      ./{os.path.basename(os.path.join(here, 'run_heaven3d.sh'))} FILEBURNER.py
+      {run_} FILEBURNER.py
 
   …or activate the venv yourself and use python directly:
-      source {VENV_DIR}/bin/activate
+      {activate}
       python Heaven3D.py --runtime
 """)
 

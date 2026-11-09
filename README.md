@@ -10,7 +10,7 @@
 
 Deferred PBR rendering · CPU physics · Built-in editor · Standalone runtime
 
-![Version](https://img.shields.io/badge/version-3.1.3-blue)
+![Version](https://img.shields.io/badge/version-3.1.4-blue)
 ![Python](https://img.shields.io/badge/python-3.10%2B-yellow)
 ![OpenGL](https://img.shields.io/badge/OpenGL-3.3%2B%20Core-green)
 ![License](https://img.shields.io/badge/license-Apache%202.0-orange)
@@ -24,6 +24,33 @@ Deferred PBR rendering · CPU physics · Built-in editor · Standalone runtime
 Heaven3D is a from-scratch 3D game engine written in Python on top of [ModernGL](https://github.com/moderngl/moderngl), giving direct access to the OpenGL Core profile. No Panda3D, Unity, Unreal, or GameGuru under the hood: the renderer, physics, editor, importers, audio, and gameplay systems are all written specifically for Heaven3D.
 
 The whole engine ships as a single file, `Heaven3D.py`, so it is easy to bundle into your own projects; it is developed as modular source in `src/`. The editor's interface lives next to it in `h3d_editor/`.
+
+## 🔧 3.1.4: bug-fix release
+
+A full bug hunt over 3.1.3 (every test file run on Linux, the Windows edition run under Wine, every template played with random input). Projects and exported games are unchanged.
+
+**Windows**
+- **Names in any language.** A project or game named in Persian, Arabic, Cyrillic, Chinese... made *Export* fail on Windows (the export log and the launcher / README / Info.plist files were written in the ANSI code page), and any log line with such text crashed the engine when its output was redirected. Both are UTF-8-safe now.
+- **No more silent crashes** when the editor is started from *Heaven3D Editor.exe*: it has no console, so every message (even a crash) vanished. They're kept in `~/.heaven3d/logs/last_run.log`.
+- **Games on a USB stick root** (`E:\My Game.exe`) found the wrong folder. Fixed in the game launcher.
+- The `.exe` launchers carry the real version (they said 2.7.3).
+- Project and game names Windows can't use (`CON`, `NUL`, `COM1`, `LPT1`...) are refused up front instead of failing later.
+- `install.py` now works on **Windows and macOS** too (it used to stop with "This installer is for Linux") and writes `run_heaven3d.bat` on Windows.
+
+**Linux**
+- `install-shortcut.sh` of an exported game: a `$` or a backquote in the game's name was run by the shell (`Money$Maker` became `Money`); names are escaped properly and the menu entry passes `desktop-file-validate`. Non-Latin names no longer give an empty `heaven3d-.desktop`.
+- `install.py` asks for your sudo password instead of failing every system-package step, and falls back to the newest wheels when the pinned versions don't support your Python (3.13+).
+
+**Engine**
+- **Black specks on normal-mapped models**: a vertex with a zero-length normal got a NaN tangent, which normal mapping turned black and bloom spread around. Tangents are always valid now (and odd index counts no longer break them).
+- No more false *"MeshCollider on 'Race Road' has no mesh — it will not collide with anything"* when a race track opens: roads build their mesh a moment after loading and always collided.
+- A closed log pipe (the Hub gone) no longer crashes a running game.
+
+**Hub**: a damaged `hub.json` no longer stops the Hub from opening; one log-file handle leaked per launch; the dependency check now uses the bundled Python in isolated mode.
+
+**HQ FPS Weapons 0.4.1**: a crate with a Health blueprint got a bullet hole *and* the wet flesh-hit sound; it now sounds like the surface it is (creatures still get the thud and no hole).
+
+**Tests**: three checks written for the old interface failed on a correct engine (the island screenshot sampled the console panel, the bullet-hole check shot a Health crate instead of a creature, the old-arena check crashed without its file); they test the right thing again, and every test file passes.
 
 ## 🚀 What's new in 3.1.3: the biggest update yet
 
@@ -203,12 +230,11 @@ The 45,000-line engine is now kept as about 70 files in [`src/`](src/README.md) 
 
 | Download | Contents | Start |
 | --- | --- | --- |
-| `Heaven3D-2.7.3-Windows.zip` | Hub, editor and a bundled Windows Python | double-click **Heaven3D Hub.exe** |
-| `Heaven3D-2.7.3-Linux.zip` | Hub, editor and a bundled Linux Python (glibc 2.17+) | run **./Heaven3D-Hub** (`./install-desktop-shortcuts.sh` adds menu entries) |
-| `Heaven3D-2.7.3-macOS-AppleSilicon.zip` | Hub, editor and a bundled macOS Python for M1/M2/M3/M4 Macs (macOS 11+) | unlock once (below), then double-click **Heaven3D Hub.app** |
-| `Heaven3D-2.7.3-macOS-Intel.zip` | the same for Intel Macs | the same |
-
-| `Heaven3D-2.7.3-Export-Players.zip` | add-on for the macOS editions: the Windows and Linux game players | move its `windows` and `linux` folders into `runtime/players` |
+| `Heaven3D-3.1.4-Windows.zip` | Hub, editor and a bundled Windows Python | double-click **Heaven3D Hub.exe** |
+| `Heaven3D-3.1.4-Linux.zip` | Hub, editor and a bundled Linux Python (glibc 2.17+) | run **./Heaven3D-Hub** (`./install-desktop-shortcuts.sh` adds menu entries) |
+| `Heaven3D-3.1.4-macOS-AppleSilicon.zip` | Hub, editor and a bundled macOS Python for M1/M2/M3/M4 Macs (macOS 11+) | unlock once (below), then double-click **Heaven3D Hub.app** |
+| `Heaven3D-3.1.4-macOS-Intel.zip` | the same for Intel Macs | the same |
+| `Heaven3D-3.1.4-Export-Players.zip` | add-on for the macOS editions: the Windows and Linux game players | move its `windows` and `linux` folders into `runtime/players` |
 
 Unzip anywhere, even a USB stick. The Windows and Linux editions each contain both game players, so you can export Windows **and** Linux games from either one. The macOS editions export macOS games; add the Export-Players download to export Windows and Linux games from a Mac too (it's separate to keep the Mac downloads small). The editions are built by `tools/standalone/build_standalone.py`.
 
