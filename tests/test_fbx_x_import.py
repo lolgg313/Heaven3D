@@ -177,7 +177,7 @@ def check_quad(tag, parts):
     check(tag + ": centimetres become metres", np.allclose(hi - lo, [2, 0, 2], atol=1e-4), (lo, hi))
     check(tag + ": Z-up translation becomes height", np.allclose(pos[:, 1], 3.0, atol=1e-4), pos[:, 1])
     uv = np.asarray(p["uv0"])
-    check(tag + ": UV V flipped to the engine convention",
+    check(tag + ": UVs kept (FBX and the engine both start bottom-left)",
           np.isclose(uv[:, 1].min(), 0) and np.isclose(uv[:, 1].max(), 1) and
           np.allclose(sorted(set(np.round(uv[:, 1], 4))), [0, 1]), uv.tolist())
     n = np.asarray(p["normals"])
@@ -257,8 +257,9 @@ def main():
         check(".x text: texture found regardless of case",
               bc is not None and os.path.basename(bc[1]) == "skin.png", bc)
         check(".x text: emissive modulated by the texture (Direct3D)", "emissive" in slots, list(slots))
-        check(".x text: UV kept top-down", np.allclose(sorted(np.asarray(p["uv0"])[:, 1]), [0, 1, 1]),
-              p["uv0"].tolist())
+        # DirectX v=0 is the image top; the engine's import parts count v from the bottom
+        check(".x text: UV v flipped to the engine convention",
+              np.allclose(sorted(np.asarray(p["uv0"])[:, 1]), [0, 0, 1]), p["uv0"].tolist())
         xz = os.path.join(tmp, "tri_zip.x")
         open(xz, "wb").write(mszip(X_TEXT[16:]))
         pz = H.load_x_parts(xz)[0]

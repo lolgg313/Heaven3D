@@ -4109,6 +4109,15 @@ def _fbx_geometric_matrix(p):
             @ _fbx_m4(s=_fbx_vec(p, "GeometricScaling", (1, 1, 1))))
 
 
+class _FbxOne:
+    """Lets _fbx_layer read one specific LayerElement (files can have several UV sets)."""
+    def __init__(self, el):
+        self.el = el
+
+    def find(self, name):
+        return self.el
+
+
 def _fbx_layer(geom, name, data_key, index_keys):
     """-> (values ndarray (n, k), mapping, per-reference indices or None)"""
     import numpy as _np
@@ -4234,6 +4243,38 @@ def load_fbx_parts(path, log=None):
 
     base_dir = os.path.dirname(os.path.abspath(path))
     stem = os.path.splitext(os.path.basename(path))[0]
+    # embedded images by file name, for Textures that aren't wired to their Video
+    video_by_name = {}
+    for o in objs.children:
+        if o.name != "Video":
+            continue
+        cont = o.find("Content")
+        raw = cont.props[-1] if cont is not None and cont.props else None
+        if isinstance(raw, str):
+            try:
+                import base64
+                raw = base64.b64decode(raw)
+            except Exception:
+                raw = None
+        if not isinstance(raw, (bytes, bytearray)) or len(raw) <= 16:
+            continue
+        for key in ("RelativeFilename", "FileName", "Filename"):
+            e = o.find(key)
+            if e is not None and e.props and str(e.props[0]).strip():
+                video_by_name.setdefault(str(e.props[0]).replace("\\", "/").split("/")[-1].lower(), bytes(raw))
+
+    def real_texture(cid):
+        """A Texture id, following a LayeredTexture to its first layer."""
+        o = by_id.get(cid)
+        if o is None:
+            return None
+        if o.name == "Texture":
+            return cid
+        if o.name == "LayeredTexture":
+            for k, _pn in children_of.get(cid, ()):
+                if by_id.get(k) is not None and by_id[k].name == "Texture":
+                    return k
+        return None
 
     def tex_desc(tex_id):
         tex = by_id.get(tex_id)
@@ -4269,7 +4310,67 @@ def load_fbx_parts(path, log=None):
                                                  os.path.join("..", "textures")))
             if hit:
                 return ("path", hit)
+        for nm in names:
+            raw = video_by_name.get(str(nm).replace("\\", "/").split("/")[-1].lower())
+            if raw is not None:
+                return ("bytes", raw)
         return None
+
+    def tex_ref(tex_id, d):
+        """Slot dict for a texture: its UV set, UV transform and wrap modes."""
+        t = by_id.get(tex_id)
+        tp = _fbx_p70(t)
+        ref = {"desc": d, "uvset": 0, "xf": None, "wrap": 0, "wrap_t": 0}
+        uvset = tp.get("UVSet")
+        if uvset and str(uvset[0]).strip() and uv_names:
+            nm = str(uvset[0]).strip()
+            if nm in uv_names and uv_names.index(nm) > 0:
+                ref["uvset"] = 1
+                ref["_uv_layer"] = uv_names.index(nm)
+        try:
+            ref["wrap"] = 1 if int(_fbx_vec(tp, "WrapModeU", (0,))[0]) == 1 else 0
+            ref["wrap_t"] = 1 if int(_fbx_vec(tp, "WrapModeV", (0,))[0]) == 1 else 0
+        except (TypeError, ValueError):
+            pass
+        su, sv = _fbx_vec(tp, "Scaling", (1.0, 1.0, 1.0))[:2]
+        tu, tv = _fbx_vec(tp, "Translation", (0.0, 0.0, 0.0))[:2]
+        rot = _fbx_vec(tp, "Rotation", (0.0, 0.0, 0.0))
+        rz = rot[2] if len(rot) > 2 else 0.0
+        for key, is_scale in (("ModelUVScaling", True), ("ModelUVTranslation", False)):
+            e = t.find(key) if t is not None else None
+            if e is not None and len(e.props) >= 2:
+                try:
+                    a, b = float(e.props[0]), float(e.props[1])
+                except (TypeError, ValueError):
+                    continue
+                if is_scale:
+                    su, sv = su * a, sv * b
+                else:
+                    tu, tv = tu + a, tv + b
+        swap = bool(_fbx_vec(tp, "UVSwap", (0,))[0]) if "UVSwap" in tp else False
+        if (abs(su - 1) > 1e-6 or abs(sv - 1) > 1e-6 or abs(tu) > 1e-6 or abs(tv) > 1e-6
+                or abs(rz) > 1e-6 or swap):
+            c, s_ = math.cos(math.radians(rz)), math.sin(math.radians(rz))
+            A = _np.array([[su * c, -sv * s_, tu], [su * s_, sv * c, tv], [0, 0, 1]], _np.float64)
+            if swap:
+                A = A @ _np.array([[0, 1, 0], [1, 0, 0], [0, 0, 1]], _np.float64)
+            ref["xf"] = A.tolist()                 # FBX and the engine share the UV convention
+        return ref
+
+    def is_normal_map(d):
+        """Bump slots often hold grey height maps; only real (bluish) normal maps are used."""
+        try:
+            if d[0] == "path":
+                surf = pygame.image.load(d[1])
+            else:
+                import io
+                surf = pygame.image.load(io.BytesIO(d[1]))
+            small = pygame.transform.scale(surf, (16, 16))
+            arr = pygame.surfarray.array3d(small).reshape(-1, 3).astype(_np.float64) / 255.0
+            r, g, b = arr.mean(axis=0)
+            return b > 0.6 and b > r + 0.1 and b > g + 0.1 and abs(r - 0.5) < 0.25 and abs(g - 0.5) < 0.25
+        except Exception:
+            return False
 
     def material_info(mat_id):
         mat = by_id.get(mat_id)
@@ -4316,22 +4417,36 @@ def load_fbx_parts(path, log=None):
         if pbr_emis is not None:
             emis, efac = pbr_emis, pbr_ew
         slots = {}
+        cutout = None
         for cid, pname in children_of.get(mat_id, ()):
-            if pname is None or by_id.get(cid) is None or by_id[cid].name != "Texture":
+            if pname is None:
+                continue
+            cid = real_texture(cid)
+            if cid is None:
                 continue
             low = pname.lower()
             d = tex_desc(cid)
             if d is None:
                 continue
-            ref = {"desc": d, "uvset": 0, "xf": None, "wrap": 0, "wrap_t": 0}
-            if ("diffuse" in low or "base_color" in low or "basecolor" in low) and "factor" not in low:
+            ref = tex_ref(cid, d)
+            if (("diffuse" in low or "base_color" in low or "basecolor" in low or "color_map" in low
+                 or "albedo" in low) and "factor" not in low):
                 slots.setdefault("base_color", ref)
-            elif "normal" in low or "bump" in low:
+            elif "normal" in low:
                 slots.setdefault("normal", dict(ref, scale=1.0))
-            elif "emissive" in low and "factor" not in low:
+            elif "bump" in low and "factor" not in low:
+                if is_normal_map(d):
+                    slots.setdefault("normal", dict(ref, scale=1.0))
+            elif "emissive" in low and "factor" not in low or "emit_color" in low:
                 slots.setdefault("emissive", ref)
+            elif "transparen" in low or "opacity" in low:
+                cutout = d
         if "base_color" in slots:
             base = [1.0, 1.0, 1.0] if max(base) < 0.02 else base
+            if cutout is not None and cutout == slots["base_color"]["desc"]:
+                opacity = min(opacity, 1.0)
+                if opacity >= 0.999:
+                    opacity = 0.9995           # marker: alpha comes from the texture (cut-out)
         info = {"name": name, "base_color": [base[0], base[1], base[2], max(0.0, min(1.0, opacity))],
                 "metallic": float(max(0.0, min(1.0, metal))), "roughness": float(max(0.04, min(1.0, rough))),
                 "emissive": [emis[0] * efac, emis[1] * efac, emis[2] * efac], "emissive_intensity": 1.0,
@@ -4339,11 +4454,15 @@ def load_fbx_parts(path, log=None):
                 "emissive_tex": None, "occlusion_tex": None, "double_sided": False,
                 "alpha_mode": "BLEND" if opacity < 0.999 else "OPAQUE", "alpha_cutoff": 0.5,
                 "_h3d": {"vertex_colors": False, "slots": slots}}
+        if opacity == 0.9995:
+            info["base_color"][3] = 1.0
+            info["alpha_mode"] = "MASK"                  # leaves, fences: alpha in the colour texture
         if "emissive" in slots and max(info["emissive"]) < 1e-4:
             info["emissive"] = [1.0, 1.0, 1.0]
         return info
 
     parts = []
+    uv_names = []
     for mid, model in list(by_id.items()):
         if model.name != "Model":
             continue
@@ -4371,7 +4490,10 @@ def load_fbx_parts(path, log=None):
             if len(pvi) == 0 or len(verts) == 0:
                 continue
             ends = pvi < 0
-            vi = _np.where(ends, -pvi - 1, pvi)
+            if not ends[-1]:
+                ends = ends.copy()
+                ends[-1] = True                         # a file cut short: close the last polygon
+            vi = _np.where(pvi < 0, -pvi - 1, pvi)
             # polygon of every corner, and fan triangulation
             pid = _np.concatenate([[0], _np.cumsum(ends[:-1])]).astype(_np.int64)
             starts = _np.concatenate([[0], _np.nonzero(ends)[0][:-1] + 1]) if ends.any() else _np.array([0])
@@ -4391,10 +4513,19 @@ def load_fbx_parts(path, log=None):
             ln = _fbx_layer(g, "LayerElementNormal", "Normals", ("NormalsIndex", "NormalIndex"))
             if ln is not None:
                 nrm = _fbx_expand(ln[0], 3, ln[1], ln[2], vi, pid)
-            uv = None
-            lu = _fbx_layer(g, "LayerElementUV", "UV", ("UVIndex",))
-            if lu is not None:
-                uv = _fbx_expand(lu[0], 2, lu[1], lu[2], vi, pid)
+            uv_layers = []                 # per-corner UVs of every UV set, in file order
+            uv_names[:] = []
+            for k_el, el in enumerate(g.find_all("LayerElementUV")):
+                lu = _fbx_layer(_FbxOne(el), "LayerElementUV", "UV", ("UVIndex",))
+                ex = _fbx_expand(lu[0], 2, lu[1], lu[2], vi, pid) if lu is not None else None
+                nm_el = el.find("Name")
+                uv_names.append(str(nm_el.props[0]) if nm_el is not None and nm_el.props else "UV%d" % k_el)
+                uv_layers.append(ex)
+            if uv_layers:
+                for k_el, nm in enumerate(list(uv_names)):
+                    if nm in ("", "default"):
+                        uv_names[k_el] = "UV%d" % k_el
+            uv = uv_layers[0] if uv_layers else None
             col = None
             lc = _fbx_layer(g, "LayerElementColor", "Colors", ("ColorIndex", "ColorsIndex"))
             if lc is not None:
@@ -4432,17 +4563,29 @@ def load_fbx_parts(path, log=None):
                     p_nrm = _fbx_flat_normals(p_pos, p_idx)
                 p_uv = None
                 if uv is not None:
+                    # FBX UVs start bottom-left, like the engine's import parts: no flip
                     p_uv = uv[corners].astype(_np.float32).copy()
-                    p_uv[:, 1] = 1.0 - p_uv[:, 1]                 # FBX v points up, glTF down
                 p_col = None
                 if col is not None:
                     p_col = _np.clip(col[corners], 0, 1).astype(_np.float32)
                 mat_id = mats[m_index] if 0 <= m_index < len(mats) else (mats[0] if mats else None)
                 info = material_info(mat_id) if mat_id is not None else material_info(None)
+                p_uv1 = None
+                for sref in info["_h3d"]["slots"].values():
+                    li = sref.pop("_uv_layer", None)
+                    if li is None:
+                        continue
+                    if p_uv1 is None and li < len(uv_layers) and uv_layers[li] is not None:
+                        p_uv1 = uv_layers[li][corners].astype(_np.float32).copy()
+                        uv1_layer = li
+                    if p_uv1 is None or li != uv1_layer:
+                        sref["uvset"] = 0          # only two UV sets reach the shader
+                if p_uv is None and p_uv1 is not None:
+                    p_uv = p_uv1
                 if p_col is not None:
                     info["_h3d"]["vertex_colors"] = True
                 parts.append({"name": mname if len(parts) == 0 else "%s_%d" % (mname, len(parts)),
-                              "positions": p_pos, "normals": p_nrm, "uv0": p_uv, "uv1": None,
+                              "positions": p_pos, "normals": p_nrm, "uv0": p_uv, "uv1": p_uv1,
                               "colors": p_col, "tangents": None, "indices": p_idx,
                               "material_info": info})
     if log is not None:
@@ -4454,26 +4597,60 @@ def load_fbx_parts(path, log=None):
 
 
 def model_find_file(base_dir, name, subdirs=()):
-    """Find a texture a model refers to: the path as written, next to the
-    model, or in its texture folders; letter case is ignored (models made
-    on Windows often say MP5SIL.BMP for mp5sil.bmp)."""
+    """Find a texture a model refers to: the path as written (absolute or
+    relative to the model), next to the model, in its texture folders, or -
+    for a path from another computer (D:\\projects\\models\\OBJ\\wood.jpg) - the
+    same trailing folders near the model (../OBJ/wood.jpg).  Letter case is
+    ignored (models made on Windows often say MP5SIL.BMP for mp5sil.bmp)."""
     name = str(name).replace("\\", "/").strip()
     if not name:
         return None
-    base = name.split("/")[-1]
+    parts = [x for x in name.split("/") if x and x not in (".",)]
+    if not parts:
+        return None
+    base = parts[-1]
     dirs = [base_dir] + [os.path.join(base_dir, d) for d in subdirs]
-    cands = [name, os.path.join(base_dir, name)] + [os.path.join(d, base) for d in dirs]
+    cands = []
+    if os.path.isabs(name):
+        cands.append(name)
+    cands.append(os.path.join(base_dir, *parts))
+    cands += [os.path.join(d, base) for d in dirs]
     for c in cands:
         if os.path.isfile(c):
             return os.path.abspath(c)
-    low = base.lower()
+
+    def ci_file(folder, comps):
+        """folder/comps... with case-insensitive matching of every component."""
+        cur = folder
+        for i, comp in enumerate(comps):
+            if comp == "..":
+                cur = os.path.dirname(cur)
+                continue
+            try:
+                hit = next((f for f in os.listdir(cur) if f.lower() == comp.lower()), None)
+            except OSError:
+                return None
+            if hit is None:
+                return None
+            cur = os.path.join(cur, hit)
+        return cur if os.path.isfile(cur) else None
     for d in dirs:
-        try:
-            for f in os.listdir(d):
-                if f.lower() == low and os.path.isfile(os.path.join(d, f)):
-                    return os.path.abspath(os.path.join(d, f))
-        except OSError:
-            continue
+        hit = ci_file(d, [base])
+        if hit:
+            return os.path.abspath(hit)
+    hit = ci_file(base_dir, parts) if ".." in parts or len(parts) > 1 else None
+    if hit:
+        return os.path.abspath(hit)
+    # a path from another machine: try its last folders around the model
+    anc = [base_dir]
+    for _ in range(3):
+        anc.append(os.path.dirname(anc[-1]))
+    clean = [x for x in parts if x != ".." and not x.endswith(":")]
+    for k in range(2, min(4, len(clean)) + 1):
+        for a in anc:
+            hit = ci_file(a, clean[-k:])
+            if hit:
+                return os.path.abspath(hit)
     return None
 
 
@@ -4676,6 +4853,45 @@ def _x_reader(vals):
     return nxt
 
 
+_X_DECL_SIZE = {0: 1, 1: 2, 2: 3, 3: 4, 4: 1, 5: 1, 6: 1, 7: 2, 8: 1, 9: 1, 10: 2, 11: 1, 12: 2, 13: 1,
+                14: 1, 15: 1, 16: 2}      # DWORDs per D3DDECLTYPE
+
+
+def _x_decl(values, nv):
+    """DeclData (vertex elements + raw DWORDs) -> {"uv", "normal", "color"} arrays."""
+    import numpy as _np
+    out = {}
+    try:
+        vals = [int(v) for v in values]
+        n_el = vals[0]
+        els = [vals[1 + 4 * k: 5 + 4 * k] for k in range(n_el)]       # type, method, usage, index
+        n_dw = vals[1 + 4 * n_el]
+        raw = _np.asarray(vals[2 + 4 * n_el: 2 + 4 * n_el + n_dw], _np.int64).astype(_np.uint32)
+        stride = sum(_X_DECL_SIZE.get(t, 1) for t, _m, _u, _i in els)
+        if stride == 0 or len(raw) < stride * nv:
+            return out
+        rows = raw[:stride * nv].reshape(nv, stride)
+        off = 0
+        for t, _m, usage, uidx in els:
+            sz = _X_DECL_SIZE.get(t, 1)
+            col = rows[:, off:off + sz]
+            off += sz
+            if usage == 5 and uidx == 0 and "uv" not in out:             # TEXCOORD0
+                if t == 1:
+                    out["uv"] = col.view(_np.float32).astype(_np.float64)
+                elif t == 15:                                            # FLOAT16_2
+                    out["uv"] = col.view(_np.float16).reshape(nv, 2).astype(_np.float64)
+            elif usage == 3 and t == 2 and "normal" not in out:            # NORMAL float3
+                out["normal"] = col.view(_np.float32).astype(_np.float64)
+            elif usage == 10 and t == 4 and "color" not in out:            # COLOR d3dcolor (ARGB)
+                c = col[:, 0]
+                out["color"] = _np.stack([(c >> 16) & 255, (c >> 8) & 255, c & 255, (c >> 24) & 255],
+                                         axis=1).astype(_np.float64) / 255.0
+    except (IndexError, ValueError, TypeError):
+        return out
+    return out
+
+
 def load_x_parts(path, log=None):
     """Read a DirectX .x file -> (parts, lights) like the glTF importer."""
     import numpy as _np
@@ -4708,13 +4924,55 @@ def load_x_parts(path, log=None):
         hit = model_find_file(base_dir, fname, ("textures", "Textures"))
         if hit and not hit.lower().endswith(".dds"):
             return ("path", hit)
-        # GameGuru ships .dds; use a .png/.jpg/.tga/.bmp of the same name if there is one
+        # GameGuru ships .dds; prefer a .png/.jpg/.tga/.bmp of the same name if there is one,
+        # else the .dds itself (decoded by the renderer)
         stem = os.path.splitext(fname.split("/")[-1])[0]
-        for ext in (".png", ".jpg", ".jpeg", ".tga", ".bmp"):
-            hit = model_find_file(base_dir, stem + ext, ("textures", "Textures"))
-            if hit:
-                return ("path", hit)
+        for ext in (".png", ".jpg", ".jpeg", ".tga", ".bmp", ".dds"):
+            hit2 = model_find_file(base_dir, stem + ext, ("textures", "Textures"))
+            if hit2:
+                return ("path", hit2)
+        return ("path", hit) if hit else None
+
+    def companion(fname, kinds):
+        """GameGuru texture sets: name_D / name_color -> name_N / name_normal ..."""
+        stem = os.path.splitext(fname.replace("\\", "/").split("/")[-1])[0]
+        low = stem.lower()
+        root = stem
+        for suf in ("_d", "_color", "_diffuse", "_albedo", "_basecolor"):
+            if low.endswith(suf):
+                root = stem[:-len(suf)]
+                break
+        else:
+            return None
+        for k in kinds:
+            d = tex(root + k + ".dds")
+            if d is not None:
+                return d
         return None
+
+    def directx_normal(d):
+        """DirectX normal maps keep green pointing down; flip it for OpenGL."""
+        try:
+            import io
+            surf = pygame.image.load(d[1]) if d[0] == "path" else pygame.image.load(io.BytesIO(d[1]))
+        except Exception:
+            try:
+                from PIL import Image as _PILImage
+                im = _PILImage.open(d[1]).convert("RGB")
+                surf = pygame.image.frombuffer(im.tobytes(), im.size, "RGB")
+            except Exception:
+                return None
+        try:
+            surf = surf.convert(24) if surf.get_bitsize() < 24 and pygame.display.get_surface() else surf
+            arr = pygame.surfarray.array3d(surf)
+            arr[:, :, 1] = 255 - arr[:, :, 1]
+            out = pygame.surfarray.make_surface(arr)
+            import io
+            buf = io.BytesIO()
+            pygame.image.save(out, buf, "n.png")
+            return ("bytes", buf.getvalue())
+        except Exception:
+            return None
 
     def mat_info(m):
         v = [float(x) for x in m.values if isinstance(x, (int, float))] if m is not None else []
@@ -4726,12 +4984,21 @@ def load_x_parts(path, log=None):
             for c in m.children:
                 if c.type in ("TextureFilename", "TextureFileName") and c.values:
                     d = tex(str(c.values[0]))
-                    if d is not None:
+                    if d is not None and "base_color" not in slots:
                         slots["base_color"] = {"desc": d, "uvset": 0, "xf": None, "wrap": 0, "wrap_t": 0}
                         if max(col[:3]) < 0.02:
                             col = [1.0, 1.0, 1.0, col[3]]
+                        nsrc = companion(str(c.values[0]), ("_N", "_normal"))
+                        nd = directx_normal(nsrc) if nsrc is not None else None
+                        if nd is not None:
+                            slots["normal"] = {"desc": nd, "uvset": 0, "xf": None, "wrap": 0, "wrap_t": 0,
+                                               "scale": 1.0, "src": nsrc[1]}
+                        ill = companion(str(c.values[0]), ("_I", "_illumination", "_emissive"))
+                        if ill is not None:
+                            slots["emissive"] = {"desc": ill, "uvset": 0, "xf": None, "wrap": 0, "wrap_t": 0}
+                            emis = [1.0, 1.0, 1.0]
         alpha = max(0.0, min(1.0, col[3]))
-        if "base_color" in slots and max(emis) > 1e-4:
+        if "base_color" in slots and "emissive" not in slots and max(emis) > 1e-4:
             # Direct3D's fixed-function stage modulates the emissive term by
             # the texture, so the glow takes the texture's colours too
             slots["emissive"] = dict(slots["base_color"])
@@ -4789,6 +5056,14 @@ def load_x_parts(path, log=None):
                         rgba = [rr() for _ in range(4)]
                         if 0 <= idx < nv:
                             colors[idx] = rgba
+                elif c.type == "DeclData":
+                    decl = _x_decl(c.values, nv)
+                    if decl.get("uv") is not None and uvs is None:
+                        uvs = decl["uv"]
+                    if decl.get("normal") is not None and normals is None:
+                        normals, nfaces = decl["normal"], None
+                    if decl.get("color") is not None and colors is None:
+                        colors = decl["color"]
                 elif c.type == "MeshMaterialList":
                     nm = int(rr())
                     nfi = int(rr())
@@ -4810,9 +5085,8 @@ def load_x_parts(path, log=None):
                 corner_n.extend(nfaces[fi])
             else:
                 corner_n.extend(f if (normals is not None and len(normals) == nv) else [-1] * len(f))
-            m = face_mat[fi] if face_mat is not None and len(face_mat) else 0
-            if face_mat is not None and len(face_mat) == 1:
-                m = face_mat[0]
+            # a short list repeats its last entry (and one entry means "all faces")
+            m = face_mat[min(fi, len(face_mat) - 1)] if face_mat else 0
             for k in range(1, len(f) - 1):
                 tris.append((base, base + k + 1, base + k))     # reversed: LH -> RH winding
                 tri_mat.append(m)
@@ -4849,11 +5123,36 @@ def load_x_parts(path, log=None):
                 info["_h3d"]["vertex_colors"] = True
             parts.append({"name": name if not parts else "%s_%d" % (name, len(parts)),
                           "positions": p_pos, "normals": p_nrm,
-                          "uv0": UV[corners].astype(_np.float32) if UV is not None else None,  # DirectX v already points down
+                          "uv0": uv0_of(UV, corners),
                           "uv1": None, "colors": p_col, "tangents": None, "indices": p_idx,
                           "material_info": info})
 
-    def walk(objs_, M):
+    named_meshes = {}
+
+    def collect_meshes(objs_, top):
+        for o in objs_:
+            if o.type == "Mesh" and o.name:
+                named_meshes.setdefault(o.name, o)
+            collect_meshes(o.children, False)
+    collect_meshes(objs, True)
+    referenced = set()
+
+    def find_refs(objs_):
+        for o in objs_:
+            if o.type == "__ref__" and o.ref in named_meshes:
+                referenced.add(o.ref)
+            find_refs(o.children)
+    find_refs(objs)
+
+    def uv0_of(UV, corners):
+        """DirectX UVs start top-left; the engine's import parts start bottom-left."""
+        if UV is None:
+            return None
+        u = UV[corners].astype(_np.float32).copy()
+        u[:, 1] = 1.0 - u[:, 1]
+        return u
+
+    def walk(objs_, M, top=False):
         for o in objs_:
             if o.type == "Frame":
                 L = _np.eye(4)
@@ -4863,8 +5162,12 @@ def load_x_parts(path, log=None):
                         L = _np.array([float(x) for x in c.values[:16]], _np.float64).reshape(4, 4).T
                 walk(o.children, M @ L)
             elif o.type == "Mesh":
+                if top and o.name and o.name in referenced:
+                    continue                     # drawn where a Frame refers to it
                 mesh_parts(o, M)
-    walk(objs, _np.eye(4))
+            elif o.type == "__ref__" and not top and o.ref in named_meshes:
+                mesh_parts(named_meshes[o.ref], M)
+    walk(objs, _np.eye(4), top=True)
     if log is not None:
         try:
             log.info(".x: %d mesh part(s)" % len(parts))
@@ -4886,10 +5189,12 @@ def model_texture_files(path):
     for p in parts:
         for s in (p["material_info"].get("_h3d", {}).get("slots", {}) or {}).values():
             desc = s.get("desc")
-            if desc and desc[0] == "path" and desc[1] not in seen:
-                seen.add(desc[1])
-                rel = os.path.relpath(desc[1], d) if os.path.abspath(desc[1]).startswith(d) else os.path.basename(desc[1])
-                out.append((rel.replace(os.sep, "/"), desc[1]))
+            src = desc[1] if desc and desc[0] == "path" else s.get("src")
+            if src and src not in seen:
+                seen.add(src)
+                inside_ = os.path.abspath(src).startswith(d.rstrip(os.sep) + os.sep)
+                rel = os.path.relpath(src, d) if inside_ else os.path.basename(src)
+                out.append((rel.replace(os.sep, "/"), src))
     return out
 
 # #############################################################################

@@ -186,6 +186,45 @@ def _x_reader(vals):
     return nxt
 
 
+_X_DECL_SIZE = {0: 1, 1: 2, 2: 3, 3: 4, 4: 1, 5: 1, 6: 1, 7: 2, 8: 1, 9: 1, 10: 2, 11: 1, 12: 2, 13: 1,
+                14: 1, 15: 1, 16: 2}      # DWORDs per D3DDECLTYPE
+
+
+def _x_decl(values, nv):
+    """DeclData (vertex elements + raw DWORDs) -> {"uv", "normal", "color"} arrays."""
+    import numpy as _np
+    out = {}
+    try:
+        vals = [int(v) for v in values]
+        n_el = vals[0]
+        els = [vals[1 + 4 * k: 5 + 4 * k] for k in range(n_el)]       # type, method, usage, index
+        n_dw = vals[1 + 4 * n_el]
+        raw = _np.asarray(vals[2 + 4 * n_el: 2 + 4 * n_el + n_dw], _np.int64).astype(_np.uint32)
+        stride = sum(_X_DECL_SIZE.get(t, 1) for t, _m, _u, _i in els)
+        if stride == 0 or len(raw) < stride * nv:
+            return out
+        rows = raw[:stride * nv].reshape(nv, stride)
+        off = 0
+        for t, _m, usage, uidx in els:
+            sz = _X_DECL_SIZE.get(t, 1)
+            col = rows[:, off:off + sz]
+            off += sz
+            if usage == 5 and uidx == 0 and "uv" not in out:             # TEXCOORD0
+                if t == 1:
+                    out["uv"] = col.view(_np.float32).astype(_np.float64)
+                elif t == 15:                                            # FLOAT16_2
+                    out["uv"] = col.view(_np.float16).reshape(nv, 2).astype(_np.float64)
+            elif usage == 3 and t == 2 and "normal" not in out:            # NORMAL float3
+                out["normal"] = col.view(_np.float32).astype(_np.float64)
+            elif usage == 10 and t == 4 and "color" not in out:            # COLOR d3dcolor (ARGB)
+                c = col[:, 0]
+                out["color"] = _np.stack([(c >> 16) & 255, (c >> 8) & 255, c & 255, (c >> 24) & 255],
+                                         axis=1).astype(_np.float64) / 255.0
+    except (IndexError, ValueError, TypeError):
+        return out
+    return out
+
+
 def load_x_parts(path, log=None):
     """Read a DirectX .x file -> (parts, lights) like the glTF importer."""
     import numpy as _np
@@ -218,13 +257,55 @@ def load_x_parts(path, log=None):
         hit = model_find_file(base_dir, fname, ("textures", "Textures"))
         if hit and not hit.lower().endswith(".dds"):
             return ("path", hit)
-        # GameGuru ships .dds; use a .png/.jpg/.tga/.bmp of the same name if there is one
+        # GameGuru ships .dds; prefer a .png/.jpg/.tga/.bmp of the same name if there is one,
+        # else the .dds itself (decoded by the renderer)
         stem = os.path.splitext(fname.split("/")[-1])[0]
-        for ext in (".png", ".jpg", ".jpeg", ".tga", ".bmp"):
-            hit = model_find_file(base_dir, stem + ext, ("textures", "Textures"))
-            if hit:
-                return ("path", hit)
+        for ext in (".png", ".jpg", ".jpeg", ".tga", ".bmp", ".dds"):
+            hit2 = model_find_file(base_dir, stem + ext, ("textures", "Textures"))
+            if hit2:
+                return ("path", hit2)
+        return ("path", hit) if hit else None
+
+    def companion(fname, kinds):
+        """GameGuru texture sets: name_D / name_color -> name_N / name_normal ..."""
+        stem = os.path.splitext(fname.replace("\\", "/").split("/")[-1])[0]
+        low = stem.lower()
+        root = stem
+        for suf in ("_d", "_color", "_diffuse", "_albedo", "_basecolor"):
+            if low.endswith(suf):
+                root = stem[:-len(suf)]
+                break
+        else:
+            return None
+        for k in kinds:
+            d = tex(root + k + ".dds")
+            if d is not None:
+                return d
         return None
+
+    def directx_normal(d):
+        """DirectX normal maps keep green pointing down; flip it for OpenGL."""
+        try:
+            import io
+            surf = pygame.image.load(d[1]) if d[0] == "path" else pygame.image.load(io.BytesIO(d[1]))
+        except Exception:
+            try:
+                from PIL import Image as _PILImage
+                im = _PILImage.open(d[1]).convert("RGB")
+                surf = pygame.image.frombuffer(im.tobytes(), im.size, "RGB")
+            except Exception:
+                return None
+        try:
+            surf = surf.convert(24) if surf.get_bitsize() < 24 and pygame.display.get_surface() else surf
+            arr = pygame.surfarray.array3d(surf)
+            arr[:, :, 1] = 255 - arr[:, :, 1]
+            out = pygame.surfarray.make_surface(arr)
+            import io
+            buf = io.BytesIO()
+            pygame.image.save(out, buf, "n.png")
+            return ("bytes", buf.getvalue())
+        except Exception:
+            return None
 
     def mat_info(m):
         v = [float(x) for x in m.values if isinstance(x, (int, float))] if m is not None else []
@@ -236,12 +317,21 @@ def load_x_parts(path, log=None):
             for c in m.children:
                 if c.type in ("TextureFilename", "TextureFileName") and c.values:
                     d = tex(str(c.values[0]))
-                    if d is not None:
+                    if d is not None and "base_color" not in slots:
                         slots["base_color"] = {"desc": d, "uvset": 0, "xf": None, "wrap": 0, "wrap_t": 0}
                         if max(col[:3]) < 0.02:
                             col = [1.0, 1.0, 1.0, col[3]]
+                        nsrc = companion(str(c.values[0]), ("_N", "_normal"))
+                        nd = directx_normal(nsrc) if nsrc is not None else None
+                        if nd is not None:
+                            slots["normal"] = {"desc": nd, "uvset": 0, "xf": None, "wrap": 0, "wrap_t": 0,
+                                               "scale": 1.0, "src": nsrc[1]}
+                        ill = companion(str(c.values[0]), ("_I", "_illumination", "_emissive"))
+                        if ill is not None:
+                            slots["emissive"] = {"desc": ill, "uvset": 0, "xf": None, "wrap": 0, "wrap_t": 0}
+                            emis = [1.0, 1.0, 1.0]
         alpha = max(0.0, min(1.0, col[3]))
-        if "base_color" in slots and max(emis) > 1e-4:
+        if "base_color" in slots and "emissive" not in slots and max(emis) > 1e-4:
             # Direct3D's fixed-function stage modulates the emissive term by
             # the texture, so the glow takes the texture's colours too
             slots["emissive"] = dict(slots["base_color"])
@@ -299,6 +389,14 @@ def load_x_parts(path, log=None):
                         rgba = [rr() for _ in range(4)]
                         if 0 <= idx < nv:
                             colors[idx] = rgba
+                elif c.type == "DeclData":
+                    decl = _x_decl(c.values, nv)
+                    if decl.get("uv") is not None and uvs is None:
+                        uvs = decl["uv"]
+                    if decl.get("normal") is not None and normals is None:
+                        normals, nfaces = decl["normal"], None
+                    if decl.get("color") is not None and colors is None:
+                        colors = decl["color"]
                 elif c.type == "MeshMaterialList":
                     nm = int(rr())
                     nfi = int(rr())
@@ -320,9 +418,8 @@ def load_x_parts(path, log=None):
                 corner_n.extend(nfaces[fi])
             else:
                 corner_n.extend(f if (normals is not None and len(normals) == nv) else [-1] * len(f))
-            m = face_mat[fi] if face_mat is not None and len(face_mat) else 0
-            if face_mat is not None and len(face_mat) == 1:
-                m = face_mat[0]
+            # a short list repeats its last entry (and one entry means "all faces")
+            m = face_mat[min(fi, len(face_mat) - 1)] if face_mat else 0
             for k in range(1, len(f) - 1):
                 tris.append((base, base + k + 1, base + k))     # reversed: LH -> RH winding
                 tri_mat.append(m)
@@ -359,11 +456,36 @@ def load_x_parts(path, log=None):
                 info["_h3d"]["vertex_colors"] = True
             parts.append({"name": name if not parts else "%s_%d" % (name, len(parts)),
                           "positions": p_pos, "normals": p_nrm,
-                          "uv0": UV[corners].astype(_np.float32) if UV is not None else None,  # DirectX v already points down
+                          "uv0": uv0_of(UV, corners),
                           "uv1": None, "colors": p_col, "tangents": None, "indices": p_idx,
                           "material_info": info})
 
-    def walk(objs_, M):
+    named_meshes = {}
+
+    def collect_meshes(objs_, top):
+        for o in objs_:
+            if o.type == "Mesh" and o.name:
+                named_meshes.setdefault(o.name, o)
+            collect_meshes(o.children, False)
+    collect_meshes(objs, True)
+    referenced = set()
+
+    def find_refs(objs_):
+        for o in objs_:
+            if o.type == "__ref__" and o.ref in named_meshes:
+                referenced.add(o.ref)
+            find_refs(o.children)
+    find_refs(objs)
+
+    def uv0_of(UV, corners):
+        """DirectX UVs start top-left; the engine's import parts start bottom-left."""
+        if UV is None:
+            return None
+        u = UV[corners].astype(_np.float32).copy()
+        u[:, 1] = 1.0 - u[:, 1]
+        return u
+
+    def walk(objs_, M, top=False):
         for o in objs_:
             if o.type == "Frame":
                 L = _np.eye(4)
@@ -373,8 +495,12 @@ def load_x_parts(path, log=None):
                         L = _np.array([float(x) for x in c.values[:16]], _np.float64).reshape(4, 4).T
                 walk(o.children, M @ L)
             elif o.type == "Mesh":
+                if top and o.name and o.name in referenced:
+                    continue                     # drawn where a Frame refers to it
                 mesh_parts(o, M)
-    walk(objs, _np.eye(4))
+            elif o.type == "__ref__" and not top and o.ref in named_meshes:
+                mesh_parts(named_meshes[o.ref], M)
+    walk(objs, _np.eye(4), top=True)
     if log is not None:
         try:
             log.info(".x: %d mesh part(s)" % len(parts))
@@ -396,8 +522,10 @@ def model_texture_files(path):
     for p in parts:
         for s in (p["material_info"].get("_h3d", {}).get("slots", {}) or {}).values():
             desc = s.get("desc")
-            if desc and desc[0] == "path" and desc[1] not in seen:
-                seen.add(desc[1])
-                rel = os.path.relpath(desc[1], d) if os.path.abspath(desc[1]).startswith(d) else os.path.basename(desc[1])
-                out.append((rel.replace(os.sep, "/"), desc[1]))
+            src = desc[1] if desc and desc[0] == "path" else s.get("src")
+            if src and src not in seen:
+                seen.add(src)
+                inside_ = os.path.abspath(src).startswith(d.rstrip(os.sep) + os.sep)
+                rel = os.path.relpath(src, d) if inside_ else os.path.basename(src)
+                out.append((rel.replace(os.sep, "/"), src))
     return out
