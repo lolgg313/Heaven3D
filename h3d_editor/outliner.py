@@ -39,16 +39,25 @@ class Outliner:
         self._quiet = False
 
     # -- model -----------------------------------------------------------------------
+    # Rows are built lazily: a collapsed object (a 400-module building, say)
+    # makes no rows for its children until it is expanded, and the change
+    # check only looks at what is actually shown.  With a search filter the
+    # whole tree is searched as before.
+    def _shown(self, n):
+        it = self._items.get(id(n))
+        return it is not None and it.expanded
+
     def signature(self):
         out = []
         root = self.engine.scene.root
+        full = bool((self.search.value or "").strip())
 
         def walk(n, depth):
             for c in n.children:
                 if editor_only(c):
                     continue
-                out.append((id(c), c.name, depth, c.visible, bool(getattr(c, "prefab", None))))
-                if depth < 6:
+                out.append((id(c), c.name, depth, c.visible, bool(getattr(c, "prefab", None)), len(c.children)))
+                if depth < 6 and (full or self._shown(c)):
                     walk(c, depth + 1)
         walk(root, 0)
         return tuple(out)
@@ -65,9 +74,11 @@ class Outliner:
             it = TreeItem(n.name if n.visible else n.name + "  (hidden)",
                           icon="prefab" if pref else ICON_OF.get(kind, "cube"),
                           icon_color=PREFAB_COLOR if pref else KIND_COLORS.get(kind), data=n,
-                          expanded=id(n) in expanded)
+                          expanded=id(n) in expanded,
+                          lazy=(lambda _it, n=n, depth=depth: self._children_of(n, depth))
+                          if (kids and depth < 6 and not f and id(n) not in expanded) else None)
             self._items[id(n)] = it
-            if depth < 6:
+            if depth < 6 and kids and (f or id(n) in expanded):
                 for c in kids:
                     ch = make(c, depth + 1)
                     if ch is not None:
@@ -77,6 +88,7 @@ class Outliner:
             if f:
                 it.expanded = True
             return it
+        self._make = make
         items = [x for x in (make(c, 0) for c in self.engine.scene.root.children if not editor_only(c))
                  if x is not None]
         self._quiet = True
@@ -85,23 +97,52 @@ class Outliner:
         self._sig = sig if sig is not None else self.signature()
         self.show_selection(self.engine.selected)
 
+    def _children_of(self, n, depth):
+        out = []
+        for c in n.children:
+            if editor_only(c):
+                continue
+            ch = self._make(c, depth + 1)
+            if ch is not None:
+                out.append(ch)
+        self._sig = None                        # rows changed: refresh the signature next sync
+        return out
+
     def sync(self):
         sig = self.signature()
-        if sig != self._sig:
+        if self._sig is None:
+            self._sig = sig
+        elif sig != self._sig:
             self.rebuild(sig)
 
     def show_selection(self, node):
         it = self._items.get(id(node)) if node is not None else None
+        if it is None and node is not None:
+            # load the collapsed ancestors' rows down to the selected object
+            chain = []
+            p = node
+            while p is not None and p is not self.engine.scene.root:
+                chain.append(p)
+                p = p.parent
+            for anc in reversed(chain[1:]):
+                ai = self._items.get(id(anc))
+                if ai is None:
+                    break
+                ai.ensure_loaded()
+            it = self._items.get(id(node))
         self._quiet = True
         self.tree.select([it] if it is not None else [], emit=False)
         if it is not None:
             p = it.parent
             while p is not None and p is not self.tree.root:
                 p.expanded = True
+                p.ensure_loaded()
                 p = p.parent
             self.tree.refresh()
             self.tree.reveal(it)
         self._quiet = False
+        if it is not None:
+            self._sig = None
 
     # -- actions ------------------------------------------------------------------------------
     def _picked(self, sel):

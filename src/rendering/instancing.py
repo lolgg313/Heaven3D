@@ -38,6 +38,18 @@ void main(){
 }
 """
 
+# Instanced shadow-map depth pass: one draw call per (mesh) group of casters
+# instead of one per object (a building sector is hundreds of copies of a
+# few wall / floor / window modules).
+SHADOW_INST_VERT = """#version 330 core
+layout (location = 0) in vec3 in_position;
+layout (location = 4) in mat4 i_model;
+uniform mat4 u_light_space;
+void main(){
+    gl_Position = u_light_space * i_model * vec4(in_position, 1.0);
+}
+"""
+
 try:
     _shaderlib_get_unpatched = ShaderLib.get.__func__
 
@@ -47,6 +59,18 @@ try:
         The instanced program pairs GEOMETRY_INST_VERT with the original
         module-level GEOMETRY_FRAG and shares ShaderLib's per-name cache.
         Every other shader name delegates to the original classmethod."""
+        if name == "shadow_inst":
+            if name in ShaderLib._cache:
+                return ShaderLib._cache[name]
+            try:
+                prog = ctx.program(vertex_shader=SHADOW_INST_VERT,
+                                   fragment_shader=SHADOW_FRAG)
+                ShaderLib._cache[name] = prog
+                Log.debug("Shader compiled: shadow_inst")
+                return prog
+            except Exception as ex:
+                Log.error(f"Shader 'shadow_inst' compile failed: {ex}")
+                return None
         if name == "geometry_inst":
             if name in ShaderLib._cache:
                 return ShaderLib._cache[name]
@@ -73,6 +97,16 @@ try:
         """Release the GL objects the render patch allocates lazily
         (instanced VAOs/VBOs, cluster grid texture), then run the
         original Renderer.release."""
+        try:
+            for _e in (getattr(self, "_shadow_inst_cache", None) or {}).values():
+                for _o in _e[:2]:
+                    try:
+                        _o.release()
+                    except Exception:
+                        pass
+            self._shadow_inst_cache = {}
+        except Exception:
+            pass
         try:
             _cache = getattr(self, "_inst_vao_cache", None)
             if _cache:

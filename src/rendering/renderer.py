@@ -3,6 +3,40 @@
 # SECTION 11 —  RENDERER  (deferred pipeline)
 # #############################################################################
 
+class _InstBlob:
+    """A block of ready-made instance matrices (column-major mat4 bytes) for
+    one mesh / material group - a whole building sector's walls at once."""
+    __slots__ = ("data", "n")
+
+    def __init__(self, data, n):
+        self.data = data
+        self.n = n
+
+
+def _inst_pack(models):
+    """(bytes, count) for a list of glm.mat4 and _InstBlob entries."""
+    parts, n = [], 0
+    for m in models:
+        if type(m) is _InstBlob:
+            parts.append(m.data)
+            n += m.n
+        else:
+            parts.append(m.to_bytes())
+            n += 1
+    return b"".join(parts), n
+
+
+def _inst_each(models):
+    """Every single matrix as 64 bytes (the non-instanced fallback path)."""
+    for m in models:
+        if type(m) is _InstBlob:
+            d = m.data
+            for i in range(m.n):
+                yield d[i * 64:(i + 1) * 64]
+        else:
+            yield m.to_bytes()
+
+
 class Renderer:
     """
     The deferred renderer.  Owns the G-buffer, shadow map, and all
@@ -666,13 +700,88 @@ class Renderer:
                         _casters = _cull(_casters, light_vp)
                     except Exception:
                         pass
+                # Group casters by mesh: 4+ copies of one mesh (building
+                # modules, props, foliage ...) cast in ONE instanced call.
+                _sgroups = {}
+                _sorder = []
                 for node, mesh, model in _casters:
+                    _g = _sgroups.get(id(mesh))
+                    if _g is None:
+                        _g = _sgroups[id(mesh)] = (mesh, [])
+                        _sorder.append(_g)
+                    _g[1].append(model)
+                # batched building sectors (see [PERF:scale]): blocks of matrices
+                _sbf = globals().get("_h3d_sector_batches")
+                if _sbf is not None:
+                    try:
+                        for _bm, _bmat, _blob in _sbf(scene, None, light_vp):
+                            _g = _sgroups.get(id(_bm))
+                            if _g is None:
+                                _g = _sgroups[id(_bm)] = (_bm, [])
+                                _sorder.append(_g)
+                            _g[1].append(_blob)
+                    except Exception as _sbx:
+                        Log.warn(f"[Renderer] sector shadows: {_sbx}")
+                _sinst = None
+                if any(len(_g[1]) >= 4 or any(type(_m) is _InstBlob for _m in _g[1]) for _g in _sorder):
+                    try:
+                        _sinst = ShaderLib.get(self.ctx, "shadow_inst")
+                        if _sinst is not None:
+                            _sinst["u_light_space"].write(light_vp.to_bytes())
+                    except Exception:
+                        _sinst = None
+                if not hasattr(self, "_shadow_inst_cache"):
+                    self._shadow_inst_cache = {}
+                for mesh, models in _sorder:
+                    _blobs = any(type(_m) is _InstBlob for _m in models)
+                    if (_sinst is not None and (len(models) >= 4 or _blobs)
+                            and getattr(mesh, "vbo", None) is not None):
+                        try:
+                            _data, _n = _inst_pack(models)
+                            _e = self._shadow_inst_cache.get(id(mesh))
+                            if _e is None or _e[2] < _n or _e[3] is not mesh:
+                                if _e is not None:
+                                    for _o in (_e[0], _e[1]):
+                                        try:
+                                            _o.release()
+                                        except Exception:
+                                            pass
+                                _cap = max(64, _n * 2)
+                                _ivbo = self.ctx.buffer(reserve=_cap * 64)
+                                _ivao = self.ctx.vertex_array(
+                                    _sinst,
+                                    [(mesh.vbo, "3f 9x4", "in_position"),
+                                     (_ivbo, "16f /i", "i_model")],
+                                    index_buffer=(mesh.ibo if mesh.indexed else None))
+                                _e = (_ivao, _ivbo, _cap, mesh)
+                                self._shadow_inst_cache[id(mesh)] = _e
+                            _ivao, _ivbo = _e[0], _e[1]
+                            _ivbo.orphan(_e[2] * 64)
+                            _ivbo.write(_data)
+                            if mesh.indexed:
+                                _ivao.render(moderngl.TRIANGLES, instances=_n)
+                            else:
+                                _ivao.render(moderngl.TRIANGLES, vertices=mesh.vertex_count,
+                                             instances=_n)
+                            continue
+                        except Exception:
+                            pass               # fall back to one call per caster
                     vao = mesh.get_vao(shadow_prog)
-                    shadow_prog["u_model"].write(model.to_bytes())
-                    if mesh.indexed:
-                        vao.render(moderngl.TRIANGLES)
-                    else:
-                        vao.render(moderngl.TRIANGLES, vertices=mesh.vertex_count)
+                    for _mb in _inst_each(models):
+                        shadow_prog["u_model"].write(_mb)
+                        if mesh.indexed:
+                            vao.render(moderngl.TRIANGLES)
+                        else:
+                            vao.render(moderngl.TRIANGLES, vertices=mesh.vertex_count)
+                # forget instanced buffers of meshes that left the scene
+                _sc = self._shadow_inst_cache
+                if len(_sc) > len(_sgroups) + 32:
+                    for _k in [k for k in _sc if k not in _sgroups]:
+                        for _o in _sc.pop(_k)[:2]:
+                            try:
+                                _o.release()
+                            except Exception:
+                                pass
             # Stash for lighting pass
             self._light_vp = light_vp
         else:
@@ -762,13 +871,26 @@ class Renderer:
 
             # ---- Collect the visible OPAQUE draws -----------------------
             _visible = []
-            for node, mesh, model in scene.traverse_meshes():
+            _items = scene.traverse_meshes()
+            _vmask = None
+            if _frustum_planes is not None:
+                _mf = globals().get("_h3d_frustum_mask")
+                if _mf is not None and len(_items) >= 64:
+                    try:
+                        _vmask = _mf(_items, _frustum_planes)   # all objects at once (numpy)
+                    except Exception:
+                        _vmask = None
+            for _vi, (node, mesh, model) in enumerate(_items):
                 mat = node.material if node.material else Material()
                 # BLEND materials are deferred-incompatible: they draw in the
                 # forward transparency pass after lighting instead.
                 if (mat.alpha_mode or "OPAQUE").upper() == "BLEND":
                     continue
-                if _frustum_planes is not None:
+                if _vmask is not None:
+                    if not _vmask[_vi]:
+                        self.stat_culled += 1
+                        continue
+                elif _frustum_planes is not None:
                     try:
                         if not _aabb_in_frustum(model, mesh.bounding_box):
                             self.stat_culled += 1
@@ -790,6 +912,20 @@ class Renderer:
                     _groups[_key] = _grp
                     _draw_order.append(_grp)
                 _grp[2].append(model)
+            # batched building sectors in view (see [PERF:scale])
+            _sbf = globals().get("_h3d_sector_batches")
+            if _sbf is not None:
+                try:
+                    for mesh, mat, _blob in _sbf(scene, _frustum_planes, None):
+                        _key = (id(mesh), id(mat))
+                        _grp = _groups.get(_key)
+                        if _grp is None:
+                            _grp = (mesh, mat, [])
+                            _groups[_key] = _grp
+                            _draw_order.append(_grp)
+                        _grp[2].append(_blob)
+                except Exception as _sbx:
+                    Log.warn(f"[Renderer] sector draw: {_sbx}")
 
             # Instanced geometry program (compiled lazily by the ShaderLib
             # hook appended near the end of this module; None → legacy).
@@ -808,10 +944,11 @@ class Renderer:
 
             for mesh, mat, models in _draw_order:
                 # Instanced fast path: >=4 identical draws share one call.
-                if (_inst_prog is not None and len(models) >= 4
+                _blobs = any(type(_m) is _InstBlob for _m in models)
+                if (_inst_prog is not None and (len(models) >= 4 or _blobs)
                         and getattr(mesh, "vbo", None) is not None):
                     try:
-                        _n = len(models)
+                        _data, _n = _inst_pack(models)
                         _ckey = (id(mesh), id(_inst_prog))
                         _entry = self._inst_vao_cache.get(_ckey)
                         if _entry is None or _entry[2] < _n:
@@ -842,8 +979,7 @@ class Renderer:
                             self._inst_vao_cache[_ckey] = _entry
                         _ivao, _ivbo, _cap = _entry
                         _ivbo.orphan(_cap * 64)
-                        _ivbo.write(b"".join(
-                            _m.to_bytes() for _m in models))
+                        _ivbo.write(_data)
                         self._bind_material(_inst_prog, mat)
                         if mesh.indexed:
                             _ivao.render(moderngl.TRIANGLES, instances=_n)
@@ -859,8 +995,8 @@ class Renderer:
                 # Legacy per-mesh path (also the safety fallback).
                 self._bind_material(geom_prog, mat)
                 vao = mesh.get_vao(geom_prog)
-                for model in models:
-                    geom_prog["u_model"].write(model.to_bytes())
+                for _mb in _inst_each(models):
+                    geom_prog["u_model"].write(_mb)
                     if mesh.indexed:
                         vao.render(moderngl.TRIANGLES)
                     else:

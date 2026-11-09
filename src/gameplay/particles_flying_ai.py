@@ -794,7 +794,7 @@ if not globals().get("_GREATUPDATE_INSTALLED"):
         # ---- scene sync: node.id -> system ----
         def sync(self, scene):
             try:
-                nodes = scene.root.traverse()
+                nodes = (scene.special_nodes() if hasattr(scene, "special_nodes") else scene.root.traverse())
             except Exception:
                 return
             seen = set()
@@ -3270,7 +3270,8 @@ if not globals().get("_GREATUPDATE_INSTALLED"):
                 pass
             if node is None:
                 try:
-                    for n in self.engine.scene.root.traverse():
+                    _sc = self.engine.scene
+                    for n in (_sc.special_nodes() if hasattr(_sc, "special_nodes") else _sc.root.traverse()):
                         if getattr(n, "spawn_kind", None) == "player":
                             node = n
                             break

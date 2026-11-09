@@ -274,7 +274,7 @@ void main(){
                 return
             try:
                 items = []
-                for node in scene.root.traverse():
+                for node in (scene.special_nodes() if hasattr(scene, "special_nodes") else scene.root.traverse()):
                     if getattr(node, "spawn_kind", None) != "sound_point":
                         continue
                     if not getattr(node, "visible", True):

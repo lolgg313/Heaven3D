@@ -1472,7 +1472,7 @@ void main(){
             sc = getattr(self.engine, "scene", None)
             if sc is None:
                 return None
-            for n in sc.root.traverse():
+            for n in (sc.special_nodes() if hasattr(sc, "special_nodes") else sc.root.traverse()):
                 if getattr(n, "is_terrain", False) \
                         and _tp_terrain_of(n) is not None:
                     return n
@@ -2126,7 +2126,7 @@ void main(){
     # ---- 6. per-frame flush + grass update (Renderer.render wrap) --------
     def _tp_frame_tick(renderer, scene, camera):
         eng = _TP_ENGINE
-        for node in scene.root.traverse():
+        for node in (scene.special_nodes() if hasattr(scene, "special_nodes") else scene.root.traverse()):
             if not getattr(node, "is_terrain", False):
                 continue
             td = _tp_terrain_of(node)
@@ -2166,7 +2166,7 @@ void main(){
         def _tp_forward(self, scene, camera, view, proj):
             _TP_PREV_FORWARD(self, scene, camera, view, proj)
             try:
-                for node in scene.root.traverse():
+                for node in (scene.special_nodes() if hasattr(scene, "special_nodes") else scene.root.traverse()):
                     if not getattr(node, "visible", True) \
                             or not getattr(node, "is_terrain", False):
                         continue

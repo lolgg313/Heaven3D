@@ -142,7 +142,7 @@ class SpawnGizmos:
         if self._vao is None:
             return
         out: List[float] = []
-        for node in scene.root.traverse():
+        for node in (scene.special_nodes() if hasattr(scene, "special_nodes") else scene.root.traverse()):
             if not node.visible:
                 continue
             kind = getattr(node, "spawn_kind", None)

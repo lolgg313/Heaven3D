@@ -148,6 +148,20 @@ class Editor:
         ui, e = self.ui, self.engine
         root = PassColumn(spacing=0)
         ui.set_root(root)
+        # undo / redo can move objects that aren't selected any more: rebuild
+        # the cached building batches (Heaven3D [PERF:scale]) after each one
+        inv = getattr(self.h3d, "sector_batches_invalidate", None)
+        if inv is not None and not getattr(ui.undo, "_h3d_hooked", False):
+            for name in ("undo", "redo"):
+                fn = getattr(ui.undo, name)
+
+                def wrapped(*a, _fn=fn, **kw):
+                    try:
+                        return _fn(*a, **kw)
+                    finally:
+                        inv()
+                setattr(ui.undo, name, wrapped)
+            ui.undo._h3d_hooked = True
         self.prefabs = PrefabTools(self)
         self.menubar = MenuBar(self.menus(), parent=root)
         self.toolbar = self.build_toolbar(root)

@@ -714,7 +714,9 @@ def _bp(node, name):
 
 def characters(engine):
     out = []
-    for n in engine.scene.root.traverse():
+    sc = engine.scene
+    # special_nodes(): every object except plain building modules (Heaven3D 3.2+)
+    for n in (sc.special_nodes() if hasattr(sc, "special_nodes") else sc.root.traverse()):
         bp = _char_bp(n)
         if bp is not None:
             out.append((n, bp))
