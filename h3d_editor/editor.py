@@ -1391,11 +1391,67 @@ class Editor:
             self.assets.refresh()
 
     def _hook_assets(self):
-        """Assets: model dropped on empty space -> prefab; Outliner objects -> prefab."""
+        """Assets: Heaven3D's own Create menu; model dropped on empty space ->
+        prefab; Outliner objects -> prefab."""
         ab = self.assets
+        ab._create_items = self._asset_create_items
         ab.grid.dropped_here.connect(self.models_dropped_in_assets)
         ab.accepts_drop = lambda payload: isinstance(payload, dict) and payload.get("type") == "scene_nodes"
         ab.on_drop = lambda ui, payload, x, y: self.nodes_dropped_in_assets(payload)
+
+    def _asset_create_items(self):
+        """Right-click > Create (and the Assets Create button)."""
+        ab = self.assets
+        sel = self.engine.selected
+        can_pf = self.prefabs.can_save(sel)
+        return [MenuItem("Folder", ab.create_folder, icon="folder-plus"),
+                None,
+                MenuItem("Script...", self._asset_new_script, icon="file-code"),
+                MenuItem("Material...", self._asset_new_material, icon="material"),
+                MenuItem("Prefab from selection" + ("" if can_pf else "  (select an object)"),
+                         self._asset_new_prefab, icon="prefab", enabled=can_pf)]
+
+    def _asset_show(self, path):
+        """Refresh Assets and select a file it just made."""
+        if self.assets is None:
+            return
+        try:
+            self.assets.navigate(os.path.dirname(path))
+            self.assets.select_path(path)
+        except Exception:
+            self.refresh_assets()
+
+    def _asset_new_script(self):
+        self.scripts.new_script_dialog(on_made=self._asset_show)
+
+    def _asset_new_material(self):
+        from vitrail.assets import unique_path
+        folder = self.assets.cwd
+
+        def done(name):
+            name = (name or "").strip()
+            if not name:
+                return
+            try:
+                p = self.h3d.material_asset_create(unique_path(folder, name, ".vmat"))
+            except Exception as ex:
+                self._report(ex)
+                self.toast("Couldn't create the material: %s" % ex, error=True)
+                return
+            self._asset_show(p)
+            self.materials.open(p)
+            self.toast("New material %s - drag it onto an object" % os.path.basename(p))
+        InputDialog.ask(self.ui, "New material", "Name", done, default="New Material")
+
+    def _asset_new_prefab(self):
+        n = self.engine.selected
+        if not self.prefabs.can_save(n):
+            self.toast("Select an object to make a prefab of", error=True)
+            return
+        folder = self.assets.cwd
+        p = self.prefabs.save(n, os.path.join(folder, self.prefabs_name(n, folder)))
+        if p:
+            self._asset_show(p)
 
     def _asset_activated(self, a):
         p = a.path

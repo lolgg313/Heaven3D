@@ -344,7 +344,9 @@ class ScriptsTab:
                 return
         self.ed.toast("No @blueprint class in this file yet (save it first)")
 
-    def new_script_dialog(self, attach_to=None, text=None):
+    def new_script_dialog(self, attach_to=None, text=None, on_made=None):
+        """Ask for a name + template and write scripts/<name>.py (the folder a
+        project loads its scripts from).  ``on_made(path)`` runs afterwards."""
         ui = self.ed.ui
 
         def made(name):
@@ -371,6 +373,8 @@ class ScriptsTab:
             self.ed.log("[Script] created %s, %s" % (os.path.basename(fn), msg), "INFO" if ok else "ERROR")
             if ok and attach_to is not None and self.ed.h3d.BlueprintRegistry.get(cls) is not None:
                 self.ed.add_blueprint(attach_to, cls)
+            if on_made is not None:
+                on_made(fn)
         dlg = InputDialog("New script", "Blueprint name", "MyScript", on_result=made)
         tmpl = Dropdown(list(TEMPLATES), "Blueprint (empty)", label="Template", parent=dlg)
         dlg.children.remove(tmpl)
