@@ -14,7 +14,11 @@
 #            lights, Principled/legacy materials, packed + external images,
 #            and a modifier evaluator: Mirror, Array, Subdivision Surface
 #            (OpenSubdiv-matching Catmull-Clark incl. limit surface),
-#            Solidify, Weld, Edge Split, Smooth-by-Angle, Multires(levels).
+#            Solidify, Weld, Edge Split, Smooth-by-Angle, Multires(levels),
+#            Simple Deform, Displace (no texture), Smooth.  Also curves and
+#            NURBS surfaces (bevel / extrude / caps / 2D fills), shape keys,
+#            packed custom split normals, Mix Shader blending, collections
+#            switched off, and zstd "Compress" files without extra packages.
 #  .gltf / .glb : full glTF 2.0 — every accessor form (strided, sparse,
 #            normalized, no-bufferView), all 7 primitive modes (lines/points
 #            become thin geometry), skins in their default pose, morph

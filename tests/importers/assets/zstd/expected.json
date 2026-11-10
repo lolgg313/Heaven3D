@@ -1,0 +1,58 @@
+{
+ "text_-5.zst": {
+  "sha256": "060833c91fceeb61aa80152d106ff3a013bf00ea5b5ec68fac1d4fc5ea913576",
+  "size": 267849
+ },
+ "text_1.zst": {
+  "sha256": "060833c91fceeb61aa80152d106ff3a013bf00ea5b5ec68fac1d4fc5ea913576",
+  "size": 267849
+ },
+ "text_3.zst": {
+  "sha256": "060833c91fceeb61aa80152d106ff3a013bf00ea5b5ec68fac1d4fc5ea913576",
+  "size": 267849
+ },
+ "text_9.zst": {
+  "sha256": "060833c91fceeb61aa80152d106ff3a013bf00ea5b5ec68fac1d4fc5ea913576",
+  "size": 267849
+ },
+ "text_19.zst": {
+  "sha256": "060833c91fceeb61aa80152d106ff3a013bf00ea5b5ec68fac1d4fc5ea913576",
+  "size": 267849
+ },
+ "text_22.zst": {
+  "sha256": "060833c91fceeb61aa80152d106ff3a013bf00ea5b5ec68fac1d4fc5ea913576",
+  "size": 267849
+ },
+ "floats_1.zst": {
+  "sha256": "1bd10e63a528e7b624e53e9b72f124c4472cdd600624ae359b75c2c69400753e",
+  "size": 32000
+ },
+ "floats_19.zst": {
+  "sha256": "1bd10e63a528e7b624e53e9b72f124c4472cdd600624ae359b75c2c69400753e",
+  "size": 32000
+ },
+ "random_3.zst": {
+  "sha256": "142d49c62042b103ba107c9600fbaa94e47026415aa8543ec39d8c1d5a001e87",
+  "size": 4000
+ },
+ "zeros_3.zst": {
+  "sha256": "886715e4051e827f4fe215df3053af3f85ad0d352db2c829c7487af6d78efe30",
+  "size": 300000
+ },
+ "pattern_3.zst": {
+  "sha256": "999cac65d1c56fea443be57cf108728179ebd1b6c19e0c92a2e2f14b473c9bd6",
+  "size": 180000
+ },
+ "tiny_3.zst": {
+  "sha256": "2d711642b726b04401627ca9fbac32f5c8530fb1903cc4db02258717921a4881",
+  "size": 1
+ },
+ "empty_3.zst": {
+  "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "size": 0
+ },
+ "multiframe_skippable.zst": {
+  "sha256": "060833c91fceeb61aa80152d106ff3a013bf00ea5b5ec68fac1d4fc5ea913576",
+  "size": 267849
+ }
+}

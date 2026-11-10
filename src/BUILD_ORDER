@@ -8,6 +8,7 @@ importers/obj.py
 importers/blend_classic.py
 importers/fbx.py
 importers/xfile.py
+importers/zstd.py
 rendering/mesh.py
 rendering/material.py
 gameplay/blueprint.py

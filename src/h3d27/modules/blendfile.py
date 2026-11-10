@@ -32,20 +32,13 @@ def _decompress(data, path):
             return _z.decompress(data)
         except ImportError:
             pass
-        try:
-            import zstandard as _zs
-            with _zs.ZstdDecompressor().stream_reader(
-                    io.BytesIO(data), read_across_frames=True) as r:
-                return r.read()
-        except ImportError:
-            raise BlendFormatError(
-                f"'{os.path.basename(path)}' was saved with Blender's "
-                f"'Compress' option (zstd). Install the decoder with:  "
-                f"pip install zstandard   (or re-save the file in Blender "
-                f"with File > Save As > Compress turned off).")
+        try:                                   # Heaven3D's own decoder
+            return h3d_zstd_decompress(data)
         except Exception as ex:
-            raise BlendFormatError(f"zstd-compressed .blend could not be "
-                                   f"decompressed: {ex}")
+            raise BlendFormatError(
+                f"'{os.path.basename(path)}' (saved with Blender's 'Compress' "
+                f"option) could not be decompressed: {ex} - re-save it with "
+                f"File > Save As > Compress turned off")
     return data
 
 

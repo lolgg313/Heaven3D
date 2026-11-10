@@ -5227,6 +5227,629 @@ def model_texture_files(path):
                 out.append((rel.replace(os.sep, "/"), src))
     return out
 
+# ---------------------------------------------------------------------------
+#  Zstandard decoder (RFC 8878) - Blender 3.0+ "Compress" .blend files.
+#  Python 3.13 has no zstd in the standard library and Heaven3D adds no
+#  extra packages, so this is a complete decoder in numpy: frames, skippable
+#  frames (Blender's seek table), raw / RLE / compressed blocks, Huffman
+#  literals (1 or 4 streams, treeless), FSE sequences (predefined / RLE /
+#  compressed / repeat tables) and repeat offsets.  The hot loops run under
+#  numba when it is installed (it is, with install.py) and in plain Python
+#  otherwise.  Dictionaries are not supported (Blender never uses them).
+# ---------------------------------------------------------------------------
+
+
+class H3DZstdError(ValueError):
+    pass
+
+
+_ZS_LL_BASE = np.array([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 18, 20, 22, 24, 28, 32, 40,
+                        48, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768, 65536], np.int64)
+_ZS_LL_BITS = np.array([0] * 16 + [1, 1, 1, 1, 2, 2, 3, 3, 4, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16], np.int64)
+_ZS_ML_BASE = np.array(list(range(3, 35)) + [35, 37, 39, 41, 43, 47, 51, 59, 67, 83, 99, 131, 259, 515, 1027,
+                                              2051, 4099, 8195, 16387, 32771, 65539], np.int64)
+_ZS_ML_BITS = np.array([0] * 32 + [1, 1, 1, 1, 2, 2, 3, 3, 4, 4, 5, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16], np.int64)
+_ZS_LL_DEF = [4, 3, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 3, 2, 1, 1, 1, 1, 1,
+              -1, -1, -1, -1]
+_ZS_ML_DEF = [1, 4, 3, 2, 2, 2, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+              1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, -1, -1, -1, -1, -1, -1, -1]
+_ZS_OF_DEF = [1, 1, 1, 1, 1, 1, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, -1, -1, -1, -1, -1]
+
+
+@_jit(cache=True)
+def _zs_bits(src, start, lo, n):
+    """n bits (n <= 32) at bit index lo of the stream starting at byte
+    ``start`` (bit 0 = lowest bit of the first byte).  Bits before the
+    stream start (lo < 0) read as zero, as the format requires."""
+    if n <= 0:
+        return 0
+    pad = 0
+    if lo < 0:
+        if lo + n <= 0:
+            return 0
+        pad = -lo
+        n += lo
+        lo = 0
+    first = lo >> 3
+    shift = lo & 7
+    nbytes = (shift + n + 7) >> 3
+    acc = 0
+    for i in range(nbytes):
+        acc |= np.int64(src[start + first + i]) << (8 * i)
+    return ((acc >> shift) & ((np.int64(1) << n) - 1)) << pad
+
+
+@_jit(cache=True)
+def _zs_stream_bits(src, start, end):
+    """Number of data bits in a backward stream (the last byte's highest
+    set bit is an end marker); -1 if the stream is malformed."""
+    if end <= start:
+        return -1
+    last = np.int64(src[end - 1])
+    if last == 0:
+        return -1
+    hb = 0
+    while (last >> (hb + 1)) != 0:
+        hb += 1
+    return (end - start - 1) * 8 + hb
+
+
+@_jit(cache=True)
+def _zs_huff_stream(src, start, end, tsym, tnb, maxbits, out, opos, count):
+    pos = _zs_stream_bits(src, start, end)
+    if pos < 0:
+        return -1
+    for k in range(count):
+        v = _zs_bits(src, start, pos - maxbits, maxbits)
+        out[opos + k] = tsym[v]
+        pos -= tnb[v]
+    if pos != 0:
+        return -1
+    return opos + count
+
+
+@_jit(cache=True)
+def _zs_sequences(src, start, end, nseq, lls, lln, llb, llal, ofs, ofn, ofb, ofal, mls, mln, mlb, mlal,
+                  ll_base, ll_bits, ml_base, ml_bits, lit, nlit, out, opos, reps):
+    pos = _zs_stream_bits(src, start, end)
+    if pos < 0:
+        return -1
+    pos -= llal
+    sll = _zs_bits(src, start, pos, llal)
+    pos -= ofal
+    sof = _zs_bits(src, start, pos, ofal)
+    pos -= mlal
+    sml = _zs_bits(src, start, pos, mlal)
+    lp = 0
+    for i in range(nseq):
+        ofc = ofs[sof]
+        mlc = mls[sml]
+        llc = lls[sll]
+        pos -= ofc
+        ofv = (np.int64(1) << ofc) + _zs_bits(src, start, pos, ofc)
+        nb = ml_bits[mlc]
+        pos -= nb
+        ml = ml_base[mlc] + _zs_bits(src, start, pos, nb)
+        nb = ll_bits[llc]
+        pos -= nb
+        ll = ll_base[llc] + _zs_bits(src, start, pos, nb)
+        if ofv > 3:
+            off = ofv - 3
+            reps[2] = reps[1]
+            reps[1] = reps[0]
+            reps[0] = off
+        else:
+            idx = ofv
+            if ll == 0:
+                idx += 1
+            if idx == 1:
+                off = reps[0]
+            elif idx == 2:
+                off = reps[1]
+                reps[1] = reps[0]
+                reps[0] = off
+            elif idx == 3:
+                off = reps[2]
+                reps[2] = reps[1]
+                reps[1] = reps[0]
+                reps[0] = off
+            else:
+                off = reps[0] - 1
+                reps[2] = reps[1]
+                reps[1] = reps[0]
+                reps[0] = off
+        if i != nseq - 1:
+            nb = lln[sll]
+            pos -= nb
+            sll = llb[sll] + _zs_bits(src, start, pos, nb)
+            nb = mln[sml]
+            pos -= nb
+            sml = mlb[sml] + _zs_bits(src, start, pos, nb)
+            nb = ofn[sof]
+            pos -= nb
+            sof = ofb[sof] + _zs_bits(src, start, pos, nb)
+        if lp + ll > nlit or off <= 0 or off > opos + ll or opos + ll + ml > len(out):
+            return -1
+        for k in range(ll):
+            out[opos + k] = lit[lp + k]
+        opos += ll
+        lp += ll
+        s = opos - off
+        for k in range(ml):                      # byte by byte: matches may overlap
+            out[opos + k] = out[s + k]
+        opos += ml
+    if pos != 0:
+        return -1
+    if opos + nlit - lp > len(out):
+        return -1
+    for k in range(nlit - lp):
+        out[opos + k] = lit[lp + k]
+    return opos + nlit - lp
+
+
+# ---- plain-Python versions of the two hot loops (no numba): the same
+# algorithm with a 64-bit window instead of per-read byte gathering and
+# slice copies instead of byte loops - several times faster than running
+# the numba kernels above as ordinary Python.
+def _zs_py_reader(data, nbits_total):
+    st = [nbits_total, -1, 0]                  # pos, window byte, window value
+
+    def rd(n):
+        if n <= 0:
+            return 0
+        pos = st[0] - n
+        st[0] = pos
+        wb = st[1]
+        if wb < 0 or pos < wb * 8:
+            wb = max(0, ((pos + n) >> 3) - 6)
+            st[1] = wb
+            st[2] = int.from_bytes(data[wb:wb + 8], "little")
+        if pos >= 0:
+            return (st[2] >> (pos - wb * 8)) & ((1 << n) - 1)
+        return (st[2] << -pos) & ((1 << n) - 1)
+    return rd, st
+
+
+def _zs_huff_stream_py(src, start, end, tsym, tnb, maxbits, out, opos, count):
+    nb = int(_zs_stream_bits(src, start, end))
+    if nb < 0:
+        return -1
+    data = src[start:end].tobytes()
+    sym, bits = tsym.tolist(), tnb.tolist()
+    res = bytearray(count)
+    mask = (1 << maxbits) - 1
+    pos, wb, wv = nb, -1, 0
+    for k in range(count):
+        lo = pos - maxbits
+        if wb < 0 or lo < wb * 8:
+            wb = max(0, (pos >> 3) - 6)
+            wv = int.from_bytes(data[wb:wb + 8], "little")
+        v = ((wv >> (lo - wb * 8)) if lo >= 0 else (wv << -lo)) & mask
+        res[k] = sym[v]
+        pos -= bits[v]
+    if pos != 0:
+        return -1
+    out[opos:opos + count] = np.frombuffer(bytes(res), np.uint8)
+    return opos + count
+
+
+def _zs_sequences_py(src, start, end, nseq, lls, lln, llb, llal, ofs, ofn, ofb, ofal, mls, mln, mlb, mlal,
+                     ll_base, ll_bits, ml_base, ml_bits, lit, nlit, out, opos, reps):
+    nb = int(_zs_stream_bits(src, start, end))
+    if nb < 0:
+        return -1
+    rd, st = _zs_py_reader(src[start:end].tobytes(), nb)
+    lls, lln, llb = lls.tolist(), lln.tolist(), llb.tolist()
+    ofs, ofn, ofb = ofs.tolist(), ofn.tolist(), ofb.tolist()
+    mls, mln, mlb = mls.tolist(), mln.tolist(), mlb.tolist()
+    llB, llX, mlB, mlX = ll_base.tolist(), ll_bits.tolist(), ml_base.tolist(), ml_bits.tolist()
+    r0, r1, r2 = int(reps[0]), int(reps[1]), int(reps[2])
+    sll = rd(llal)
+    sof = rd(ofal)
+    sml = rd(mlal)
+    lp = 0
+    cap = len(out)
+    for i in range(nseq):
+        ofc = ofs[sof]
+        mlc = mls[sml]
+        llc = lls[sll]
+        ofv = (1 << ofc) + rd(ofc)
+        ml = mlB[mlc] + rd(mlX[mlc])
+        ll = llB[llc] + rd(llX[llc])
+        if ofv > 3:
+            off = ofv - 3
+            r0, r1, r2 = off, r0, r1
+        else:
+            idx = ofv + (1 if ll == 0 else 0)
+            if idx == 1:
+                off = r0
+            elif idx == 2:
+                off = r1
+                r0, r1 = r1, r0
+            elif idx == 3:
+                off = r2
+                r0, r1, r2 = r2, r0, r1
+            else:
+                off = r0 - 1
+                r0, r1, r2 = off, r0, r1
+        if i != nseq - 1:
+            sll = llb[sll] + rd(lln[sll])
+            sml = mlb[sml] + rd(mln[sml])
+            sof = ofb[sof] + rd(ofn[sof])
+        if lp + ll > nlit or off <= 0 or off > opos + ll or opos + ll + ml > cap:
+            return -1
+        if ll:
+            out[opos:opos + ll] = lit[lp:lp + ll]
+            opos += ll
+            lp += ll
+        s = opos - off
+        if off >= ml:
+            out[opos:opos + ml] = out[s:s + ml]
+        else:                                    # overlapping: the pattern doubles each copy
+            done = min(off, ml)
+            out[opos:opos + done] = out[s:s + done]
+            while done < ml:
+                n = min(done, ml - done)
+                out[opos + done:opos + done + n] = out[s:s + n]
+                done += n
+        opos += ml
+    if st[0] != 0:
+        return -1
+    reps[0], reps[1], reps[2] = r0, r1, r2
+    rest = nlit - lp
+    if opos + rest > cap:
+        return -1
+    out[opos:opos + rest] = lit[lp:nlit]
+    return opos + rest
+
+
+def _zs_fse_table(norm, al):
+    size = 1 << al
+    sym = np.zeros(size, np.int64)
+    high = size - 1
+    nxt = []
+    for s, c in enumerate(norm):
+        if c == -1:
+            sym[high] = s
+            high -= 1
+            nxt.append(1)
+        else:
+            nxt.append(max(c, 0))
+    step = (size >> 1) + (size >> 3) + 3
+    mask = size - 1
+    p = 0
+    for s, c in enumerate(norm):
+        for _ in range(max(c, 0)):
+            sym[p] = s
+            p = (p + step) & mask
+            while p > high:
+                p = (p + step) & mask
+    if p != 0:
+        raise H3DZstdError("bad FSE table")
+    nb = np.zeros(size, np.int64)
+    base = np.zeros(size, np.int64)
+    for u in range(size):
+        s = int(sym[u])
+        x = nxt[s]
+        nxt[s] += 1
+        b = al - (x.bit_length() - 1)
+        nb[u] = b
+        base[u] = (x << b) - size
+    return sym, nb, base, al
+
+
+def _zs_read_ncount(src, pos, end, max_sym, max_al):
+    """FSE table description -> (normalized counts, accuracy log, new pos)."""
+    bitpos = 0
+
+    def bits(n):
+        return int(_zs_bits(src, pos, bitpos, n))      # src is zero-padded at the end
+    al = (int(src[pos]) & 15) + 5
+    if al > max_al:
+        raise H3DZstdError("FSE accuracy too large")
+    bitpos = 4
+    remaining = (1 << al) + 1
+    threshold = 1 << al
+    nbits = al + 1
+    norm = []
+    prev0 = False
+    while remaining > 1 and len(norm) <= max_sym:
+        if prev0:
+            n0 = len(norm)
+            while bits(16) == 0xFFFF:
+                n0 += 24
+                bitpos += 16
+            while bits(2) == 3:
+                n0 += 3
+                bitpos += 2
+            n0 += bits(2)
+            bitpos += 2
+            norm.extend([0] * (n0 - len(norm)))
+            if len(norm) > max_sym:
+                break
+        mx = (2 * threshold - 1) - remaining
+        v = bits(nbits)
+        if (v & (threshold - 1)) < mx:
+            c = v & (threshold - 1)
+            bitpos += nbits - 1
+        else:
+            c = v & (2 * threshold - 1)
+            if c >= threshold:
+                c -= mx
+            bitpos += nbits
+        c -= 1
+        remaining -= abs(c)
+        norm.append(c)
+        prev0 = c == 0
+        while remaining < threshold:
+            nbits -= 1
+            threshold >>= 1
+    if remaining != 1 or len(norm) > max_sym + 1:
+        raise H3DZstdError("bad FSE table description")
+    return norm, al, pos + ((bitpos + 7) >> 3)
+
+
+def _zs_huff_weights_fse(src, pos, csize):
+    norm, al, p = _zs_read_ncount(src, pos, pos + csize, 255, 6)
+    sym, nb, base, _al = _zs_fse_table(norm, al)
+    start, end = p, pos + csize
+    bp = int(_zs_stream_bits(src, start, end))
+    if bp < 0:
+        raise H3DZstdError("bad Huffman weights")
+    out = []
+
+    def rd(n):
+        nonlocal bp
+        bp -= n
+        return int(_zs_bits(src, start, bp, n))
+    s1 = rd(al)
+    s2 = rd(al)
+    while len(out) < 255:
+        out.append(int(sym[s1]))
+        s1 = int(base[s1]) + rd(int(nb[s1]))
+        if bp < 0:
+            out.append(int(sym[s2]))
+            break
+        out.append(int(sym[s2]))
+        s2 = int(base[s2]) + rd(int(nb[s2]))
+        if bp < 0:
+            out.append(int(sym[s1]))
+            break
+    return out
+
+
+def _zs_huff_table(src, pos):
+    """Huffman tree description at pos -> (symbols, nbits, maxbits, size)."""
+    hb = int(src[pos])
+    if hb < 128:
+        weights = _zs_huff_weights_fse(src, pos + 1, hb)
+        size = 1 + hb
+    else:
+        n = hb - 127
+        size = 1 + (n + 1) // 2
+        weights = []
+        for i in range(n):
+            b = int(src[pos + 1 + i // 2])
+            weights.append(b >> 4 if i % 2 == 0 else b & 15)
+    total = sum((1 << (w - 1)) for w in weights if w > 0)
+    if total == 0:
+        raise H3DZstdError("bad Huffman tree")
+    maxbits = total.bit_length()
+    left = (1 << maxbits) - total
+    if left & (left - 1):
+        raise H3DZstdError("bad Huffman tree")
+    weights.append(left.bit_length())
+    if maxbits > 11:
+        raise H3DZstdError("Huffman codes too long")
+    tsym = np.zeros(1 << maxbits, np.uint8)
+    tnb = np.zeros(1 << maxbits, np.int64)
+    p = 0
+    for w in range(1, maxbits + 1):
+        for s, ws in enumerate(weights):
+            if ws == w:
+                n = 1 << (w - 1)
+                tsym[p:p + n] = s
+                tnb[p:p + n] = maxbits + 1 - w
+                p += n
+    return (tsym, tnb, maxbits), size
+
+
+_ZS_PREDEF = {}
+
+
+def _zs_predef(kind):
+    if not _ZS_PREDEF:
+        _ZS_PREDEF["ll"] = _zs_fse_table(_ZS_LL_DEF, 6)
+        _ZS_PREDEF["of"] = _zs_fse_table(_ZS_OF_DEF, 5)
+        _ZS_PREDEF["ml"] = _zs_fse_table(_ZS_ML_DEF, 6)
+    return _ZS_PREDEF[kind]
+
+
+_ZS_HUFF = _zs_huff_stream if _HAS_NUMBA else _zs_huff_stream_py
+_ZS_SEQ = _zs_sequences if _HAS_NUMBA else _zs_sequences_py
+
+
+def _zs_block(src, pos, end, out, opos, st):
+    # ---- literals ----
+    b0 = int(src[pos])
+    ltype = b0 & 3
+    sf = (b0 >> 2) & 3
+    if ltype in (0, 1):
+        if sf in (0, 2):
+            regen, hsz = b0 >> 3, 1
+        elif sf == 1:
+            regen, hsz = (b0 >> 4) + (int(src[pos + 1]) << 4), 2
+        else:
+            regen, hsz = (b0 >> 4) + (int(src[pos + 1]) << 4) + (int(src[pos + 2]) << 12), 3
+        pos += hsz
+        if pos + (regen if ltype == 0 else 1) > end:
+            raise H3DZstdError("literals run past the block")
+        if ltype == 0:
+            lit = src[pos:pos + regen]
+            pos += regen
+        else:
+            lit = np.full(regen, src[pos], np.uint8)
+            pos += 1
+    else:
+        hsz, bits = {0: (3, 10), 1: (3, 10), 2: (4, 14), 3: (5, 18)}[sf]
+        v = int.from_bytes(bytes(src[pos:pos + hsz]), "little")
+        mask = (1 << bits) - 1
+        regen = (v >> 4) & mask
+        csize = (v >> (4 + bits)) & mask
+        streams = 1 if sf == 0 else 4
+        pos += hsz
+        lend = pos + csize
+        if lend > end or regen > (1 << 17):
+            raise H3DZstdError("literals run past the block")
+        if ltype == 2:
+            st["huf"], tsz = _zs_huff_table(src, pos)
+            pos += tsz
+        elif st.get("huf") is None:
+            raise H3DZstdError("treeless literals without a previous tree")
+        tsym, tnb, maxbits = st["huf"]
+        lit = np.empty(regen, np.uint8)
+        if streams == 1:
+            if _ZS_HUFF(src, pos, lend, tsym, tnb, maxbits, lit, 0, regen) < 0:
+                raise H3DZstdError("bad literals stream")
+        else:
+            s1 = int(src[pos]) | (int(src[pos + 1]) << 8)
+            s2 = int(src[pos + 2]) | (int(src[pos + 3]) << 8)
+            s3 = int(src[pos + 4]) | (int(src[pos + 5]) << 8)
+            q = (regen + 3) // 4
+            p0 = pos + 6
+            bounds = [p0, p0 + s1, p0 + s1 + s2, p0 + s1 + s2 + s3, lend]
+            if bounds[3] > lend:
+                raise H3DZstdError("bad literal stream sizes")
+            o = 0
+            for k in range(4):
+                n = q if k < 3 else regen - 3 * q
+                if n < 0 or _ZS_HUFF(src, bounds[k], bounds[k + 1], tsym, tnb, maxbits, lit, o, n) < 0:
+                    raise H3DZstdError("bad literals stream")
+                o += n
+        pos = lend
+    # ---- sequences ----
+    if pos >= end:
+        nseq = 0
+    else:
+        b = int(src[pos])
+        if b < 128:
+            nseq, pos = b, pos + 1
+        elif b < 255:
+            nseq, pos = ((b - 128) << 8) + int(src[pos + 1]), pos + 2
+        else:
+            nseq, pos = int(src[pos + 1]) + (int(src[pos + 2]) << 8) + 0x7F00, pos + 3
+    if nseq == 0:
+        n = len(lit)
+        if opos + n > len(out):
+            raise H3DZstdError("block larger than the frame")
+        out[opos:opos + n] = lit
+        return opos + n
+    modes = int(src[pos])
+    pos += 1
+    tabs = {}
+    for kind, shift, mx, mal in (("ll", 6, 35, 9), ("of", 4, 31, 8), ("ml", 2, 52, 9)):
+        mode = (modes >> shift) & 3
+        if mode == 0:
+            t = _zs_predef(kind)
+        elif mode == 1:
+            if int(src[pos]) > mx:
+                raise H3DZstdError("bad RLE symbol")
+            t = (np.array([int(src[pos])], np.int64), np.zeros(1, np.int64), np.zeros(1, np.int64), 0)
+            pos += 1
+        elif mode == 2:
+            norm, al, pos = _zs_read_ncount(src, pos, end, mx, mal)
+            t = _zs_fse_table(norm, al)
+        else:
+            t = st.get(kind)
+            if t is None:
+                raise H3DZstdError("repeat table without a previous one")
+        st[kind] = tabs[kind] = t
+    if pos > end:
+        raise H3DZstdError("sequences run past the block")
+    ll, of, ml = tabs["ll"], tabs["of"], tabs["ml"]
+    r = _ZS_SEQ(src, pos, end, nseq, ll[0], ll[1], ll[2], ll[3], of[0], of[1], of[2], of[3],
+                      ml[0], ml[1], ml[2], ml[3], _ZS_LL_BASE, _ZS_LL_BITS, _ZS_ML_BASE, _ZS_ML_BITS,
+                      np.ascontiguousarray(lit), len(lit), out, opos, st["reps"])
+    if r < 0:
+        raise H3DZstdError("bad sequences")
+    return r
+
+
+def h3d_zstd_decompress(data):
+    """bytes (one or more zstd frames, skippable frames allowed) -> bytes."""
+    n = len(data)
+    src = np.frombuffer(bytes(data) + bytes(16), np.uint8)
+    pos = 0
+    pieces = []
+    while pos + 4 <= n:
+        magic = int.from_bytes(bytes(src[pos:pos + 4]), "little")
+        if (magic & 0xFFFFFFF0) == 0x184D2A50:            # skippable frame
+            size = int.from_bytes(bytes(src[pos + 4:pos + 8]), "little")
+            pos += 8 + size
+            continue
+        if magic != 0xFD2FB528:
+            raise H3DZstdError("not a zstd frame")
+        pos += 4
+        fhd = int(src[pos])
+        pos += 1
+        fcs_flag, single, checksum, did = fhd >> 6, (fhd >> 5) & 1, (fhd >> 2) & 1, fhd & 3
+        if fhd & 8:
+            raise H3DZstdError("reserved frame header bit set")
+        wsize = 0
+        if not single:
+            wd = int(src[pos])
+            pos += 1
+            e, m = wd >> 3, wd & 7
+            wb = 1 << (10 + e)
+            wsize = wb + (wb // 8) * m
+        dsz = (0, 1, 2, 4)[did]
+        if dsz and int.from_bytes(bytes(src[pos:pos + dsz]), "little"):
+            raise H3DZstdError("zstd dictionaries are not supported")
+        pos += dsz
+        fsz = (1 if single else 0, 2, 4, 8)[fcs_flag]
+        fcs = None
+        if fsz:
+            fcs = int.from_bytes(bytes(src[pos:pos + fsz]), "little") + (256 if fsz == 2 else 0)
+            pos += fsz
+        cap = fcs if fcs is not None else max(wsize, 1 << 17)
+        out = np.empty(cap + 8, np.uint8)
+        opos = 0
+        st = {"reps": np.array([1, 4, 8], np.int64), "huf": None}
+        while True:
+            if pos + 3 > n:
+                raise H3DZstdError("truncated zstd frame")
+            bh = int(src[pos]) | (int(src[pos + 1]) << 8) | (int(src[pos + 2]) << 16)
+            pos += 3
+            last, btype, bsize = bh & 1, (bh >> 1) & 3, bh >> 3
+            if pos + (1 if btype == 1 else bsize) > n or bsize > (1 << 17):     # blocks are <= 128 KiB
+                raise H3DZstdError("truncated zstd frame")
+            need = bsize if btype != 2 else (1 << 17)
+            if opos + need > len(out) - 8:
+                grow = np.empty(max(len(out) * 2, opos + need + 8), np.uint8)
+                grow[:opos] = out[:opos]
+                out = grow
+            if btype == 0:
+                out[opos:opos + bsize] = src[pos:pos + bsize]
+                opos += bsize
+                pos += bsize
+            elif btype == 1:
+                out[opos:opos + bsize] = src[pos]
+                opos += bsize
+                pos += 1
+            elif btype == 2:
+                opos = _zs_block(src, pos, pos + bsize, out, opos, st)
+                pos += bsize
+            else:
+                raise H3DZstdError("reserved block type")
+            if last:
+                break
+        if checksum:
+            pos += 4
+        if fcs is not None and opos != fcs:
+            raise H3DZstdError("frame size mismatch")
+        pieces.append(out[:opos].tobytes())
+    return b"".join(pieces)
+
 # #############################################################################
 # SECTION 3  —  MESH  (wraps moderngl vertex array + index buffer)
 # #############################################################################
@@ -39249,7 +39872,11 @@ if not globals().get("_FP2_ESC_INSTALLED"):
 #            lights, Principled/legacy materials, packed + external images,
 #            and a modifier evaluator: Mirror, Array, Subdivision Surface
 #            (OpenSubdiv-matching Catmull-Clark incl. limit surface),
-#            Solidify, Weld, Edge Split, Smooth-by-Angle, Multires(levels).
+#            Solidify, Weld, Edge Split, Smooth-by-Angle, Multires(levels),
+#            Simple Deform, Displace (no texture), Smooth.  Also curves and
+#            NURBS surfaces (bevel / extrude / caps / 2D fills), shape keys,
+#            packed custom split normals, Mix Shader blending, collections
+#            switched off, and zstd "Compress" files without extra packages.
 #  .gltf / .glb : full glTF 2.0 — every accessor form (strided, sparse,
 #            normalized, no-bufferView), all 7 primitive modes (lines/points
 #            become thin geometry), skins in their default pose, morph
@@ -39753,20 +40380,13 @@ if not globals().get("_H3D27_IMPORTERS_INSTALLED"):
                     return _z.decompress(data)
                 except ImportError:
                     pass
-                try:
-                    import zstandard as _zs
-                    with _zs.ZstdDecompressor().stream_reader(
-                            io.BytesIO(data), read_across_frames=True) as r:
-                        return r.read()
-                except ImportError:
-                    raise BlendFormatError(
-                        f"'{os.path.basename(path)}' was saved with Blender's "
-                        f"'Compress' option (zstd). Install the decoder with:  "
-                        f"pip install zstandard   (or re-save the file in Blender "
-                        f"with File > Save As > Compress turned off).")
+                try:                                   # Heaven3D's own decoder
+                    return h3d_zstd_decompress(data)
                 except Exception as ex:
-                    raise BlendFormatError(f"zstd-compressed .blend could not be "
-                                           f"decompressed: {ex}")
+                    raise BlendFormatError(
+                        f"'{os.path.basename(path)}' (saved with Blender's 'Compress' "
+                        f"option) could not be decompressed: {ex} - re-save it with "
+                        f"File > Save As > Compress turned off")
             return data
 
 
@@ -41654,7 +42274,7 @@ if not globals().get("_H3D27_IMPORTERS_INSTALLED"):
                        9: "color_byte", 10: "color_float", 11: "quat"}
         _DOMAINS = {0: "point", 1: "edge", 2: "face", 3: "corner"}
         # CustomData layer types (stable ids)
-        _CD_KIND = {10: "float", 11: "int", 17: "color_byte", 45: "int8",
+        _CD_KIND = {10: "float", 11: "int", 17: "color_byte", 41: "int16_2d", 45: "int8",
                     47: "color_float", 48: "float3", 49: "float2", 50: "bool"}
         _KIND_DTYPE = {"bool": ("u1", 1), "int8": ("i1", 1), "int": ("i4", 1),
                        "int2": ("i4", 2), "int16_2d": ("i2", 2), "float": ("f4", 1),
@@ -41823,13 +42443,14 @@ if not globals().get("_H3D27_IMPORTERS_INSTALLED"):
             if not obs:
                 obs = [bf.view(b, "Object") for b in bf.blocks_by_code(b"OB\0\0")]
                 obs = [o for o in obs if o is not None]
+            hidden_by_coll = _hidden_collection_objects(ctx, scene)
             out = []
             seen = set()
             for o in obs:
                 if o.addr() in seen:
                     continue
                 seen.add(o.addr())
-                if o.int("restrictflag", 0) & OB_HIDE_RENDER:
+                if o.int("restrictflag", 0) & OB_HIDE_RENDER or o.addr() in hidden_by_coll:
                     continue
                 out.append((o, _world_matrix(ctx, o)))
             # collection instances (recursive)
@@ -41848,6 +42469,39 @@ if not globals().get("_H3D27_IMPORTERS_INSTALLED"):
             for o, W in out:
                 expand(o, W, 0)
             return final
+
+
+        COLLECTION_HIDDEN = (1 << 0) | (1 << 3)      # RESTRICT_VIEWPORT | RESTRICT_RENDER
+
+
+        def _hidden_collection_objects(ctx, scene):
+            """Objects that are only in collections switched off (monitor / camera
+            icon) - the same rule as for objects switched off themselves."""
+            if scene is None or not scene.has("master_collection"):
+                return set()
+            bf = ctx.bf
+            root = scene.deref("master_collection", "Collection")
+            if root is None:
+                return set()
+            shown, hidden = set(), set()
+
+            def walk(c, off, d):
+                if d > 32:
+                    return
+                off = off or bool(c.int("flag", 0) & COLLECTION_HIDDEN)
+                for co in bf.listbase(c.sub("gobject")):
+                    o = co.ptr("ob")
+                    if o:
+                        (hidden if off else shown).add(o)
+                for ch in bf.listbase(c.sub("children")):
+                    cc = ch.deref("collection", "Collection")
+                    if cc is not None:
+                        walk(cc, off, d + 1)
+            try:
+                walk(root, False, 0)
+            except Exception:
+                return set()
+            return hidden - shown
 
 
         def _collection_objects(ctx, coll, depth):
@@ -41978,6 +42632,184 @@ if not globals().get("_H3D27_IMPORTERS_INSTALLED"):
                     continue
                 return a
             return None
+
+
+        _LNOR_TRIGO = 1.0 - 1e-4
+
+
+        def _decode_packed_normals(m, cl):
+            """Blender's custom split normals stored as two shorts per corner,
+            relative to the 'loop normal space' of its smooth fan (port of
+            mesh_normals.cc: loop_split_generator / lnor_space_define /
+            lnor_space_custom_data_to_normal).  The fan walk records indices only;
+            the maths runs vectorised.  -> (corners, 3) normals."""
+            V = m.V
+            cv = m.corner_vert
+            nl = len(cv)
+            cf = m.corner_face()
+            nxt = m.corner_next()
+            prv = m.corner_prev()
+            fn = face_normals(m)
+            ang = corner_angles(m)
+            a, b = cv, cv[nxt]
+            key = np.stack([np.minimum(a, b), np.maximum(a, b)], 1)
+            uniq, ce = np.unique(key, axis=0, return_inverse=True)
+            ce = ce.ravel()
+            ne = len(uniq)
+            cnt = np.bincount(ce, minlength=ne)
+            e2l = np.full((ne, 2), -1, np.int64)
+            order = np.argsort(ce, kind="stable")
+            starts = np.concatenate([[0], np.cumsum(cnt)])
+            two = cnt == 2
+            e2 = np.where(two)[0]
+            e2l[e2, 0] = order[starts[e2]]
+            e2l[e2, 1] = order[starts[e2] + 1]
+            sharp = ~two
+            l0, l1 = e2l[two, 0], e2l[two, 1]
+            sharp[e2] |= cv[l0] == cv[l1]                      # flipped neighbour
+            flat = ~m.face_smooth
+            sharp[e2] |= flat[cf[l0]] | flat[cf[l1]]
+            if m.sharp_edges is not None and len(m.sharp_edges):
+                se = np.sort(np.asarray(m.sharp_edges, np.int64), 1)
+                code_u = uniq[:, 0] * (len(V) + 1) + uniq[:, 1]
+                sharp |= np.isin(code_u, se[:, 0] * (len(V) + 1) + se[:, 1])
+            if m.auto_smooth is not None:
+                d = np.einsum("ij,ij->i", fn[cf[l0]], fn[cf[l1]])
+                sharp[e2[d < math.cos(float(m.auto_smooth))]] = True
+            cvl, nxtl, prvl, cel = cv.tolist(), nxt.tolist(), prv.tolist(), ce.tolist()
+            e2ll = e2l.tolist()
+            sharpl = sharp.tolist()
+            ul = uniq.tolist()
+            fan_of = [-1] * nl
+            f_start, f_ref, f_oth = [], [], []                 # per fan: start corner, ref / other vertex
+            ev_fan, ev_vert = [], []                           # edge vectors of fans (non-single)
+            skip = [False] * nl
+
+            def fan_next(cur, pivot):
+                pair = e2ll[cel[cur]]                          # only called across manifold edges
+                other = pair[1] if pair[0] == cur else pair[0]
+                if cvl[other] == pivot:
+                    return prvl[other], other
+                n_ = nxtl[other]
+                return n_, n_
+
+            def cyclic_fan_new(c):
+                pivot = cvl[c]
+                cur, vert = prvl[c], c
+                if sharpl[cel[cur]]:
+                    return False
+                skip[vert] = True
+                for _guard in range(nl):
+                    cur, vert = fan_next(cur, pivot)
+                    if sharpl[cel[cur]]:
+                        return False
+                    if skip[vert]:
+                        return vert == c
+                    skip[vert] = True
+                return False
+
+            def other_end(e, pivot):
+                x, y = ul[e]
+                return y if x == pivot else x
+
+            single = []
+            for c in range(nl):                                # faces in order, corners in order
+                ec, ep = cel[c], cel[prvl[c]]
+                if not sharpl[ec] and (skip[c] or not cyclic_fan_new(c)):
+                    continue
+                pivot = cvl[c]
+                fid = len(f_start)
+                f_start.append(c)
+                if sharpl[ec] and sharpl[ep]:
+                    fan_of[c] = fid
+                    f_ref.append(cvl[nxtl[c]])
+                    f_oth.append(cvl[prvl[c]])
+                    single.append(True)
+                    continue
+                single.append(False)
+                e_orig = ec
+                f_ref.append(cvl[nxtl[c]])
+                ev_fan.append(fid); ev_vert.append(cvl[nxtl[c]])
+                cur, vert = prvl[c], c
+                last = cvl[nxtl[c]]
+                for _guard in range(nl):
+                    e = cel[cur]
+                    last = other_end(e, pivot)
+                    fan_of[vert] = fid
+                    if e != e_orig:
+                        ev_fan.append(fid); ev_vert.append(last)
+                    if sharpl[e] or e == e_orig:
+                        break
+                    cur, vert = fan_next(cur, pivot)
+                f_oth.append(last)
+            nfan = len(f_start)
+            fan_of = np.asarray(fan_of, np.int64)
+            out = np.zeros((nl, 3))
+            if nfan == 0:
+                return out
+            ok = fan_of >= 0
+            f_start = np.asarray(f_start, np.int64)
+            single = np.asarray(single, bool)
+            piv = cv[f_start]
+            # fan normal: corner-angle weighted face normals (singles: the face normal)
+            lnor = np.zeros((nfan, 3))
+            np.add.at(lnor, fan_of[ok], fn[cf[ok]] * ang[ok, None])
+            lnor[single] = fn[cf[f_start[single]]]
+            ln = np.linalg.norm(lnor, axis=1, keepdims=True)
+            zero = ln[:, 0] < 1e-20
+            lnor = np.where(zero[:, None], fn[cf[f_start]], lnor / np.maximum(ln, 1e-20))
+
+            def dirs(verts, pivots):
+                d = V[verts] - V[pivots]
+                n = np.linalg.norm(d, axis=1, keepdims=True)
+                return d / np.maximum(n, 1e-30)
+            vref = dirs(np.asarray(f_ref, np.int64), piv)
+            voth = dirs(np.asarray(f_oth, np.int64), piv)
+            dr = np.einsum("ij,ij->i", vref, lnor)
+            do = np.einsum("ij,ij->i", voth, lnor)
+            valid = (np.abs(dr) < _LNOR_TRIGO) & (np.abs(do) < _LNOR_TRIGO)
+            # reference alpha: mean angle of the fan's edges to its normal
+            ra = (np.arccos(np.clip(dr, -1, 1)) + np.arccos(np.clip(do, -1, 1))) / 2.0
+            if ev_fan:
+                evf = np.asarray(ev_fan, np.int64)
+                evd = dirs(np.asarray(ev_vert, np.int64), piv[evf])
+                acc = np.bincount(evf, np.arccos(np.clip(np.einsum("ij,ij->i", evd, lnor[evf]), -1, 1)), nfan)
+                num = np.bincount(evf, minlength=nfan)
+                has = num > 0
+                ra[has] = acc[has] / num[has]
+            ref = vref - lnor * dr[:, None]
+            ref /= np.maximum(np.linalg.norm(ref, axis=1, keepdims=True), 1e-30)
+            orth = np.cross(lnor, ref)
+            orth /= np.maximum(np.linalg.norm(orth, axis=1, keepdims=True), 1e-30)
+            oth = voth - lnor * do[:, None]
+            oth /= np.maximum(np.linalg.norm(oth, axis=1, keepdims=True), 1e-30)
+            dtp = np.einsum("ij,ij->i", ref, oth)
+            be = np.arccos(np.clip(dtp, -1, 1))
+            rb = np.where(np.einsum("ij,ij->i", orth, oth) < 0, 2 * math.pi - be, be)
+            rb = np.where(dtp < _LNOR_TRIGO, rb, 2 * math.pi)
+            # the stored shorts of each fan (Blender averages them if they differ)
+            cl = np.asarray(cl, np.int64)
+            sums = np.zeros((nfan, 2))
+            np.add.at(sums, fan_of[ok], cl[ok])
+            nmem = np.bincount(fan_of[ok], minlength=nfan).astype(float)
+            lo = np.full((nfan, 2), np.iinfo(np.int64).max)
+            hi = np.full((nfan, 2), np.iinfo(np.int64).min)
+            np.minimum.at(lo, fan_of[ok], cl[ok])
+            np.maximum.at(hi, fan_of[ok], cl[ok])
+            same = np.all(lo == hi, axis=1)
+            avg = np.trunc(sums / np.maximum(nmem, 1)[:, None])
+            fcl = np.where(same[:, None], lo, avg).astype(float)
+            af = fcl[:, 0] / 32767.0
+            bf_ = fcl[:, 1] / 32767.0
+            al = np.where(af > 0, ra, 2 * math.pi - ra) * af
+            bt = np.where(bf_ > 0, rb, 2 * math.pi - rb) * bf_
+            sa = np.sin(al)
+            r = lnor * np.cos(al)[:, None] + ref * (sa * np.cos(bt))[:, None] + orth * (sa * np.sin(bt))[:, None]
+            r /= np.maximum(np.linalg.norm(r, axis=1, keepdims=True), 1e-30)
+            keep = (fcl[:, 0] == 0) | (ra == 0) | (rb == 0) | ~valid
+            r[keep] = lnor[keep]
+            out[ok] = r[fan_of[ok]]
+            return out
 
 
         def _decode_mesh(ctx, me):
@@ -42165,12 +42997,20 @@ if not globals().get("_H3D27_IMPORTERS_INSTALLED"):
                     m.col = d.astype(np.float64)
                 info["col_name"] = pick[0]
                 info["col_names"] = [c[0] for c in cols]
-            # ---------------- custom normals (5.x float3 'custom_normal')
+            # ---------------- custom normals: 5.x float3 'custom_normal', or the
+            # packed per-fan "normal space" form (5.x int16_2d / CD_CUSTOMLOOPNORMAL)
             cn = _find(attrs, "custom_normal", "corner", "float3")
+            packed = _find(attrs, "custom_normal", "corner", "int16_2d") or _find(attrs, domain="corner", cd=41)
             if cn is not None:
                 m.cnormal = corner_data(cn["data"]).astype(np.float64)
-            elif any(a["cd"] == 41 for a in attrs):
-                info["has_encoded_custom_normals"] = True
+            elif packed is not None and packed.get("data") is not None:
+                try:
+                    cl = corner_data(np.asarray(packed["data"]).reshape(-1, 2)).astype(np.int64)
+                    if len(cl) == len(m.corner_vert):
+                        m.cnormal = _decode_packed_normals(m, cl)
+                except Exception as ex:
+                    info["custom_normal_error"] = str(ex)
+                    info["has_encoded_custom_normals"] = True
             m.drop_degenerate() if info.get("face_image") is None else None
             return m, info
 
@@ -42489,6 +43329,145 @@ if not globals().get("_H3D27_IMPORTERS_INSTALLED"):
             return m.drop_degenerate()
 
 
+        # ---- Simple Deform (port of Blender's MOD_simpledeform) ----
+        _SD_AXIS_MAP = ((1, 2, 0), (2, 0, 1), (0, 1, 2))
+
+
+        def _mod_simpledeform(m, mv, ctx, obW):
+            if mv.ptr("origin"):
+                ctx.warn_once("sdorigin", ".blend: a Simple Deform modifier uses an Origin object — "
+                              "deformed around the object's own origin")
+            if mv.str("vgroup_name"):
+                ctx.warn_once("sdvg", ".blend: a Simple Deform modifier is limited to a vertex group — "
+                              "applied to the whole mesh")
+            mode = mv.int("mode", 1)
+            dax = int(np.clip(mv.int("deform_axis", 2), 0, 2))
+            lock = 0 if mode == 2 else mv.int("axis", 0) & ~(1 << dax)
+            lim = mv.floats("limit", np.array([0.0, 1.0]))
+            lax = dax if mode != 2 else (2 if dax in (0, 1) else 0)
+            V = m.V
+            lo, hi = float(V[:, lax].min()), float(V[:, lax].max())
+            l1 = lo + (hi - lo) * float(lim[1])
+            l0 = lo + (hi - lo) * float(lim[0])
+            f = mv.float("factor", 0.0) / max(np.finfo(np.float32).eps, l1 - l0)
+            if mode == 2 and abs(f) < 1e-6:
+                return m
+            co = V.copy()
+            dcut = np.zeros_like(co)
+            for ax in range(3):
+                if lock & (1 << ax):
+                    dcut[:, ax] = co[:, ax]
+                    co[:, ax] = 0.0
+            val = np.clip(co[:, lax], l0, l1)
+            dcut[:, lax] = co[:, lax] - val
+            co[:, lax] = val
+            amap = _SD_AXIS_MAP[dax if mode != 2 else 2]
+            c = co[:, amap]
+            dc = dcut[:, amap]
+            x, y, z = c[:, 0], c[:, 1], c[:, 2]
+            r = np.empty_like(c)
+            if mode == 1:                                  # twist
+                th = z * f
+                r[:, 0] = x * np.cos(th) - y * np.sin(th)
+                r[:, 1] = x * np.sin(th) + y * np.cos(th)
+                r[:, 2] = z
+                r += dc
+            elif mode == 3:                                # taper
+                sc = z * f
+                r[:, 0] = x + x * sc
+                r[:, 1] = y + y * sc
+                r[:, 2] = z
+                r += dc
+            elif mode == 4:                                # stretch
+                sc = z * z * f - f + 1.0
+                r[:, 0] = x * sc
+                r[:, 1] = y * sc
+                r[:, 2] = z * (1.0 + f)
+                r += dc
+            elif mode == 2:                                # bend
+                th = (z if dax in (0, 1) else x) * f
+                st, ct = np.sin(th), np.cos(th)
+                k = 1.0 / f
+                if dax == 0:
+                    r[:, 0] = x + dc[:, 0]
+                    r[:, 1] = (y - k) * ct + k + st * dc[:, 2]
+                    r[:, 2] = -(y - k) * st + ct * dc[:, 2]
+                elif dax == 1:
+                    r[:, 0] = (x - k) * ct + k + st * dc[:, 2]
+                    r[:, 1] = y + dc[:, 1]
+                    r[:, 2] = -(x - k) * st + ct * dc[:, 2]
+                else:
+                    r[:, 0] = -(y - k) * st + ct * dc[:, 0]
+                    r[:, 1] = (y - k) * ct + k + st * dc[:, 0]
+                    r[:, 2] = z + dc[:, 2]
+            else:
+                return m
+            out = np.empty_like(r)
+            out[:, list(amap)] = r
+            m.V = out
+            return m
+
+
+        def _mesh_edges(m):
+            nxt = np.arange(len(m.corner_vert)) + 1
+            ends = m.face_off[1:] - 1
+            nxt[ends] = m.face_off[:-1]
+            e = np.stack([m.corner_vert, m.corner_vert[nxt]], 1)
+            e.sort(1)
+            return np.unique(e, axis=0)
+
+
+        def _mod_displace(m, mv, ctx, obW):
+            if mv.ptr("texture"):
+                ctx.warn_once("disptex", ".blend: a Displace modifier uses a texture — not evaluated "
+                              "(apply it in Blender with Ctrl+A for an exact match)")
+                return m
+            if mv.str("defgrp_name"):
+                ctx.warn_once("dispvg", ".blend: a Displace modifier is limited to a vertex group — "
+                              "applied to the whole mesh")
+            delta = (1.0 - mv.float("midlevel", 0.5)) * mv.float("strength", 1.0)
+            d = mv.int("direction", 3)
+            if d == 3 or d == 5:                           # normal / custom normal
+                m.V = m.V + delta * _vertex_normals(m)
+            elif d in (0, 1, 2):
+                if mv.int("space", 0) == 1:                # global axis, in object space
+                    inv = np.linalg.inv(np.asarray(obW, float))
+                    m.V = m.V + delta * inv[:3, d][None]
+                else:
+                    m.V = m.V.copy()
+                    m.V[:, d] += delta
+            else:                                          # RGB to XYZ: texture colour 1,1,1
+                m.V = m.V + delta
+            return m
+
+
+        def _mod_smooth(m, mv, ctx, obW):
+            if mv.str("defgrp_name"):
+                ctx.warn_once("smvg", ".blend: a Smooth modifier is limited to a vertex group — "
+                              "applied to the whole mesh")
+            fac = mv.float("fac", 0.5)
+            rep = mv.int("repeat", 1)
+            fl = mv.int("flag", 14)
+            axes = [a for a in range(3) if fl & (2 << a)]
+            if not axes or fac == 0 or rep <= 0:
+                return m
+            e = _mesh_edges(m)
+            V = m.V.copy()
+            nv = len(V)
+            cnt = np.bincount(e.ravel(), minlength=nv).astype(float)
+            has = cnt > 0
+            for _ in range(int(rep)):
+                mid = (V[e[:, 0]] + V[e[:, 1]]) * 0.5
+                acc = np.zeros_like(V)
+                np.add.at(acc, e[:, 0], mid)
+                np.add.at(acc, e[:, 1], mid)
+                avg = acc[has] / cnt[has, None]
+                for a in axes:
+                    V[has, a] = V[has, a] * (1.0 - fac) + avg[:, a] * fac
+            m.V = V
+            return m
+
+
         def _mod_edgesplit(m, mv, ctx, obW):
             flags = mv.int("flags", 0b110)
             if flags & (1 << 1):
@@ -42551,10 +43530,417 @@ if not globals().get("_H3D27_IMPORTERS_INSTALLED"):
             "WeldModifierData": _mod_weld,
             "EdgeSplitModifierData": _mod_edgesplit,
             "NodesModifierData": _mod_nodes,
+            "SimpleDeformModifierData": _mod_simpledeform,
+            "DisplaceModifierData": _mod_displace,
+            "SmoothModifierData": _mod_smooth,
             "TriangulateModifierData": None,          # geometry identical once triangulated
             "ArmatureModifierData": None,             # rest pose (game engines skin later)
             "WeightedNormalModifierData": None,
         }
+
+
+        # ======================================================================
+        #  curves & surfaces (Curve object data -> PolyMesh, like Blender's own
+        #  "Convert to Mesh": Bezier / Poly / NURBS splines, bevel depth +
+        #  resolution, extrude, fill caps, radius, tilt, 2D fills, NURBS surfaces)
+        # ======================================================================
+        CU_3D, CU_FRONT, CU_BACK, CU_FILL_CAPS = 1, 2, 4, 1 << 14
+        CU_POLY, CU_BEZIER, CU_NURBS = 0, 1, 4
+        CU_NURB_CYCLIC, CU_NURB_ENDPOINT, CU_NURB_BEZIER = 1, 2, 4
+
+
+        def _nurb_knots(pnts, order, flag):
+            """Blender's calcknots()."""
+            cyc = bool(flag & CU_NURB_CYCLIC)
+            bez = bool(flag & CU_NURB_BEZIER)
+            endp = bool(flag & CU_NURB_ENDPOINT)
+            rep_inner = order - 1 if bez else 1
+            head = (order - (1 if cyc else 0)) if endp else (min(2, rep_inner) if bez else 1)
+            tail = 2 * order - 1 if cyc else (order if endp else 0)
+            n = pnts + order + (order - 1 if cyc else 0)
+            kn = np.zeros(n)
+            r, cur = head, 0.0
+            offset = 1 if (endp and cyc) else 0
+            if offset:
+                kn[0] = cur
+                cur += 1.0
+            for i in range(offset, n - tail):
+                kn[i] = cur
+                r -= 1
+                if r == 0:
+                    cur += 1.0
+                    r = rep_inner
+            ti = n - tail
+            for i in range(tail):
+                kn[ti + i] = cur + (kn[i] - kn[0])
+            return kn
+
+
+        def _nurb_basis(kn, order, us):
+            """Cox-de Boor basis, (len(us), len(kn) - order)."""
+            nb = len(kn) - 1
+            u = np.asarray(us, float)[:, None]
+            N = ((kn[:-1][None] <= u) & (u < kn[1:][None])).astype(float)
+            # the end of the range belongs to the last non-empty span
+            last = max(i for i in range(nb) if kn[i] < kn[i + 1]) if np.any(kn[:-1] < kn[1:]) else nb - 1
+            at_end = u[:, 0] >= kn[last + 1]
+            N[at_end] = 0.0
+            N[at_end, last] = 1.0
+            for p in range(1, order):
+                cnt = nb - p
+                a = kn[p:p + cnt] - kn[:cnt]
+                b = kn[p + 1:p + 1 + cnt] - kn[1:1 + cnt]
+                left = np.where(a > 0, (u - kn[:cnt][None]) / np.where(a > 0, a, 1), 0.0) * N[:, :cnt]
+                right = np.where(b > 0, (kn[p + 1:p + 1 + cnt][None] - u) / np.where(b > 0, b, 1), 0.0) * N[:, 1:cnt + 1]
+                N = left + right
+            return N[:, :len(kn) - order]
+
+
+        def _nurb_samples(pnts, order, flag, count):
+            cyc = bool(flag & CU_NURB_CYCLIC)
+            order = int(max(2, min(order, pnts + (order - 1 if cyc else 0))))
+            kn = _nurb_knots(pnts, order, flag)
+            us_ = kn[order - 1]
+            ue = kn[pnts + order - 1] if cyc else kn[pnts]
+            steps = count if cyc else max(count - 1, 1)
+            us = us_ + (ue - us_) * np.arange(count) / steps
+            B = _nurb_basis(kn, order, us)
+            idx = np.arange(B.shape[1]) % pnts          # cyclic splines wrap their points
+            return B, idx
+
+
+        def _bez_segment(p0, p1, p2, p3, res):
+            t = np.arange(res)[:, None] / float(res)
+            mt = 1.0 - t
+            return mt ** 3 * p0 + 3 * mt * mt * t * p1 + 3 * mt * t * t * p2 + t ** 3 * p3
+
+
+        def _bez_tangent(p0, p1, p2, p3, res):
+            t = np.arange(res)[:, None] / float(res)
+            mt = 1.0 - t
+            return mt * mt * (p1 - p0) + 2 * mt * t * (p2 - p1) + t * t * (p3 - p2)
+
+
+        def _spline_path(ctx, nu, cu_res):
+            """-> (points (n,3), radius (n,), tilt (n,), cyclic) of one curve spline."""
+            bf = ctx.bf
+            typ = nu.int("type", 0)
+            n = nu.int("pntsu", 0)
+            cyc = bool(nu.int("flagu", 0) & CU_NURB_CYCLIC)
+            res = max(1, nu.int("resolu", cu_res) or cu_res)
+            if typ == CU_BEZIER:
+                rec = bf.struct_records(nu.ptr("bezt"), "BezTriple", n, {"vec": "f4", "radius": "f4", "alfa": "f4"}, ctx=nu)
+                if not rec or "vec" not in rec or n < 1:
+                    return None
+                vec = np.asarray(rec["vec"], float).reshape(n, 3, 3)
+                rad = np.asarray(rec.get("radius", np.ones(n)), float).reshape(n)
+                tilt = np.asarray(rec.get("alfa", np.zeros(n)), float).reshape(n)
+                pts, rr, tt, tg = [], [], [], []
+                segs = n if cyc else n - 1
+                for i in range(segs):
+                    j = (i + 1) % n
+                    pts.append(_bez_segment(vec[i, 1], vec[i, 2], vec[j, 0], vec[j, 1], res))
+                    tg.append(_bez_tangent(vec[i, 1], vec[i, 2], vec[j, 0], vec[j, 1], res))
+                    f = np.arange(res) / float(res)
+                    rr.append(rad[i] + (rad[j] - rad[i]) * f)
+                    tt.append(tilt[i] + (tilt[j] - tilt[i]) * f)
+                if not cyc:
+                    pts.append(vec[n - 1:n, 1]); rr.append(rad[n - 1:n]); tt.append(tilt[n - 1:n])
+                    tg.append(vec[n - 1:n, 1] - vec[n - 1:n, 0])
+                if not pts:
+                    return None
+                tg = np.concatenate(tg)
+                P = np.concatenate(pts)
+                # a zero-length handle has no derivative: fall back to the chord
+                bad = np.linalg.norm(tg, axis=1) < 1e-9
+                if np.any(bad):
+                    ch = np.gradient(P, axis=0) if len(P) > 1 else np.zeros_like(P)
+                    tg[bad] = ch[bad]
+                return P, np.concatenate(rr), np.concatenate(tt), cyc, tg
+            rec = bf.struct_records(nu.ptr("bp"), "BPoint", n, {"vec": "f4", "radius": "f4", "alfa": "f4"}, ctx=nu)
+            if not rec or "vec" not in rec or n < 1:
+                return None
+            P = np.asarray(rec["vec"], float).reshape(n, 4)
+            rad = np.asarray(rec.get("radius", np.ones(n)), float).reshape(n)
+            tilt = np.asarray(rec.get("alfa", np.zeros(n)), float).reshape(n)
+            if typ == CU_POLY:
+                return P[:, :3].copy(), rad, tilt, cyc, None
+            order = nu.int("orderu", 4)
+            count = res * (n if cyc else max(n - 1, 1))
+            B, idx = _nurb_samples(n, order, nu.int("flagu", 0), count)
+            W = B * P[idx, 3][None]
+            den = W.sum(1, keepdims=True)
+            den[den == 0] = 1.0
+            pts = (W @ P[idx, :3]) / den
+            return pts, (W @ rad[idx]) / den[:, 0], (W @ tilt[idx]) / den[:, 0], cyc, None
+
+
+        def _unit_rows(a):
+            ln = np.linalg.norm(a, axis=1, keepdims=True)
+            return a / np.where(ln > 1e-12, ln, 1.0)
+
+
+        def _path_frames(P, cyc, flat2d, twist_mode, T=None):
+            n = len(P)
+            if n < 2:
+                return None
+            # like Blender (bevel_list_calc_bisect): inner points use the bisector of
+            # the two neighbouring segments; open ends keep the spline's own tangent
+            nxt = _unit_rows(np.roll(P, -1, 0) - P)
+            prv = _unit_rows(P - np.roll(P, 1, 0))
+            Tb = nxt + prv
+            if cyc:
+                T = Tb
+            else:
+                T0 = T
+                T = Tb
+                T[0] = nxt[0] if T0 is None else T0[0]
+                T[-1] = prv[-1] if T0 is None else T0[-1]
+            if flat2d:
+                T = T.copy()
+                T[:, 2] = 0.0
+            ln = np.linalg.norm(T, axis=1, keepdims=True)
+            T = T / np.where(ln > 1e-12, ln, 1.0)
+            Z = np.array([0.0, 0.0, 1.0])
+            if flat2d:
+                N = np.tile(Z, (n, 1))
+            elif twist_mode == 0:                      # Z-Up
+                N = Z[None] - (T @ Z)[:, None] * T
+                bad = np.linalg.norm(N, axis=1) < 1e-6
+                N[bad] = np.array([0.0, 1.0, 0.0])
+                N /= np.linalg.norm(N, axis=1, keepdims=True)
+            else:                                       # minimum twist (parallel transport)
+                N = np.empty_like(P)
+                n0 = Z - (T[0] @ Z) * T[0]
+                if np.linalg.norm(n0) < 1e-6:
+                    n0 = np.array([0.0, 1.0, 0.0]) - T[0][1] * T[0]
+                N[0] = n0 / np.linalg.norm(n0)
+                for i in range(1, n):
+                    v1 = P[i] - P[i - 1]
+                    c1 = v1 @ v1
+                    if c1 < 1e-18:
+                        N[i] = N[i - 1]
+                        continue
+                    rL = N[i - 1] - (2.0 / c1) * (v1 @ N[i - 1]) * v1
+                    tL = T[i - 1] - (2.0 / c1) * (v1 @ T[i - 1]) * v1
+                    v2 = T[i] - tL
+                    c2 = v2 @ v2
+                    ni = rL - (2.0 / c2) * (v2 @ rL) * v2 if c2 > 1e-18 else rL
+                    ni = ni - (ni @ T[i]) * T[i]
+                    N[i] = ni / max(np.linalg.norm(ni), 1e-12)
+                if cyc and n > 2:                       # spread the closing mismatch along the loop
+                    v1 = P[0] - P[-1]
+                    c1 = v1 @ v1
+                    back = N[-1] - (2.0 / c1) * (v1 @ N[-1]) * v1 if c1 > 1e-18 else N[-1]
+                    back = back - (back @ T[0]) * T[0]
+                    ang = math.atan2(np.cross(back, N[0]) @ T[0], back @ N[0])
+                    for i in range(n):
+                        a = ang * i / n
+                        B_ = np.cross(T[i], N[i])
+                        N[i] = N[i] * math.cos(a) + B_ * math.sin(a)
+            B = np.cross(T, N)
+            return T, N, B
+
+
+        def _bevel_profile(d, e, res):
+            """(k,2) side/up points and whether the profile is closed."""
+            res = max(0, int(res))
+            if d > 0 and e > 0:
+                q = res + 1
+                pts = []
+                for k in range(q + 1):                   # lower-left quarter, centred (0,-e)
+                    a = -math.pi / 2 - k * (math.pi / 2) / q
+                    pts.append((d * math.cos(a), -e + d * math.sin(a)))
+                for k in range(q + 1):                   # upper-left
+                    a = math.pi - k * (math.pi / 2) / q
+                    pts.append((d * math.cos(a), e + d * math.sin(a)))
+                for k in range(1, q + 1):                # upper-right
+                    a = math.pi / 2 - k * (math.pi / 2) / q
+                    pts.append((d * math.cos(a), e + d * math.sin(a)))
+                for k in range(q):                       # lower-right
+                    a = -k * (math.pi / 2) / q
+                    pts.append((d * math.cos(a), -e + d * math.sin(a)))
+                return np.array(pts), True
+            if d > 0:
+                nr = 4 + 2 * res
+                a = math.pi - (np.arange(nr) + 1) * 2 * math.pi / nr
+                return np.stack([d * np.cos(a), d * np.sin(a)], 1), True
+            if e > 0:
+                return np.array([[0.0, -e], [0.0, e]]), False
+            return None, False
+
+
+        def _polygon_area2d(p):
+            x, y = p[:, 0], p[:, 1]
+            return 0.5 * float(np.sum(x * np.roll(y, -1) - np.roll(x, -1) * y))
+
+
+        def _decode_curve(ctx, cu, oname):
+            """Curve / Surface data -> (PolyMesh, info) like Blender's evaluated mesh."""
+            bf = ctx.bf
+            flag = cu.int("flag", CU_3D)
+            flat2d = not (flag & CU_3D)
+            e = abs(cu.float("ext1", 0.0))
+            d = abs(cu.float("ext2", 0.0))
+            res_b = cu.int("bevresol", 4)
+            cu_res = max(1, cu.int("resolu", 12))
+            twist = cu.int("twist_mode", 3)
+            offset = cu.float("width", 1.0) - 1.0
+            if cu.int("bevel_mode", 0) != 0 or cu.ptr("bevobj") or cu.ptr("taperobj"):
+                ctx.warn_once("cubev_" + oname, f".blend: '{oname}' uses a bevel object / custom profile / taper — "
+                              f"imported with a round bevel")
+            prof, closed = _bevel_profile(d, e, res_b)
+            V, faces, fmat, fsm = [], [], [], []
+            nverts = 0
+
+            def add(verts, fcs, mat, smooth):
+                nonlocal nverts
+                V.append(verts)
+                for f in fcs:
+                    faces.append([nverts + i for i in f])
+                    fmat.append(mat)
+                    fsm.append(smooth)
+                nverts += len(verts)
+            fills = []
+            for nu in bf.listbase(cu.sub("nurb"), "Nurb"):
+                mat = nu.int("mat_nr", 0)
+                smooth = bool(nu.int("flag", 0) & 1)
+                if nu.int("pntsv", 1) > 1:                    # NURBS surface
+                    pu, pv = nu.int("pntsu", 0), nu.int("pntsv", 0)
+                    rec = bf.struct_records(nu.ptr("bp"), "BPoint", pu * pv, {"vec": "f4"}, ctx=nu)
+                    if not rec or "vec" not in rec:
+                        continue
+                    P = np.asarray(rec["vec"], float).reshape(pv, pu, 4)
+                    fu, fv = nu.int("flagu", 0), nu.int("flagv", 0)
+                    cu_, cv_ = bool(fu & CU_NURB_CYCLIC), bool(fv & CU_NURB_CYCLIC)
+                    nsu = max(2, nu.int("resolu", 4) * pu)
+                    nsv = max(2, nu.int("resolv", 4) * pv)
+                    Bu, iu = _nurb_samples(pu, nu.int("orderu", 4), fu, nsu)
+                    Bv, iv = _nurb_samples(pv, nu.int("orderv", 4), fv, nsv)
+                    Pw = P[iv][:, iu]                          # (cv, cu, 4)
+                    w = Pw[..., 3]
+                    num = np.einsum("su,tv,vuc->tsc", Bu, Bv, Pw[..., :3] * w[..., None])
+                    den = np.einsum("su,tv,vu->ts", Bu, Bv, w)
+                    den[den == 0] = 1.0
+                    G = num / den[..., None]                   # (nsv, nsu, 3)
+                    idx = np.arange(nsv * nsu).reshape(nsv, nsu)
+                    fcs = []
+                    for j in range(nsv if cv_ else nsv - 1):
+                        for i in range(nsu if cu_ else nsu - 1):
+                            j2, i2 = (j + 1) % nsv, (i + 1) % nsu
+                            fcs.append([idx[j, i], idx[j2, i], idx[j2, i2], idx[j, i2]])
+                    add(G.reshape(-1, 3), fcs, mat, smooth)
+                    continue
+                path = _spline_path(ctx, nu, cu_res)
+                if path is None:
+                    continue
+                P, rad, tilt, cyc, tang = path
+                if flat2d:
+                    P = P.copy()
+                    P[:, 2] = 0.0
+                if prof is not None and len(P) >= 2:
+                    fr = _path_frames(P, cyc, flat2d, twist, tang)
+                    if fr is None:
+                        continue
+                    T, N, B = fr
+                    if np.any(tilt != 0):
+                        c, s = np.cos(tilt)[:, None], np.sin(tilt)[:, None]
+                        N, B = N * c - B * s, B * c + N * s
+                    if offset:
+                        P = P + B * offset
+                    k = len(prof)
+                    ring = (P[:, None, :] + rad[:, None, None] *
+                            (prof[None, :, 0, None] * B[:, None, :] + prof[None, :, 1, None] * N[:, None, :]))
+                    n = len(P)
+                    fcs = []
+                    for i in range(n if cyc else n - 1):
+                        i2 = (i + 1) % n
+                        for j in range(0 if closed else 1, k):
+                            jm = (j - 1) % k
+                            q = [i * k + j, i2 * k + j, i2 * k + jm, i * k + jm]
+                            fcs.append(q[::-1] if (flat2d and cyc) else q)  # as Blender winds closed 2D shapes
+                    add(ring.reshape(-1, 3), fcs, mat, smooth)
+                    if closed and not cyc and (flag & CU_FILL_CAPS):
+                        # caps are flat faces with their own vertices (a hard edge at the rim)
+                        add(ring[-1], [list(range(k))], mat, False)
+                        add(ring[0], [list(range(k - 1, -1, -1))], mat, False)
+                if flat2d and cyc and (flag & (CU_FRONT | CU_BACK)) and len(P) >= 3:
+                    fills.append((P, mat, smooth))
+            if fills:
+                for P, mat, smooth in fills:
+                    poly = P[:, :2]
+                    ccw = _polygon_area2d(poly) >= 0
+                    loop = list(range(len(P))) if ccw else list(range(len(P) - 1, -1, -1))
+                    h = e + d
+                    if (flag & CU_FRONT) and (flag & CU_BACK) and h == 0:
+                        add(P, [loop], mat, False)
+                        continue
+                    if flag & CU_FRONT:
+                        add(P + np.array([0.0, 0.0, h]), [loop], mat, False)
+                    if flag & CU_BACK:
+                        add(P - np.array([0.0, 0.0, h]), [loop[::-1]], mat, False)
+                if len(fills) > 1:
+                    ctx.warn_once("cuholes_" + oname, f".blend: '{oname}' has several filled shapes — "
+                                  f"holes are not cut out")
+            if not faces:
+                return None, {}
+            Vall = np.concatenate(V)
+            sizes = [len(f) for f in faces]
+            m = PolyMesh(Vall, np.concatenate([[0], np.cumsum(sizes)]), np.concatenate(faces),
+                         np.asarray(fmat), np.asarray(fsm), cu.id_name())
+            return m, {"uv_names": [], "col_names": [], "face_image": None}
+
+
+        def _apply_shape_keys(ctx, ob, me, m, oname):
+            """Relative shape keys at their current values, as Blender shows them:
+            muted keys skipped, each key relative to its own reference key,
+            'Shape Key Lock' (pin) shows the active key alone at full strength."""
+            key = me.deref("key", "Key")
+            if key is None:
+                return m
+            kbs = ctx.bf.listbase(key.sub("block"), "KeyBlock")
+            if len(kbs) < 2:
+                return m
+            nv = len(m.V)
+            data = []
+            for kb in kbs:
+                p = kb.ptr("data")
+                n = kb.int("totelem", 0)
+                arr = ctx.bf.array(p, "f4", n * 3, ctx=kb) if p and n == nv else None
+                data.append(None if arr is None else arr.reshape(nv, 3).astype(np.float64))
+            if key.int("type", 1) != 1:                       # KEY_NORMAL: absolute keys (rare)
+                ctx.warn_once("abskey_" + oname, f".blend: '{oname}' uses absolute shape keys — "
+                              f"imported in its basis shape")
+                return m
+            V = m.V.copy()
+            pinned = ob.int("shapeflag", 0) & 1               # OB_SHAPE_LOCK
+            active = ob.int("shapenr", 1) - 1
+            changed = False
+            for i, kb in enumerate(kbs):
+                if i == 0 or data[i] is None:
+                    continue
+                if pinned:
+                    if i != active:
+                        continue
+                    w = 1.0
+                else:
+                    if kb.int("flag", 0) & 1:                 # KEYBLOCK_MUTE
+                        continue
+                    w = kb.float("curval", 0.0)
+                if abs(w) < 1e-9:
+                    continue
+                r = kb.int("relative", 0)
+                ref = data[r] if 0 <= r < len(data) and data[r] is not None else data[0]
+                if ref is None:
+                    continue
+                if kb.str("vgroup"):
+                    ctx.warn_once("kbvg_" + oname, f".blend: shape key '{kb.str('name')}' on '{oname}' is limited "
+                                  f"to a vertex group — applied to the whole mesh")
+                V += w * (data[i] - ref)
+                changed = True
+            if changed:
+                m.V = V
+            return m
 
 
         def _apply_modifiers(ctx, ob, m, obW, oname):
@@ -42815,6 +44201,10 @@ if not globals().get("_H3D27_IMPORTERS_INSTALLED"):
             return [float(max(c, 0.0)) ** (1.0 / 2.2) for c in rgb]
 
 
+        _MIXABLE_BSDF = ("ShaderNodeBsdfPrincipled", "ShaderNodeBsdfDiffuse", "ShaderNodeBsdfGlossy",
+                         "ShaderNodeBsdfAnisotropic")
+
+
         def _material_info(ctx, ma, uv_names, col_names):
             """Material view -> material_info dict (+ '_h3d' extras)."""
             key = (ma.addr() if ma is not None else 0, tuple(uv_names[:2]))
@@ -42854,6 +44244,7 @@ if not globals().get("_H3D27_IMPORTERS_INSTALLED"):
                         bsdf, _ = g.link_from(out, s)
                 # unwrap mix/add shaders: prefer a Principled/Diffuse child
                 mix_alpha = None
+                mix_other = None                   # (second BSDF, factor) of a Mix Shader
                 seen = 0
                 while bsdf is not None and g.idname(bsdf) in ("ShaderNodeMixShader", "ShaderNodeAddShader") and seen < 8:
                     seen += 1
@@ -42864,6 +44255,13 @@ if not globals().get("_H3D27_IMPORTERS_INSTALLED"):
                     if g.idname(bsdf) == "ShaderNodeMixShader" and any(g.idname(k) == "ShaderNodeBsdfTransparent" for k in kids):
                         fac = g.input(bsdf, "Fac")
                         mix_alpha = _trace(g, bsdf, fac) if fac is not None else None
+                    if (g.idname(bsdf) == "ShaderNodeMixShader" and len(kids) == 2 and mix_other is None
+                            and all(g.idname(k) in _MIXABLE_BSDF for k in kids)):
+                        fac = g.input(bsdf, "Fac")
+                        fv = _trace(g, bsdf, fac) if fac is not None else None
+                        if fv and fv[0] == "const" and fv[1] is not None:
+                            mix_other = (kids[1], float(np.asarray(fv[1]).ravel()[0]))
+                            pref = [kids[0]]
                     for k in kids:
                         if g.idname(k) == "ShaderNodeEmission":
                             c = g.input(k, "Color"); st_ = g.input(k, "Strength")
@@ -42942,9 +44340,37 @@ if not globals().get("_H3D27_IMPORTERS_INSTALLED"):
                                 alpha = float(np.asarray(mix_alpha[1]).ravel()[0])
                             elif mix_alpha[0] == "tex":
                                 alpha_tex = True
+                        if mix_other is not None:
+                            # blend the constant colour / metal / roughness of both sides
+                            k2, f = mix_other
+                            f = float(np.clip(f, 0.0, 1.0))
+
+                            def const_of(sock_names, default):
+                                sk = g.input(k2, *sock_names)
+                                v = _trace(g, k2, sk) if sk is not None else None
+                                if v and v[0] == "const" and v[1] is not None:
+                                    return np.asarray(v[1], float).ravel()
+                                return None if default is None else np.asarray(default, float).ravel()
+                            t2 = g.idname(k2)
+                            c2 = const_of(("Base Color", "Color"), None)
+                            if c2 is not None and not (bc and bc[0] in ("tex", "vcol")):
+                                base = list(np.asarray(base, float)[:3] * (1 - f) + c2[:3] * f)
+                            m2 = 0.0 if t2 == "ShaderNodeBsdfDiffuse" else (
+                                1.0 if t2 in ("ShaderNodeBsdfGlossy", "ShaderNodeBsdfAnisotropic")
+                                else float(const_of(("Metallic",), [0.0])[0]))
+                            r2 = 1.0 if t2 == "ShaderNodeBsdfDiffuse" else float(const_of(("Roughness",), [0.5])[0])
+                            m1 = 0.0 if t == "ShaderNodeBsdfDiffuse" else (1.0 if t in ("ShaderNodeBsdfGlossy",
+                                                                                        "ShaderNodeBsdfAnisotropic") else metallic)
+                            r1 = 1.0 if t == "ShaderNodeBsdfDiffuse" else rough
+                            if not (mt and mt[0] == "tex"):
+                                metallic = m1 * (1 - f) + m2 * f
+                            if not (ro and ro[0] == "tex"):
+                                rough = r1 * (1 - f) + r2 * f
+                            t = "mixed"
                         if t == "ShaderNodeBsdfDiffuse":
+                            # its Roughness input is Oren-Nayar (matte), not glossiness
                             metallic = 0.0
-                            rough = 1.0 if not (ro and ro[0] == "const") else rough
+                            rough = 1.0
                         elif t == "ShaderNodeBsdfGlossy" or t == "ShaderNodeBsdfAnisotropic":
                             metallic = 1.0
                         elif t in ("ShaderNodeBsdfGlass", "ShaderNodeBsdfRefraction"):
@@ -43080,33 +44506,41 @@ if not globals().get("_H3D27_IMPORTERS_INSTALLED"):
                     if li:
                         lights.append(li)
                     continue
-                if otype in (OB_CURVE, OB_SURF, OB_FONT, OB_MBALL):
+                if otype in (OB_FONT, OB_MBALL):
                     ctx.warn_once("curve_" + name, f".blend: '{name}' is a "
-                                  f"{ {2: 'curve', 3: 'surface', 4: 'text', 5: 'metaball'}[otype]} object — "
+                                  f"{ {4: 'text', 5: 'metaball'}[otype]} object — "
                                   f"convert it to a mesh in Blender (Object > Convert > Mesh) to import it")
                     continue
-                if otype != OB_MESH:
+                if otype not in (OB_MESH, OB_CURVE, OB_SURF):
                     continue
-                me = ob.deref("data", "Mesh")
+                is_curve = otype != OB_MESH
+                me = ob.deref("data", "Curve" if is_curve else "Mesh")
                 if me is None:
                     continue
                 mkey = me.addr()
                 if mkey not in mesh_cache:
                     try:
-                        mesh_cache[mkey] = _decode_mesh(ctx, me)
+                        mesh_cache[mkey] = _decode_curve(ctx, me, name) if is_curve else _decode_mesh(ctx, me)
                     except Exception as ex:
-                        ctx.warn_once("mesh_" + name, f".blend: mesh of '{name}' unreadable ({ex}) — skipped")
+                        ctx.warn_once("mesh_" + name, f".blend: {'curve' if is_curve else 'mesh'} of '{name}' "
+                                      f"unreadable ({ex}) — skipped")
                         mesh_cache[mkey] = (None, {})
                 base_m, info = mesh_cache[mkey]
                 if base_m is None or base_m.nf == 0:
                     continue
                 m = base_m.copy()
+                if not is_curve:
+                    try:
+                        m = _apply_shape_keys(ctx, ob, me, m, name)
+                    except Exception as ex:
+                        ctx.warn_once("keys_" + name, f".blend: shape keys of '{name}' unreadable ({ex}) — "
+                                      f"basis shape used")
                 m = _apply_modifiers(ctx, ob, m, W, name)
                 if m.nf == 0:
                     continue
                 if info.get("has_encoded_custom_normals"):
-                    ctx.warn_once("cn", ".blend: custom split normals are recomputed from "
-                                  "smooth/sharp flags (Blender's packed normal format)")
+                    ctx.warn_once("cn", f".blend: custom split normals of '{name}' could not be decoded "
+                                  f"({info.get('custom_normal_error', '?')}) — recomputed from smooth/sharp flags")
                 # material slots
                 totcol = max(me.int("totcol", 0), ob.int("totcol", 0))
                 me_mats = _ptr_array(ctx, me, "mat", me.int("totcol", 0))
