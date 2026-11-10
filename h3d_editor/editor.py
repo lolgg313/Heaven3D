@@ -1233,8 +1233,26 @@ class Editor:
             self.toast("Prefab%s made: %s" % ("s" if len(made) > 1 else "",
                                               ", ".join(os.path.basename(m) for m in made)))
 
-    def nodes_dropped_in_assets(self, payload):
-        """Objects dragged from the Outliner into Assets become prefabs."""
+    def nodes_dropped_in_assets(self, payload, pos=None):
+        """Objects dragged from the Outliner into Assets become prefabs; one
+        dropped on a prefab tile replaces that prefab (asks first)."""
+        if pos is not None and self.assets is not None:
+            g = self.assets.grid
+            try:
+                i = g.index_at(self.ui, pos[0], pos[1])
+            except Exception:
+                i = None
+            target = g.assets[i] if i is not None and i < len(g.assets) else None
+            nodes = [n for n in payload.get("nodes", []) if self.prefabs.can_save(n)]
+            if target is not None and target.path.lower().endswith(".prefab") and nodes:
+                self._replace_prefab(nodes[0], target.path)
+                return
+            if target is not None and target.is_dir and nodes:
+                folder = target.path
+                for n in nodes:
+                    self.prefabs.save(n, os.path.join(folder, self.prefabs_name(n, folder)))
+                self.refresh_assets()
+                return
         folder = self.assets.cwd if self.assets is not None else self._pdir()
         made = []
         for n in payload.get("nodes", []):
@@ -1395,9 +1413,11 @@ class Editor:
         prefab; Outliner objects -> prefab."""
         ab = self.assets
         ab._create_items = self._asset_create_items
+        ab.extra_context = self._asset_context_items
+        ab.moved.connect(self._assets_moved)
         ab.grid.dropped_here.connect(self.models_dropped_in_assets)
         ab.accepts_drop = lambda payload: isinstance(payload, dict) and payload.get("type") == "scene_nodes"
-        ab.on_drop = lambda ui, payload, x, y: self.nodes_dropped_in_assets(payload)
+        ab.on_drop = lambda ui, payload, x, y: self.nodes_dropped_in_assets(payload, (x, y))
 
     def _asset_create_items(self):
         """Right-click > Create (and the Assets Create button)."""
@@ -1408,8 +1428,8 @@ class Editor:
                 None,
                 MenuItem("Script...", self._asset_new_script, icon="file-code"),
                 MenuItem("Material...", self._asset_new_material, icon="material"),
-                MenuItem("Prefab from selection" + ("" if can_pf else "  (select an object)"),
-                         self._asset_new_prefab, icon="prefab", enabled=can_pf)]
+                MenuItem(("Prefab from '%s'" % sel.name) if can_pf else "Empty prefab...",
+                         self._asset_new_prefab if can_pf else self._asset_empty_prefab, icon="prefab")]
 
     def _asset_show(self, path):
         """Refresh Assets and select a file it just made."""
@@ -1442,6 +1462,107 @@ class Editor:
             self.materials.open(p)
             self.toast("New material %s - drag it onto an object" % os.path.basename(p))
         InputDialog.ask(self.ui, "New material", "Name", done, default="New Material")
+
+    def _asset_empty_prefab(self):
+        """Unity's Create > Prefab: an empty prefab to fill later (drop an
+        object on it, or place it, edit the instance and Apply)."""
+        from vitrail.assets import unique_path
+        folder = self.assets.cwd
+
+        def done(name):
+            name = "".join(c if (c.isalnum() or c in " _-") else "_" for c in (name or "")).strip()
+            if not name:
+                return
+            try:
+                p = self.h3d.prefab_create_empty(unique_path(folder, name, ".prefab"))
+            except Exception as ex:
+                self._report(ex)
+                self.toast("Couldn't create the prefab: %s" % ex, error=True)
+                return
+            self._asset_show(p)
+            self.toast("Empty prefab %s - drop an object from the Outliner on it to fill it"
+                       % os.path.basename(p))
+        InputDialog.ask(self.ui, "New prefab", "Name", done, default="New Prefab")
+
+    def _asset_context_items(self, a):
+        """Extra right-click items for Heaven3D files in Assets."""
+        p = a.path
+        low = p.lower()
+        e = self.engine
+        sel = e.selected
+        if low.endswith(".prefab"):
+            n_inst = len(e.prefab_instances(p))
+            return [MenuItem("Place in scene", lambda: self.prefabs.place(p), icon="add"),
+                    MenuItem("Select instances (%d)" % n_inst, lambda: self._select_instances(p), icon="target",
+                             enabled=n_inst > 0),
+                    MenuItem(("Replace with '%s'" % sel.name) if self.prefabs.can_save(sel)
+                             else "Replace with selection", lambda: self._replace_prefab(sel, p), icon="refresh",
+                             enabled=self.prefabs.can_save(sel))]
+        if low.endswith(".vmat"):
+            return [MenuItem("Edit in Material tab", lambda: self.materials.open(p), icon="edit"),
+                    MenuItem(("Assign to '%s'" % sel.name) if sel is not None else "Assign to selection",
+                             lambda: self.assign_material(sel, p), icon="cube", enabled=sel is not None)]
+        return []
+
+    def _select_instances(self, path):
+        inst = self.engine.prefab_instances(path)
+        if not inst:
+            return
+        self.select(inst[0])
+        self.focus_selected()
+        self.toast("%d instance%s of %s - selected the first" % (len(inst), "" if len(inst) == 1 else "s",
+                                                                os.path.basename(path)))
+
+    def _replace_prefab(self, n, path):
+        """Unity: drop an object on a prefab asset -> the prefab holds it."""
+        if not self.prefabs.can_save(n):
+            self.toast("Select an object first", error=True)
+            return
+        name = os.path.basename(path)
+        others = len([x for x in self.engine.prefab_instances(path) if x is not n])
+
+        def go(answer):
+            if answer != "Replace":
+                return
+            done = self.run(lambda: self.engine.prefab_replace_with(n, path))
+            if done is None:
+                return
+            self.refresh_assets()
+            self.inspector.show(self.engine.selected, force=True)
+            self.outliner.rebuild()
+            self.toast("%s now holds %s%s" % (name, n.name, " (+%d instance%s updated)" % (
+                done, "" if done == 1 else "s") if done else ""))
+        MessageBox.ask(self.ui, "Replace the contents of %s with '%s'?\n%s\nThis can't be undone."
+                       % (name, n.name, ("%d instance(s) in the scene follow it unless they were edited."
+                                         % others) if others else "No instances in this scene yet."),
+                       go, title="Replace prefab", buttons=("Replace", "Cancel"), cancel="Cancel", icon="prefab")
+
+    def _assets_moved(self, old, new):
+        """Assets renamed / moved a file or folder: keep every link working."""
+        try:
+            n = self.engine.assets_moved(old, new)
+        except Exception as ex:
+            self._report(ex)
+            self.toast("Moved, but couldn't update its links: %s" % ex, error=True)
+            return
+        if self.materials.path:
+            mp = os.path.normcase(os.path.abspath(self.materials.path))
+            oc = os.path.normcase(os.path.abspath(old))
+            if mp == oc or mp.startswith(oc + os.sep):
+                self.materials.path = os.path.join(new, os.path.abspath(self.materials.path)[len(os.path.abspath(old)) + 1:]) \
+                    if mp != oc else new
+                self.materials.title.text = os.path.basename(self.materials.path)
+                self.materials.title.invalidate(layout=True)
+        sd = os.path.normcase(os.path.join(self._pdir(), "scripts"))
+        if old.lower().endswith(".py") and os.path.normcase(os.path.dirname(os.path.abspath(old))) == sd \
+                and os.path.normcase(os.path.dirname(os.path.abspath(new))) != sd:
+            self.toast("%s is outside scripts/ now - the project only loads scripts from there"
+                       % os.path.basename(new), error=True)
+        self.inspector.show(self.engine.selected, force=True)
+        self.outliner.rebuild()
+        if n:
+            self.log("[Assets] %s -> %s: %d link%s updated" % (os.path.basename(old), os.path.basename(new), n,
+                                                              "" if n == 1 else "s"))
 
     def _asset_new_prefab(self):
         n = self.engine.selected

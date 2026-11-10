@@ -645,6 +645,8 @@ class AssetBrowser(Column):
         self.selection_changed = Signal()
         self.activated = Signal()
         self.changed = Signal()       # files on disk changed through the browser
+        self.moved = Signal()         # (old path, new path): a file / folder renamed or moved here
+        self.extra_context = None     # fn(asset) -> [MenuItem]: app items for a file's right-click menu
 
         bar = Row(spacing=4, parent=self)
         self.btn_up = Button(icon="arrow-up", tooltip="Parent folder (Backspace)", expand=0, parent=bar)
@@ -866,9 +868,11 @@ class AssetBrowser(Column):
                 MessageBox.ask(self.ui, f"“{os.path.basename(new)}” already exists.", title="Rename",
                                icon="warning")
                 return
-            os.rename(a.path, new)
-            self.ui.images.forget(a.path)
+            old = a.path
+            os.rename(old, new)
+            self.ui.images.forget(old)
             self._after_create(new)
+            self.moved.emit(old, new)
         InputDialog.ask(self.ui, "Rename", "Name", done, default=a.stem)
 
     def duplicate(self, assets):
@@ -913,6 +917,7 @@ class AssetBrowser(Column):
                 shutil.move(a.path, dst)
                 self.ui.images.forget(a.path)
                 moved += 1
+                self.moved.emit(a.path, dst)
             except OSError as exc:
                 self.status.text = f"Move failed: {exc.strerror or exc}"
         if moved:
@@ -925,9 +930,17 @@ class AssetBrowser(Column):
         sel = self.selected
         items = [MenuItem("Create", icon="plus", submenu=self._create_items())]
         if a is not None:
+            extra = []
+            if self.extra_context is not None:
+                try:
+                    extra = list(self.extra_context(a) or [])
+                except Exception:
+                    extra = []
             items += [None,
-                      MenuItem("Open", lambda: self._activate(a), icon="folder-open" if a.is_dir else "external"),
-                      MenuItem("Rename...", lambda: self.rename(a), icon="edit", shortcut="F2"),
+                      MenuItem("Open", lambda: self._activate(a), icon="folder-open" if a.is_dir else "external")]
+            if extra:
+                items += extra + [None]
+            items += [MenuItem("Rename...", lambda: self.rename(a), icon="edit", shortcut="F2"),
                       MenuItem("Duplicate", lambda: self.duplicate(sel), icon="copy", shortcut="Ctrl+D"),
                       MenuItem("Delete...", lambda: self.delete(sel), icon="trash", shortcut="Del"),
                       None,

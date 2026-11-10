@@ -3,13 +3,13 @@
     python tests/test_assets_create.py [shots folder]
 
   * a right-click on empty space in Assets opens a menu with Create, and
-    Create holds Folder, Script..., Material... and Prefab from selection
+    Create holds Folder, Script..., Material... and a prefab item
   * Script... asks for a name + template and writes scripts/<name>.py (where
     projects load scripts from) - the script loads and is shown in Assets
   * Material... makes a node material in the current folder and opens it in
     the Material tab
-  * Prefab from selection is greyed out with nothing selected and saves the
-    selected object as a real (placeable) prefab otherwise
+  * the prefab item is never greyed out: "Empty prefab..." with nothing
+    selected, "Prefab from '<object>'" saves the selection as a real prefab
 """
 import importlib.util
 import json
@@ -91,9 +91,9 @@ def menu_open():
     ed.ui.close_popups()
     have = list(items())
     check("Create offers Folder, Script, Material and Prefab",
-          have == ["Folder", "Script...", "Material...", "Prefab from selection"], have)
-    check("Prefab from selection is greyed out with nothing selected",
-          not items()["Prefab from selection"].is_enabled())
+          have == ["Folder", "Script...", "Material...", "Empty prefab..."], have)
+    check("the prefab item works with nothing selected (Empty prefab...)",
+          items()["Empty prefab..."].is_enabled())
     items()["Script..."].action()
 
 
@@ -132,10 +132,10 @@ at(15, material_made)
 
 
 def prefab():
-    check("Prefab from selection is enabled with an object selected", items()["Prefab from selection"].is_enabled())
+    check("with an object selected it reads Prefab from 'Crate1'", "Prefab from 'Crate1'" in items())
     ed.open_tab("Assets")
     ed.assets.navigate(os.path.join(proj, "assets"))
-    items()["Prefab from selection"].action()
+    items()["Prefab from 'Crate1'"].action()
 
 
 at(5, prefab)
@@ -144,7 +144,7 @@ at(5, prefab)
 def prefab_made():
     p = os.path.join(proj, "assets", "Crate1.prefab")
     ok = os.path.isfile(p)
-    check("Prefab from selection saves the object", ok)
+    check("Prefab from 'Crate1' saves the object", ok)
     if ok:
         n = eng.spawn_prefab(p, position=(5, 0, 5))
         check("... as a real prefab that places", n is not None and n.mesh is not None)
