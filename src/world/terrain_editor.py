@@ -2226,7 +2226,8 @@ void main(){
                     return
                 ed = getattr(self, "_tp_editor", None)
                 if ed is not None and ed.panel_open:
-                    ed.draw_panel(ui)
+                    if getattr(self, "_vt", None) is None:     # the Vitrail editor has its own panel
+                        ed.draw_panel(ui)
                     ed.draw_ring(self)
                 # Floating fallback button: only when the patcher could NOT
                 # place the navbar button (marker config set by

@@ -14,6 +14,10 @@
 # ---------------------------------------------------------------------------
 _H3D_EDITOR_STATE = {"error": None, "module": None, "editor": None}
 
+# Packages add Vitrail panels to the editor's Inspector here:
+#   fn(inspector, node) -> None, or an object with .sync() (called while shown)
+VT_INSPECTOR_PANELS = []
+
 
 def _h3d_editor_wanted(engine):
     if getattr(engine, "mode", None) != "editor":

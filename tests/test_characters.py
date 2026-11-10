@@ -172,6 +172,9 @@ def shot(name, W=1280, Hh=760):
 
 def phase_editor(project):
     import numpy as np
+    # this phase drives the CLASSIC creator panel (the Vitrail editor's Inspector
+    # version is tested in tests/test_character_creator_vitrail.py)
+    os.environ["HEAVEN3D_CLASSIC_UI"] = "1"
     H, eng = boot(project, "editor")
     import glm
     import pygame

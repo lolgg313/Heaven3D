@@ -1587,7 +1587,10 @@ def _creator_target(engine):
 
 
 def _spec(bp):
-    s = CORE.normalize_spec(bp.properties.get("character"), _lib())
+    cur = bp.properties.get("character")
+    s = CORE.normalize_spec(cur, _lib())
+    if isinstance(cur, dict) and s == cur:
+        return cur                  # same content: keep the dict (panels hold on to it)
     bp.properties["character"] = s
     return s
 
@@ -1681,27 +1684,29 @@ def _build_creator(engine):
     R = m.UIRect
     reg = ui.scroll_regions.get("mh_creator")
     node, bp = _creator_target(engine)
-    if node is None:
+    if node is None or _vt_panel_active(engine):
         STATE["creator"] = None
         if reg is not None:
             reg.viewport = None
         return
     STATE["creator"] = node
     T = m.THEME
-    lib = _lib()
-    s = _spec(bp)
-    rig = rig_of(node)
     ui.panel(R(X0 - 0.004, BOT - 0.004, X1 - X0 + 0.008, TOP - BOT + 0.044), T["panel"])
     ui.text(R(X0 + 0.006, TOP + 0.008, X1 - X0 - 0.07, 0.03), f"Character Creator  -  {node.name}", T["text"])
     w = _UI(engine)
-
-    def setm(k):
-        def f(v):
-            s["macro"][k] = v
-            _mark(engine, node)
-        return f
-    tabs = ("Body", "Face", "Clothes", "Hair", "Skin", "Anim", "AI")
     w.y = TOP + 0.002
+    _creator_header(w, engine, node, bp)
+    vp = R(X0, BOT, X1 - X0, w.y - BOT - 0.006)
+    ui.begin_scroll("mh_creator", vp)
+    top_y = w.y
+    _creator_tab(w, engine, node, bp)
+    ui.end_scroll(w.y, top_y)
+
+
+def _creator_header(w, engine, node, bp):
+    """Tabs + Random / Male / Female / Style (classic and Vitrail panels)."""
+    lib = _lib()
+    tabs = ("Body", "Face", "Clothes", "Hair", "Skin", "Anim", "AI")
     w.buttons([(t, (lambda t=t: STATE.update(tab=t)), STATE["tab"] == t) for t in tabs[:4]], h=0.028)
     w.buttons([(t, (lambda t=t: STATE.update(tab=t)), STATE["tab"] == t) for t in tabs[4:]], h=0.028)
     style = STATE["style"]
@@ -1718,9 +1723,19 @@ def _build_creator(engine):
         STATE["style"] = st[(st.index(STATE["style"]) + 1) % len(st)] if STATE["style"] in st else st[0]
     w.buttons([("Random", randomize(), False), ("Male", randomize("male"), False),
                ("Female", randomize("female"), False), (f"Style: {style}", cycle_style, False)], h=0.028)
-    vp = R(X0, BOT, X1 - X0, w.y - BOT - 0.006)
-    ui.begin_scroll("mh_creator", vp)
-    top_y = w.y
+
+
+def _creator_tab(w, engine, node, bp):
+    """The selected tab's controls (classic and Vitrail panels)."""
+    lib = _lib()
+    s = _spec(bp)
+    rig = rig_of(node)
+
+    def setm(k):
+        def f(v):
+            s["macro"][k] = v
+            _mark(engine, node)
+        return f
     tab = STATE["tab"]
     mac = s["macro"]
     if tab == "Body":
@@ -1765,7 +1780,140 @@ def _build_creator(engine):
         _anim_tab(w, engine, node, bp, rig)
     elif tab == "AI":
         _ai_tab(w, engine, node, bp)
-    ui.end_scroll(w.y, top_y)
+
+
+# =========================================================================== Vitrail panel
+def _vt_panel_active(engine):
+    """The Vitrail editor shows the creator in its Inspector (classic panel off)."""
+    return getattr(engine, "_vt", None) is not None and STATE.get("vt_hooked", False)
+
+
+class _VtW:
+    """The _UI helper's calls, building Vitrail widgets (retained UI)."""
+
+    def __init__(self, panel, dry=False):
+        self.p = panel
+        self.dry = dry
+        self.sig = []
+        self.values = {}
+
+    def _click(self, cb):
+        def run():
+            try:
+                cb()
+            finally:
+                self.p.dirty = True            # rebuild after the click (never inside it)
+        return run
+
+    def label(self, text, color=None, indent=0.0):
+        self.sig.append(("label", text))
+        if not self.dry:
+            self.p.vt.Label(text, dim=True, parent=self.p.box)
+
+    def header(self, text):
+        self.sig.append(("header", text))
+        if not self.dry:
+            self.p.vt.Label(text, bold=True, parent=self.p.box)
+
+    def buttons(self, items, h=None):
+        self.sig.append(("buttons", tuple((lab, bool(act)) for lab, _cb, act in items)))
+        if self.dry:
+            return
+        r = self.p.vt.Row(spacing=3, parent=self.p.box)
+        for lab, cb, act in items:
+            self.p.vt.Button(lab, self._click(cb), primary=bool(act), parent=r)
+
+    def item(self, label, cb, active=False, h=None):
+        self.sig.append(("item", label, bool(active)))
+        if not self.dry:
+            self.p.vt.Button(label, self._click(cb), primary=bool(active), parent=self.p.box)
+
+    def slider(self, key, label, value, lo, hi, setter, fmt=None):
+        self.sig.append(("slider", key, label))
+        self.values[key] = float(value)
+        if self.dry:
+            return
+        f = self.p.Fmt(label, float(value), min=float(lo), max=float(hi), slider=True, parent=self.p.box,
+                       on_change=lambda v, s_=setter: s_(float(v)))
+        f.fmt = fmt
+        self.p.sliders[key] = f
+
+
+class _VtCreator:
+    """Character Creator in the Inspector (Vitrail editor)."""
+
+    def __init__(self, inspector, node, bp):
+        import vitrail as vt
+        self.vt = vt
+        self.insp = inspector
+        self.engine = inspector.engine
+        self.node, self.bp = node, bp
+
+        class Fmt(vt.NumberField):
+            fmt = None
+
+            def format_value(self):
+                try:
+                    return self.fmt(self._value) if self.fmt else "%.2f" % self._value
+                except Exception:
+                    return "%.2f" % self._value
+        self.Fmt = Fmt
+        self.panel = inspector.panel("Character Creator", icon="user")
+        self.box = vt.Column(spacing=3, parent=self.panel)
+        self.sliders = {}
+        self.sig = None
+        self.dirty = False
+        self._next = 0.0
+        self.build()
+
+    def build(self):
+        self.box.clear()
+        self.sliders = {}
+        w = _VtW(self)
+        try:
+            _creator_header(w, self.engine, self.node, self.bp)
+            _creator_tab(w, self.engine, self.node, self.bp)
+        except Exception as ex:
+            self.vt.Label("Character Creator error: %s" % ex, parent=self.box)
+            _warn_once("vt_build", "[MHCharacters] creator panel: %s" % ex)
+        self.sig = w.sig
+        self.dirty = False
+        self.box.invalidate(layout=True)
+
+    def busy(self):
+        return any(getattr(f, "_dragging", False) or getattr(f, "_edit_start", None) is not None
+                   or getattr(f, "editing", False) for f in self.sliders.values())
+
+    def sync(self):
+        if self.node.parent is None:
+            return
+        now = time.monotonic()
+        if not self.dirty and now < self._next:
+            return
+        self._next = now + 0.3
+        if self.busy():
+            return
+        dry = _VtW(self, dry=True)
+        try:
+            _creator_header(dry, self.engine, self.node, self.bp)
+            _creator_tab(dry, self.engine, self.node, self.bp)
+        except Exception:
+            return
+        if self.dirty or dry.sig != self.sig:
+            self.build()
+            return
+        for k, v in dry.values.items():
+            f = self.sliders.get(k)
+            if f is not None and abs(float(f.value) - v) > 1e-6:
+                f.set_value(v, emit=False)
+
+
+def _vt_inspector_panel(inspector, node):
+    """VT_INSPECTOR_PANELS hook: the creator for a selected character."""
+    bp = _char_bp(node)
+    if bp is None:
+        return None
+    return _VtCreator(inspector, node, bp)
 
 
 def _random_face(s):
@@ -2225,6 +2373,11 @@ def register(h3d):
     h3d.add_tool("Characters: use project 'animations' folder", tool_scan_animations)
     h3d.add_tool("NPC path: new path", tool_new_path)
     h3d.add_tool("NPC path: add point", tool_add_point)
+
+    hooks = getattr(m, "VT_INSPECTOR_PANELS", None)
+    if isinstance(hooks, list) and _vt_inspector_panel not in hooks:
+        hooks.append(_vt_inspector_panel)        # the Vitrail editor's Inspector shows the creator
+        STATE["vt_hooked"] = True
 
     if h3d.mode == "editor":
         def build_ui(original, self, *a, **kw):

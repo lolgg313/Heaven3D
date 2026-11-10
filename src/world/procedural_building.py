@@ -2010,8 +2010,9 @@ class ProceduralSectorGenerator:
             Gx, Gy, Gz = self._grid_of(wx, wy, wz)
             slot = self.occupancy.get((Gx, Gy, Gz)) or {}
             if slot.get(key):
-                Log.warn(f"[FinalPatch] cell {(Gx, Gy, Gz)} already holds "
-                         f"'{key}' - skipping duplicate placement")
+                # the plan's corner / shared walls: normal, not a problem
+                Log.debug(f"[FinalPatch] cell {(Gx, Gy, Gz)} already holds "
+                          f"'{key}' - skipping duplicate placement")
                 continue
             node = SceneNode(f"FP_{key}_{Gx}_{Gy}_{Gz}", parent=root)
             node.position = glm.vec3(wx, wy, wz)
@@ -2894,7 +2895,7 @@ else:
                     ui.button(UIRect(0.935, 0.944, 0.060, 0.042),
                               "BUILDING EDITOR", gen.toggle_panel,
                               THEME["accent_dim"])
-                if gen.panel_open:
+                if gen.panel_open and not vt_editor:       # the Vitrail editor has its own panel
                     gen.draw_panel(ui)
             except Exception as ex:
                 Log.warn(f"[FinalPatch] building editor UI skipped: {ex}")

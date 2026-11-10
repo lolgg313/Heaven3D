@@ -37,6 +37,7 @@ from .inspector import Inspector
 from .outliner import Outliner
 from .materials import MaterialTab
 from .prefabs import PrefabTools
+from .tools import ToolPanels
 from .scripting import ApiTab, Console, ScriptsTab, project_dir
 from .widgets import Bar, Dock, PassColumn, PassRow
 
@@ -84,6 +85,10 @@ class Editor:
         theme = Theme(scale=float(self.prefs.get("scale", 1.0)))
         self.ui = vt.UI(e.ctx, (e.width, e.height), theme)
         self.build()
+        # anything that opens a tool through the engine (keys, packages) gets the Vitrail panel
+        for attr, name in (("toggle_terrain_editor", "terrain"), ("toggle_particle_studio", "particles")):
+            setattr(e, attr, (lambda *_a, _n=name, **_k: self.tools.toggle(_n)))
+            self._restore.append(lambda attr=attr: e.__dict__.pop(attr, None))
         # events
         orig_get = pygame.event.get
 
@@ -177,9 +182,10 @@ class Editor:
         self.pill_label = Label("Esc frees the mouse", dim=True, width=150, expand=0, parent=self.play_pill)
         self.viewport.place(self.play_pill, 8, 8)
         self.right = Dock(width=self.RIGHT_W, expand=0, parent=mid)
-        Label("Inspector", bold=True, icon="sliders", parent=self.right)
+        self.insp_label = Label("Inspector", bold=True, icon="sliders", parent=self.right)
         self.inspector = Inspector(self)
         self.right.add(self.inspector.scroll)
+        self.tools = ToolPanels(self, self.right)      # Buildings / Terrain / Particles
         self.bottom = Dock(height=int(self.prefs.get("bottom_h", self.BOTTOM_H)), padding=2, parent=root)
         self.tabs = Tabs(fill=True, parent=self.bottom)
         self.console = Console(self, self.tabs.tab("Console", icon="terminal"))
@@ -225,10 +231,11 @@ class Editor:
         Button("Import", self.import_dialog, icon="download", tooltip="Import a 3D model (Ctrl+I)", expand=0,
                parent=bar)
         vt.Separator(parent=bar, width=8, expand=0)
-        Button("Terrain", lambda: self.run(self.engine.toggle_terrain_editor), icon="shapes", expand=0, parent=bar)
-        Button("Particles", lambda: self.run(self.engine.toggle_particle_studio), icon="sparkle", expand=0,
-               parent=bar)
-        Button("Buildings", self.toggle_buildings, icon="home", expand=0, parent=bar)
+        self.tool_open_btns = {}
+        for name, label, icon in (("terrain", "Terrain", "shapes"), ("particles", "Particles", "sparkle"),
+                                  ("buildings", "Buildings", "home")):
+            self.tool_open_btns[name] = Button(label, lambda n=name: self.tools.toggle(n), icon=icon, expand=0,
+                                               parent=bar)
         self.project_label = Label("", align="right", dim=True, parent=bar)
         return bar
 
@@ -237,9 +244,17 @@ class Editor:
         playing = bool(getattr(self.engine, "_playing", False))
         hide = playing and p.get("hide_in_play", True)
         tool_open = self.tool_panel_open()
+        vt_tool = getattr(self, "tools", None) is not None and self.tools.active is not None
         self.left.visible = p.get("show_outliner", True) and not hide and not tool_open
-        self.right.visible = p.get("show_inspector", True) and not hide and not tool_open
+        self.right.visible = (p.get("show_inspector", True) or vt_tool) and not hide and not tool_open
         self.bottom.visible = p.get("show_bottom", True) and not hide and not tool_open
+        if getattr(self, "tools", None) is not None:
+            self.insp_label.visible = self.inspector.scroll.visible = not vt_tool
+            self.tools.box.visible = vt_tool
+            for name, b in getattr(self, "tool_open_btns", {}).items():
+                if b.primary != (self.tools.active == name):
+                    b.primary = self.tools.active == name
+                    b.invalidate()
         # while playing, the game gets the whole window: a small Stop pill floats over it
         self.menubar.visible = self.toolbar.visible = self.status.visible = not hide
         self.play_pill.visible = hide
@@ -248,14 +263,10 @@ class Editor:
     def tool_panel_open(self):
         """A classic panel is up (terrain / particles / buildings, or one a
         package draws): the docks step aside so it can be seen and used."""
+        # Terrain / Particles / Buildings have Vitrail panels (h3d_editor/tools.py);
+        # only a panel a package draws with the classic UI still needs the room
         e = self.engine
-        if getattr(getattr(e, "ui", None), "_panel_rects", None):
-            return True
-        for attr in ("_tp_editor", "_gu_studio", "procedural_generator"):
-            t = getattr(e, attr, None)
-            if t is not None and getattr(t, "panel_open", False):
-                return True
-        return False
+        return bool(getattr(getattr(e, "ui", None), "_panel_rects", None))
 
     # =================================================================== menus
     def create_menu_items(self):
@@ -350,9 +361,9 @@ class Editor:
                 MenuItem("Reload scripts", lambda: self.scripts.reload_all(), icon="refresh", shortcut="Ctrl+R"),
             ]),
             ("Tools", [
-                MenuItem("Terrain editor", lambda: self.run(e.toggle_terrain_editor), icon="shapes"),
-                MenuItem("Particle studio", lambda: self.run(e.toggle_particle_studio), icon="sparkle"),
-                MenuItem("Building editor", self.toggle_buildings, icon="home"),
+                MenuItem("Terrain editor", lambda: self.tools.toggle("terrain"), icon="shapes"),
+                MenuItem("Particle studio", lambda: self.tools.toggle("particles"), icon="sparkle"),
+                MenuItem("Building editor", lambda: self.tools.toggle("buildings"), icon="home"),
                 MenuItem("Edit collider shape", lambda: self.run(lambda: e._phys_edit_shape(e.selected))
                          if e.selected is not None else None, icon="shield"),
                 None,
@@ -542,6 +553,11 @@ class Editor:
                 self.prefabs.tick(now)
             self.graph.flush()
             self.materials.flush()
+            if self.tools.active is not None:
+                vis = self.tools.box.visible
+                self.tools.tick(now)
+                if self.tools.box.visible != vis:
+                    self.apply_visibility()
             if not playing:
                 self.anim.flush()
             if self._pkg_count != len(getattr(self.h3d, "_H3D27_PKG_STATE", {}).get("tools", ())):
@@ -844,11 +860,7 @@ class Editor:
         self.run(self.engine.toggle_play)
 
     def toggle_buildings(self):
-        gen = getattr(self.engine, "procedural_generator", None)
-        if gen is None:
-            self.toast("The building editor isn't available in this build", error=True)
-            return
-        self.run(gen.toggle_panel)
+        self.tools.toggle("buildings")
 
     def toggle_pref(self, key):
         self.prefs[key] = not self.prefs.get(key, True)
@@ -925,6 +937,8 @@ class Editor:
         e = self.engine
         if getattr(e, "_playing", False):
             e.toggle_play()
+        if self.tools.active is not None:
+            self.tools.close()                 # its panel belongs to the scene being left
         try:
             self.h3d._h3d27_import_project_scripts(os.path.dirname(os.path.abspath(path)))
         except Exception:
@@ -947,6 +961,8 @@ class Editor:
             e = self.engine
             if getattr(e, "_playing", False):
                 e.toggle_play()
+            if self.tools.active is not None:
+                self.tools.close()
             for n in list(e.scene.root.children):
                 if not (n.is_sun or n.is_clouds or n.is_ocean):
                     e._delete_node(n)

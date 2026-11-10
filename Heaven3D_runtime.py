@@ -25077,8 +25077,9 @@ class ProceduralSectorGenerator:
             Gx, Gy, Gz = self._grid_of(wx, wy, wz)
             slot = self.occupancy.get((Gx, Gy, Gz)) or {}
             if slot.get(key):
-                Log.warn(f"[FinalPatch] cell {(Gx, Gy, Gz)} already holds "
-                         f"'{key}' - skipping duplicate placement")
+                # the plan's corner / shared walls: normal, not a problem
+                Log.debug(f"[FinalPatch] cell {(Gx, Gy, Gz)} already holds "
+                          f"'{key}' - skipping duplicate placement")
                 continue
             node = SceneNode(f"FP_{key}_{Gx}_{Gy}_{Gz}", parent=root)
             node.position = glm.vec3(wx, wy, wz)
@@ -25961,7 +25962,7 @@ else:
                     ui.button(UIRect(0.935, 0.944, 0.060, 0.042),
                               "BUILDING EDITOR", gen.toggle_panel,
                               THEME["accent_dim"])
-                if gen.panel_open:
+                if gen.panel_open and not vt_editor:       # the Vitrail editor has its own panel
                     gen.draw_panel(ui)
             except Exception as ex:
                 Log.warn(f"[FinalPatch] building editor UI skipped: {ex}")
@@ -31167,7 +31168,8 @@ void main(){
                     return
                 ed = getattr(self, "_tp_editor", None)
                 if ed is not None and ed.panel_open:
-                    ed.draw_panel(ui)
+                    if getattr(self, "_vt", None) is None:     # the Vitrail editor has its own panel
+                        ed.draw_panel(ui)
                     ed.draw_ring(self)
                 # Floating fallback button: only when the patcher could NOT
                 # place the navbar button (marker config set by
@@ -49029,6 +49031,10 @@ HeavenEngine.prefab_is_modified = lambda self, node: prefab_is_modified(prefab_r
 #   classic UI is used and the reason is logged.
 # ---------------------------------------------------------------------------
 _H3D_EDITOR_STATE = {"error": None, "module": None, "editor": None}
+
+# Packages add Vitrail panels to the editor's Inspector here:
+#   fn(inspector, node) -> None, or an object with .sync() (called while shown)
+VT_INSPECTOR_PANELS = []
 
 
 def _h3d_editor_wanted(engine):

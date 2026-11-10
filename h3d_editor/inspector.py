@@ -138,6 +138,7 @@ class Inspector:
         self.node, self._sig = node, sig
         self.body.clear()
         self.binds = []
+        self.extra = []
         if node is None:
             self.empty_hint()
         else:
@@ -161,6 +162,11 @@ class Inspector:
         if self.signature(self.node) != self._sig:
             self.show(self.node, force=True)
             return
+        for obj in getattr(self, "extra", ()):
+            try:
+                obj.sync()
+            except Exception as ex:
+                self.ed._report(ex)
         for w, get in self.binds:
             if _busy(w):
                 continue
@@ -273,6 +279,20 @@ class Inspector:
             elif ed.prefabs.can_save(n):
                 Button("Save as Prefab...", lambda: ed.prefabs.save_dialog(n), icon="prefab", parent=head,
                        tooltip="Save this object as a reusable .prefab in assets/prefabs")
+
+        # panels packages add (e.g. the MakeHuman Character Creator): first, they are
+        # what this kind of object is about
+        self.extra = []
+        for hook in list(getattr(self.h3d, "VT_INSPECTOR_PANELS", None) or ()):
+            try:
+                obj = hook(self, n)
+            except Exception as ex:
+                import traceback
+                Label("A package panel failed: %s" % ex, parent=self.body)
+                self.ed.log(traceback.format_exc(), "ERROR")
+                continue
+            if obj is not None:
+                self.extra.append(obj)
 
         # transform
         p = self.panel("Transform", icon="move")
