@@ -139,9 +139,12 @@ def docked(name):
     return f
 
 
-# ---- Buildings ----
+# ---- Buildings (the classic sector generator behind the Building Maker) ----
 at(10, lambda: ed.tools.toggle("buildings"))
 at(10, docked("buildings"))
+at(2, lambda: press("Classic sector generator..."))
+at(8, lambda: check("the classic generator opens from the Building Maker",
+                    ed.tools.classic and not eng.building_tool.active))
 
 
 def gen():

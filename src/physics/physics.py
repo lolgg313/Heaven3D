@@ -827,7 +827,10 @@ def _mesh_shape_view(node: "SceneNode", col: MeshCollider) -> dict:
                     dtype=np.float64)          # rows = basis columns
     t = np.asarray([float(m[3][0]), float(m[3][1]), float(m[3][2])],
                    dtype=np.float64)
-    tris_world = (tris64 @ M3.T + t).astype(np.float32)
+    # M3's rows are the basis vectors, so a row vector p maps to p @ M3
+    # (p @ M3.T applied the inverse rotation: a mesh collider turned 90
+    # degrees collided mirrored)
+    tris_world = (tris64 @ M3 + t).astype(np.float32)
     # drop degenerate (zero-area) triangles — they carry no collision
     e1 = tris_world[:, 1] - tris_world[:, 0]
     e2 = tris_world[:, 2] - tris_world[:, 0]

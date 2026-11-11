@@ -69,6 +69,7 @@ class ToolPanels:
         self.title.text = title
         self.title.icon = icon
         self.title.invalidate(layout=True)
+        self.scroll.scroll = 0                    # a newly opened tool starts at its top
         self.rebuild()
         self.box.visible = True
         self.ed.apply_visibility()
@@ -79,6 +80,9 @@ class ToolPanels:
         try:
             if name == "buildings" and getattr(e, "procedural_generator", None) is not None:
                 e.procedural_generator.close_panel()
+                t = getattr(e, "building_tool", None)
+                if t is not None:
+                    t.close()
             elif name == "terrain" and getattr(e, "_tp_editor", None) is not None:
                 e._tp_editor.close()
             elif name == "particles":
@@ -118,6 +122,13 @@ class ToolPanels:
             if gen is None or not gen.panel_open:
                 self.close()
                 return
+            t = getattr(e, "building_tool", None)
+            if t is not None and not getattr(self, "classic", False):
+                if not t.active:                      # e.g. after undoing / reloading
+                    t.open()
+                if id(t.target()) != getattr(self, "_bk_seen", None):
+                    self._bk_seen = id(t.target())
+                    self.rebuild()                    # another building is being edited now
         elif self.active == "terrain":
             ed = getattr(e, "_tp_editor", None)
             if ed is None or not ed.panel_open:
@@ -200,9 +211,163 @@ class ToolPanels:
             self.ed.toast("The building editor isn't available in this build", error=True)
             return False
         gen.open_panel()
+        gen.set_mode("generate")
+        self.classic = False
+        t = self._bk()
+        if t is not None:
+            t.on_edit = self._bk_on_edit
+            t.open()
+            self._bk_seen = id(t.target())
         return True
 
+    # ---- Building Maker: rooms painted on a grid, baked into one object ----
+    def _bk(self):
+        fn = getattr(self.h3d, "_bk_tool", None)
+        return fn(self.engine) if fn is not None else None
+
+    def _bk_find(self, node, name):
+        t = self._bk()
+        if t is not None and t._alive(node):
+            return node
+        for n in (t.buildings() if t is not None else ()):
+            if n.name == name:
+                return n
+        return None
+
+    def _bk_on_edit(self, node, before, after, label, created):
+        ed = self.ed
+        if created:
+            ed._push_created(node, label)
+            ed.refresh_outliner() if hasattr(ed, "refresh_outliner") else None
+            self.rebuild()
+            return
+        name = node.name
+        t = self._bk()
+
+        def put(params):
+            n = self._bk_find(node, name)
+            if n is not None:
+                t.restore(n, params)
+        ed.ui.undo.push(label, lambda: put(before), lambda: put(after))
+
+    def _bk_do(self, fn, *a, **kw):
+        """Run a tool action with errors reported, then refresh the panel."""
+        try:
+            fn(*a, **kw)
+        except Exception as ex:
+            self.ed._report(ex)
+            self.ed.toast("%s: %s" % (type(ex).__name__, ex), error=True)
+        self.rebuild()
+
+    def _bk_classic(self, on):
+        gen = self._gen()
+        t = self._bk()
+        self.classic = bool(on)
+        if on:
+            t.close()
+        else:
+            gen.set_mode("generate")
+            t.open()
+        self.rebuild()
+
+    def _bk_generate(self):
+        t = self._bk()
+        g = self._bk_gen
+        n = t.generate(g["w"], g["d"], g["floors"], g["damage"] / 100.0)
+        self.ed.select(n)
+        self.ed.toast("Generated " + n.name)
+
+    def _bk_village(self):
+        t = self._bk()
+        nodes = t.generate_village(8, max(self._bk_gen["damage"], 0) / 100.0)
+        self.ed.select(nodes[-1])
+        self.ed.toast("Generated a village of %d houses" % (len(nodes) - 1))
+
     def _buildings(self):
+        t = self._bk()
+        if t is None or getattr(self, "classic", False):
+            if t is not None:
+                Button("Back to the Building Maker", lambda: self._bk_classic(False), icon="home", primary=True,
+                       parent=self.body, tooltip="Rooms painted on a grid, with walls, roofs and stairs made for you")
+            return self._buildings_classic()
+        h = self.h3d
+        node = t.target()
+        d = h.bk_data(node) if node is not None else None
+        if not hasattr(self, "_bk_gen"):
+            self._bk_gen = {"w": 4, "d": 3, "floors": 2, "damage": 0}
+        # ---- building ----
+        p = self.section("Building", "home")
+        blds = t.buildings()
+        opts = [(-1, "New building (paint to start)")] + [(i, n.name) for i, n in enumerate(blds)]
+        cur = next((i for i, n in enumerate(blds) if n is node), -1)
+        Dropdown(opts, cur, label="Editing", parent=p,
+                 on_change=lambda i: self._bk_do(lambda: (t.set_node(blds[i] if i >= 0 else None),
+                                                          self.ed.select(blds[i]) if i >= 0 else None)))
+        Dropdown([(k, h.BK_STYLES[k]["label"]) for k in h.BK_STYLE_ORDER], t.style, label="Style", parent=p,
+                 on_change=lambda k: self._bk_do(t.set_style, k))
+        # ---- tools ----
+        p = self.section("Tools", "edit")
+        btns = self.grid(p, [(label, (lambda k=k: self._bk_do(setattr, t, "tool", k)), None, tip)
+                             for k, label, tip in h.BK_TOOLS])
+        for b, (k, _l, _tip) in zip(btns, h.BK_TOOLS):
+            self.hl(b, lambda k=k: t.tool == k)
+        tip = next(tp for k, _l, tp in h.BK_TOOLS if k == t.tool)
+        Label(tip, dim=True, parent=p)
+        Label("Ctrl or Shift + drag removes.  Right-drag looks around.", dim=True, parent=p)
+        # ---- finish ----
+        p = self.section("Room finish", "palette")
+        Dropdown([(k, v["label"]) for k, v in h.BK_FINISHES.items()], t.finish_name(), label="Finish", parent=p,
+                 on_change=lambda k: setattr(t, "finish", k))
+        # ---- storey ----
+        p = self.section("Storey", "layers")
+        r = Row(spacing=3, parent=p)
+        Button("", lambda: t.set_level(t.level - 1), icon="minus", expand=0, tooltip="Storey down (PageDown)", parent=r)
+        self.bind(NumberField("Storey", t.level, integer=True, min=-4, max=40, parent=r,
+                              on_change=lambda v: t.set_level(int(v))), lambda: t.level)
+        Button("", lambda: t.set_level(t.level + 1), icon="plus", expand=0, tooltip="Storey up (PageUp)", parent=r)
+        self.bind(Checkbox("Hide the storeys above", t.cut, parent=p, on_change=lambda v: t.set_cut(v)),
+                  lambda: t.cut)
+        # ---- roof ----
+        if d is not None:
+            p = self.section("Roof", "shapes")
+            Dropdown([("gable", "Gable"), ("hip", "Hipped"), ("flat", "Flat with parapet"), ("none", "No roof")],
+                     d.roof_type(), label="Shape", parent=p, on_change=lambda k: self._bk_do(t.set_roof, type_=k))
+            NumberField("Pitch (deg)", round(d.roof_pitch()), integer=True, min=5, max=65, parent=p,
+                        on_change=lambda v: self._bk_do(t.set_roof, pitch=float(v)))
+        # ---- generator ----
+        p = self.section("Quick house", "sparkle")
+        g = self._bk_gen
+        r = Row(spacing=3, parent=p)
+        NumberField("Width", g["w"], integer=True, min=2, max=24, parent=r, on_change=lambda v: g.update(w=int(v)))
+        NumberField("Depth", g["d"], integer=True, min=2, max=24, parent=r, on_change=lambda v: g.update(d=int(v)))
+        r = Row(spacing=3, parent=p)
+        NumberField("Floors", g["floors"], integer=True, min=1, max=8, parent=r,
+                    on_change=lambda v: g.update(floors=int(v)))
+        NumberField("Damage %", g["damage"], integer=True, min=0, max=90, parent=r,
+                    on_change=lambda v: g.update(damage=int(v)))
+        Button("Generate house", lambda: self._bk_do(self._bk_generate), icon="plus", primary=True, parent=p,
+               tooltip="A new house in the current style, in front of the camera")
+        Button("Generate village", lambda: self._bk_do(self._bk_village), icon="sparkle", parent=p,
+               tooltip="Eight varied houses along a cobbled street, some shelled (uses Damage %)")
+        # ---- info ----
+        p = self.section("Scene", "info")
+        self.bind(Label("", parent=p), self._bk_stats)
+        Button("Classic sector generator...", lambda: self._bk_classic(True), parent=p,
+               tooltip="The older module-by-module generator (military, office, sci-fi, lab...)")
+
+    def _bk_stats(self):
+        t = self._bk()
+        n = t.target()
+        if t.message:
+            msg, t.message = t.message, ""
+            self.ed.toast(msg, error=True)
+        if n is None:
+            return "No building yet: pick Room and drag in the viewport"
+        s = self.h3d.bk_stats(n)
+        return "%s: %d cells, %s triangles in %d meshes" % (n.name, s["cells"], "{:,}".format(s["triangles"]),
+                                                             s["meshes"])
+
+    def _buildings_classic(self):
         gen = self._gen()
         h = self.h3d
         B = h.BiomeManager

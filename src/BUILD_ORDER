@@ -72,5 +72,8 @@ gameplay/visual_scripts.py
 gameplay/animator.py
 world/material_graph.py
 world/prefabs.py
+world/bk_textures.py
+world/bk_building.py
+world/bk_tool.py
 editor/vitrail_hook.py
 engine/run.py
