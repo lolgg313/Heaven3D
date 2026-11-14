@@ -38,6 +38,17 @@ The whole engine ships as a single file, `Heaven3D.py`, so it is easy to bundle 
 - Window glass no longer casts a solid shadow: the sun shines into the rooms.
 - New: **Buildings > Town** generates blocks of houses on a grid of streets (one undo step, one "Town" group whose houses stay selectable one by one), with a **Detail** setting (Low / Medium / High / Ultra) and live numbers. From a script: `engine.add_town(6, 6)`, `engine.set_building_detail(preset="high")`, `engine.building_stats()`. See [docs/BUILDING_MAKER.md](docs/BUILDING_MAKER.md).
 
+**Physics: many bodies cost much less.** Measured with boxes dropped on a plane (same machine, before / after):
+
+| Dynamic boxes | While falling and settling | At rest |
+|---|---|---|
+| 400 | 25.8 ms -> 17.7 ms a step | 12.9 ms -> 1.4 ms |
+| 1,000 | 72.7 ms -> 52.0 ms | 35.6 ms -> 4.4 ms |
+
+- The pair search (sweep and prune) runs as one compiled call on flat arrays instead of a Python test per candidate. It returns the same pairs in the same order, so the simulation is unchanged.
+- Collision and trigger events only go to the scripts on the two objects, so the contact of a pair without any script is no longer worked out a second time just for events. Scripts receive exactly the same events (`tests/test_physics_fast_paths.py` runs the old code next to the new one at every step). `engine.physics.events_for_all = True` brings the old bookkeeping back if you read `physics.events` yourself.
+- Contacts and the solver are still Python: that is what the "falling and settling" column still pays for.
+
 **The three view modes are back in the new editor.** *Lit*, *Lit + Wire* and *Wire* are buttons at the top-left of the 3D view again (they had moved into the View menu only), and **F4** goes to the next one. The wireframe is no longer drawn over a running game.
 
 **Fixes**

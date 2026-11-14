@@ -2258,12 +2258,21 @@ class PhysicsWorld:
         # instead of the O(n^2) all-pairs scan (32M tests @ 8000 entries).
         sap_pairs = self.sap.run(self.entries)
         by_id = {id(e): e for e in self.entries}
+        all_pairs = bool(getattr(self, "events_for_all", False))
         for (ia, ib) in sap_pairs:
             ei = by_id.get(ia)
             ej = by_id.get(ib)
             if ei is None or ej is None:
                 continue
             if not ei.node.visible or not ej.node.visible:
+                continue
+            # Events go to the scripts (blueprints) on the two objects and to
+            # nobody else: a pair without any script has no one to tell, so
+            # its contact isn't worked out a second time just for that (the
+            # solver already did, in the substeps).  With hundreds of plain
+            # crates and debris this was most of the step.
+            # PhysicsWorld.events_for_all = True records every pair again.
+            if not all_pairs and not ei.node.blueprints and not ej.node.blueprints:
                 continue
             if not _aabb_overlap(ei.aabb0, ei.aabb1, ej.aabb0, ej.aabb1):
                 continue

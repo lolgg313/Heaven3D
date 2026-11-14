@@ -15087,12 +15087,21 @@ class PhysicsWorld:
         # instead of the O(n^2) all-pairs scan (32M tests @ 8000 entries).
         sap_pairs = self.sap.run(self.entries)
         by_id = {id(e): e for e in self.entries}
+        all_pairs = bool(getattr(self, "events_for_all", False))
         for (ia, ib) in sap_pairs:
             ei = by_id.get(ia)
             ej = by_id.get(ib)
             if ei is None or ej is None:
                 continue
             if not ei.node.visible or not ej.node.visible:
+                continue
+            # Events go to the scripts (blueprints) on the two objects and to
+            # nobody else: a pair without any script has no one to tell, so
+            # its contact isn't worked out a second time just for that (the
+            # solver already did, in the substeps).  With hundreds of plain
+            # crates and debris this was most of the step.
+            # PhysicsWorld.events_for_all = True records every pair again.
+            if not all_pairs and not ei.node.blueprints and not ej.node.blueprints:
                 continue
             if not _aabb_overlap(ei.aabb0, ei.aabb1, ej.aabb0, ej.aabb1):
                 continue
@@ -22658,8 +22667,22 @@ class SweepAndPrune:
     def _pair(ia, ib):
         return (ia, ib) if ia <= ib else (ib, ia)
 
+    # below this many boxes the plain loops are as fast as filling the arrays
+    FAST_MIN = 24
+
     def run(self, entries):
         """All overlapping pairs inside one list (sorted by aabb0.x)."""
+        if _HAS_NUMBA and len(entries) >= self.FAST_MIN:
+            try:
+                pairs = _sap_run_fast(entries)
+                if pairs is not None:
+                    self.last_pairs = pairs
+                    return pairs
+            except Exception:
+                pass                      # (any surprise: the plain loop below)
+        return self._run_py(entries)
+
+    def _run_py(self, entries):
         order = sorted(entries, key=lambda e: e.aabb0.x)
         pairs = set()
         active = []
@@ -22678,6 +22701,16 @@ class SweepAndPrune:
 
     def run_cross(self, list_a, list_b):
         """Overlapping (a, b) pairs between two lists (aabb overlap XYZ)."""
+        if _HAS_NUMBA and list_a and list_b and len(list_a) + len(list_b) >= self.FAST_MIN:
+            try:
+                pairs = _sap_cross_fast(list_a, list_b)
+                if pairs is not None:
+                    return pairs
+            except Exception:
+                pass
+        return self._run_cross_py(list_a, list_b)
+
+    def _run_cross_py(self, list_a, list_b):
         pairs = set()
         if not list_a or not list_b:
             return pairs
@@ -22693,6 +22726,131 @@ class SweepAndPrune:
                 if self._yz_overlap(e, o):
                     pairs.add(self._pair(id(e), id(o)))
         return pairs
+
+
+# ---- compiled broadphase -------------------------------------------------
+# The same sweeps as _run_py / _run_cross_py, on flat arrays in one compiled
+# call instead of a Python test per candidate (the pair search was the
+# largest single cost of a physics step: 337,000 Python calls for 400
+# boxes).  The pairs come out in the SAME ORDER the Python loops add them,
+# so the returned set is built identically (same contents, same iteration
+# order) and everything downstream behaves exactly as before.
+@_jit(cache=True)
+def _sap_run_kernel(order, x0, x1, y0, y1, z0, z1, active, out_a, out_b):
+    """-> number of pairs (may exceed len(out_a): call again with more room)."""
+    n = order.shape[0]
+    cap = out_a.shape[0]
+    na = 0
+    count = 0
+    for k in range(n):
+        e = order[k]
+        ex0 = x0[e]
+        kept = 0
+        for t in range(na):
+            a = active[t]
+            if x1[a] >= ex0:
+                if y0[a] <= y1[e] and y0[e] <= y1[a] and z0[a] <= z1[e] and z0[e] <= z1[a]:
+                    if count < cap:
+                        out_a[count] = a
+                        out_b[count] = e
+                    count += 1
+                active[kept] = a
+                kept += 1
+        active[kept] = e
+        na = kept + 1
+    return count
+
+
+@_jit(cache=True)
+def _sap_cross_kernel(order_b, ax0, ax1, ay0, ay1, az0, az1, bx0, bx1, by0, by1, bz0, bz1, out_a, out_b):
+    na = ax0.shape[0]
+    nb = order_b.shape[0]
+    cap = out_a.shape[0]
+    count = 0
+    for i in range(na):
+        ex0 = ax0[i]
+        ex1 = ax1[i]
+        for k in range(nb):
+            o = order_b[k]
+            if bx0[o] > ex1:
+                break
+            if bx1[o] < ex0:
+                continue
+            if ay0[i] <= by1[o] and by0[o] <= ay1[i] and az0[i] <= bz1[o] and bz0[o] <= az1[i]:
+                if count < cap:
+                    out_a[count] = i
+                    out_b[count] = o
+                count += 1
+    return count
+
+
+_SAP_BUF = {"a": np.empty(4096, np.int64), "b": np.empty(4096, np.int64)}
+
+
+def _sap_boxes(entries):
+    """(6 float64 arrays, ids) of the entries' boxes, or None when a value
+    is not a number (the Python loops define what happens then)."""
+    n = len(entries)
+    lo = [e.aabb0 for e in entries]
+    hi = [e.aabb1 for e in entries]
+    arr = np.empty((6, n), np.float64)
+    arr[0] = [v.x for v in lo]
+    arr[1] = [v.x for v in hi]
+    arr[2] = [v.y for v in lo]
+    arr[3] = [v.y for v in hi]
+    arr[4] = [v.z for v in lo]
+    arr[5] = [v.z for v in hi]
+    if not np.isfinite(arr).all():
+        return None
+    return arr, [id(e) for e in entries]
+
+
+def _sap_pairs(count, ids_a, ids_b):
+    """The set the Python loops build: (smaller id, larger id), added in order."""
+    a = _SAP_BUF["a"][:count].tolist()
+    b = _SAP_BUF["b"][:count].tolist()
+    pairs = set()
+    add = pairs.add
+    for i, j in zip(a, b):
+        ia, ib = ids_a[i], ids_b[j]
+        add((ia, ib) if ia <= ib else (ib, ia))
+    return pairs
+
+
+def _sap_run_fast(entries):
+    got = _sap_boxes(entries)
+    if got is None:
+        return None
+    arr, ids = got
+    n = len(entries)
+    order = np.argsort(arr[0], kind="stable")          # sorted() is stable too: same order for equal x
+    active = np.empty(n, np.int64)
+    while True:
+        count = _sap_run_kernel(order, arr[0], arr[1], arr[2], arr[3], arr[4], arr[5], active,
+                                _SAP_BUF["a"], _SAP_BUF["b"])
+        if count <= len(_SAP_BUF["a"]):
+            break
+        _SAP_BUF["a"] = np.empty(count * 2, np.int64)
+        _SAP_BUF["b"] = np.empty(count * 2, np.int64)
+    return _sap_pairs(count, ids, ids)
+
+
+def _sap_cross_fast(list_a, list_b):
+    ga = _sap_boxes(list_a)
+    gb = _sap_boxes(list_b)
+    if ga is None or gb is None:
+        return None
+    A, ids_a = ga
+    B, ids_b = gb
+    order_b = np.argsort(B[0], kind="stable")
+    while True:
+        count = _sap_cross_kernel(order_b, A[0], A[1], A[2], A[3], A[4], A[5], B[0], B[1], B[2], B[3], B[4], B[5],
+                                  _SAP_BUF["a"], _SAP_BUF["b"])
+        if count <= len(_SAP_BUF["a"]):
+            break
+        _SAP_BUF["a"] = np.empty(count * 2, np.int64)
+        _SAP_BUF["b"] = np.empty(count * 2, np.int64)
+    return _sap_pairs(count, ids_a, ids_b)
 
 
 @_jit(cache=True)
@@ -28420,6 +28578,15 @@ def _h3d_numba_warmup():
         pass
     try:
         _ocean_wave_height_at(1.0, 2.0, 0.5)
+    except Exception:
+        pass
+    try:                                    # the broadphase kernels (first Play must not wait for them)
+        z = np.zeros(2, np.float64)
+        o = np.ones(2, np.float64)
+        idx = np.arange(2, dtype=np.int64)
+        buf = np.empty(4, np.int64)
+        _sap_run_kernel(idx, z, o, z, o, z, o, np.empty(2, np.int64), buf, buf.copy())
+        _sap_cross_kernel(idx, z, o, z, o, z, o, z, o, z, o, z, o, buf, buf.copy())
     except Exception:
         pass
     _H3D_WARMUP["seconds"] = time.perf_counter() - t0

@@ -796,6 +796,15 @@ def _h3d_numba_warmup():
         _ocean_wave_height_at(1.0, 2.0, 0.5)
     except Exception:
         pass
+    try:                                    # the broadphase kernels (first Play must not wait for them)
+        z = np.zeros(2, np.float64)
+        o = np.ones(2, np.float64)
+        idx = np.arange(2, dtype=np.int64)
+        buf = np.empty(4, np.int64)
+        _sap_run_kernel(idx, z, o, z, o, z, o, np.empty(2, np.int64), buf, buf.copy())
+        _sap_cross_kernel(idx, z, o, z, o, z, o, z, o, z, o, z, o, buf, buf.copy())
+    except Exception:
+        pass
     _H3D_WARMUP["seconds"] = time.perf_counter() - t0
 
 
