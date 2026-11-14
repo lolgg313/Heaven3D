@@ -4,3 +4,5 @@ dist/
 tests/importers/output/
 .heaven3d_logs/
 *.heaven3d.bak
+build/
+*.egg-info/

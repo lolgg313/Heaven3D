@@ -1,0 +1,51 @@
+# pip install git+https://github.com/lolgg313/Heaven3D        (see README: "Install with pip")
+#
+# The pip package is an EXTRA way to get Heaven3D.  It installs the very same
+# files this repository holds (the single-file engine built by build.py, the
+# editor, the Hub, the templates and the packages), kept together in one
+# folder inside site-packages, plus the commands `heaven3d` and `heaven3d-hub`.
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "heaven3d"
+dynamic = ["version"]
+description = "Heaven3D: a 3D game engine and editor written in Python on ModernGL"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "Apache-2.0" }
+keywords = ["game engine", "3d", "opengl", "moderngl", "editor", "pygame"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS",
+    "Topic :: Games/Entertainment",
+    "Topic :: Multimedia :: Graphics :: 3D Rendering",
+]
+# the same libraries install.py installs (there with exact versions for a
+# private environment; here as minimums, so they fit into yours)
+dependencies = [
+    "numpy>=1.24",
+    "pyglm>=2.7",
+    "moderngl>=5.8",
+    "pygame>=2.5",
+    "numba>=0.58",
+    "Pillow>=9.0",
+    "zstandard>=0.21",
+    "trimesh>=4.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/lolgg313/Heaven3D"
+Issues = "https://github.com/lolgg313/Heaven3D/issues"
+
+[project.scripts]
+heaven3d = "heaven3d._cli:editor"
+heaven3d-runtime = "heaven3d._cli:runtime"
+heaven3d-hub = "heaven3d._cli:hub"
+
+[tool.setuptools]
+packages = ["heaven3d"]
+include-package-data = false

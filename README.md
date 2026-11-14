@@ -326,6 +326,34 @@ Saves are written atomically (a crash can't corrupt them) with an automatic back
 
 `Heaven3D.py` is built from the modular source in [`src/`](src/README.md) (`core/`, `rendering/`, `physics/`, `gameplay/`, `editor/`, ...). Edit a file there, then run `python build.py`; players and exported games still get the single file. `python build.py --check` tells you if the built files are out of date, and `python build.py --where LINE` finds the source file behind a line number in a traceback.
 
+## 🐍 Install with pip (an extra way)
+
+```bash
+pip install git+https://github.com/lolgg313/Heaven3D
+```
+
+That installs Heaven3D and the libraries it needs, and gives you three commands:
+
+| Command | What it starts |
+|---|---|
+| `heaven3d` | the editor (same options as `python Heaven3D.py`, e.g. `heaven3d --project game.heaven3d --runtime`) |
+| `heaven3d-hub` | the Hub: projects, templates, packages, tutorials |
+| `heaven3d-runtime --project game.heaven3d` | a project without the editor |
+
+and the engine as a module:
+
+```python
+import heaven3d
+engine = heaven3d.HeavenEngine(mode="runtime", project_path="game.heaven3d")
+engine.run()
+```
+
+- It is the same single-file engine, editor, templates and packages as this repository, kept together in one folder inside site-packages (`heaven3d.engine_dir()` tells you where). Nothing else changes: you can still download the repository or a standalone edition and run `Heaven3D.py`.
+- The asset packages are about 350 MB. Leave them out with `HEAVEN3D_PIP_LITE=1 pip install git+https://github.com/lolgg313/Heaven3D`.
+- Update with `pip install --upgrade --force-reinstall git+https://github.com/lolgg313/Heaven3D`; a release or branch with `...Heaven3D@v3.1.4`.
+- The Hub and the file dialogs use tkinter, which pip can't install: on Linux add it with your package manager (`sudo apt install python3-tk`). A virtual environment keeps Heaven3D's libraries apart from your other projects.
+- Working on the engine: `pip install -e .` in a clone uses the files of the clone directly.
+
 ## 📦 Requirements (running from source)
 
 - Python **3.10+**

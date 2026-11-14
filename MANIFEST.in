@@ -1,0 +1,9 @@
+include LICENSE README.md build.py
+include Heaven3D.py Heaven3D_runtime.py Heaven3D_Hub.py Heaven3D_Hub.pyw Play_HQFPS_Arena.py
+graft h3d_editor
+graft vitrail
+graft templates
+graft branding
+graft tutorials
+graft packages
+global-exclude __pycache__/* *.pyc
