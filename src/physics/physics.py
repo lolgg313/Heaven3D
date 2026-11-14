@@ -413,48 +413,68 @@ class _TriMeshBVH:
         self.tri_hi = np.maximum(np.maximum(v0, v1), v2)
         cent = (v0 + v1 + v2) * (1.0 / 3.0)
 
-        node_lo: List[np.ndarray] = []
-        node_hi: List[np.ndarray] = []
-        left: List[int] = []
-        right: List[int] = []
-        start: List[int] = []
-        count: List[int] = []
-        packed: List[int] = []
-
-        def build(idxs: np.ndarray) -> int:
-            ni = len(node_lo)
-            node_lo.append(None); node_hi.append(None)
-            left.append(-1); right.append(-1)
-            start.append(-1); count.append(0)
-            lo = self.tri_lo[idxs].min(axis=0)
-            hi = self.tri_hi[idxs].max(axis=0)
-            node_lo[ni] = lo
-            node_hi[ni] = hi
-            if len(idxs) <= self.LEAF:
-                start[ni] = len(packed)
-                count[ni] = len(idxs)
-                packed.extend(int(i) for i in idxs)
-                return ni
-            ext = hi - lo
-            axis = int(np.argmax(ext))
-            srt = idxs[np.argsort(cent[idxs, axis], kind="quicksort")]
-            mid = len(srt) // 2
-            left[ni] = build(srt[:mid])
-            right[ni] = build(srt[mid:])
-            return ni
-
-        if n > 0:
-            build(np.arange(n))
-        self.packed = np.asarray(packed, dtype=np.int32)
-        self.node_lo = (np.stack(node_lo) if node_lo
-                        else np.zeros((0, 3), np.float32))
-        self.node_hi = (np.stack(node_hi) if node_hi
-                        else np.zeros((0, 3), np.float32))
-        self.left = np.asarray(left, dtype=np.int32)
-        self.right = np.asarray(right, dtype=np.int32)
-        self.start = np.asarray(start, dtype=np.int32)
-        self.count = np.asarray(count, dtype=np.int32)
-        self.node_count = len(left)
+        # Median split along the longest axis, exactly as before, but built
+        # level by level with numpy on every node of a level at once (the
+        # recursive build made thousands of tiny numpy calls: 15 ms for the
+        # 1,300 triangles of a house, half a minute at Play for a town).
+        if n == 0:
+            self.packed = np.zeros(0, np.int32)
+            self.node_lo = np.zeros((0, 3), np.float32)
+            self.node_hi = np.zeros((0, 3), np.float32)
+            self.left = self.right = self.start = self.count = np.zeros(0, np.int32)
+            self.node_count = 0
+            return
+        order = np.arange(n, dtype=np.int64)
+        starts = np.zeros(1, np.int64)
+        ends = np.full(1, n, np.int64)
+        L_lo, L_hi, L_left, L_right, L_start, L_count = [], [], [], [], [], []
+        next_id = 1
+        pad_lo = np.full((1, 3), np.inf, np.float32)
+        pad_hi = np.full((1, 3), -np.inf, np.float32)
+        while len(starts):
+            k = len(starts)
+            size = ends - starts
+            pairs = np.empty(2 * k, np.int64)
+            pairs[0::2] = starts
+            pairs[1::2] = ends
+            lo = np.minimum.reduceat(np.concatenate([self.tri_lo[order], pad_lo]), pairs, axis=0)[0::2]
+            hi = np.maximum.reduceat(np.concatenate([self.tri_hi[order], pad_hi]), pairs, axis=0)[0::2]
+            leaf = size <= self.LEAF
+            lf = np.full(k, -1, np.int32)
+            rt = np.full(k, -1, np.int32)
+            L_lo.append(lo)
+            L_hi.append(hi)
+            L_left.append(lf)
+            L_right.append(rt)
+            L_start.append(np.where(leaf, starts, -1).astype(np.int32))
+            L_count.append(np.where(leaf, size, 0).astype(np.int32))
+            inner = np.nonzero(~leaf)[0]
+            if not len(inner):
+                break
+            s_in, e_in, z_in = starts[inner], ends[inner], size[inner]
+            axis = np.argmax(hi[inner] - lo[inner], axis=1)
+            seg = np.repeat(np.arange(len(inner)), z_in)
+            first = np.cumsum(z_in) - z_in
+            pos = np.repeat(s_in - first, z_in) + np.arange(int(z_in.sum()))
+            sub = order[pos]
+            order[pos] = sub[np.lexsort((cent[sub, axis[seg]], seg))]
+            mid = s_in + z_in // 2
+            kids = next_id + np.arange(2 * len(inner), dtype=np.int32)
+            lf[inner] = kids[0::2]
+            rt[inner] = kids[1::2]
+            next_id += 2 * len(inner)
+            starts = np.empty(2 * len(inner), np.int64)
+            ends = np.empty(2 * len(inner), np.int64)
+            starts[0::2], starts[1::2] = s_in, mid
+            ends[0::2], ends[1::2] = mid, e_in
+        self.packed = order.astype(np.int32)
+        self.node_lo = np.concatenate(L_lo).astype(np.float32)
+        self.node_hi = np.concatenate(L_hi).astype(np.float32)
+        self.left = np.concatenate(L_left)
+        self.right = np.concatenate(L_right)
+        self.start = np.concatenate(L_start)
+        self.count = np.concatenate(L_count)
+        self.node_count = len(self.left)
 
     # ------------------------------------------------------------ queries
     def query_aabb(self, lo, hi, out: Optional[List[int]] = None) -> List[int]:

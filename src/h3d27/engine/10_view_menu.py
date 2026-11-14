@@ -59,8 +59,8 @@ void main() { frag = texture(u_tex, v_uv); }
     def _h3d27_draw_wire(self):
         st = _h3d27_view(self)
         mode = st["shading"]
-        if mode == "lit" or getattr(self, "mode", None) != "editor":
-            return
+        if mode == "lit" or getattr(self, "mode", None) != "editor" or getattr(self, "_playing", False):
+            return                                # (the game itself is always drawn lit)
         ctx = self.ctx
         res = self.__dict__.get("_h3d27_wire_res")
         if res is None:
@@ -90,16 +90,23 @@ void main() { frag = texture(u_tex, v_uv); }
         sel = getattr(self, "selected", None)
         sel_ids = {id(n) for n in sel.traverse()} if sel is not None else set()
         items = []
+        batched = globals().get("_bk_city_batched")         # building parts drawn by their district
         for node in self.scene.root.traverse():
             mesh = getattr(node, "mesh", None)
-            if mesh is None or getattr(mesh, "vbo", None) is None or not getattr(node, "visible", True):
+            if mesh is None or not getattr(node, "visible", True):
                 continue
-            if node.name.startswith("__"):
+            if batched is not None and batched(self.scene, node):
+                continue
+            if getattr(mesh, "vbo", None) is None or node.name.startswith("__"):
                 continue
             try:
                 items.append((mesh, vp * node.world_matrix(), id(node) in sel_ids))
             except Exception:
                 continue
+        draws = globals().get("_bk_city_draws")
+        if draws is not None:
+            for mesh, model in draws(self.scene):
+                items.append((mesh, vp * model, False))
 
         def draw(color_fn):
             for mesh, mvp, is_sel in items:

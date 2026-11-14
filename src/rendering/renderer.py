@@ -694,6 +694,16 @@ class Renderer:
             if shadow_prog:
                 shadow_prog["u_light_space"].write(light_vp.to_bytes())
                 _casters = scene.traverse_meshes()
+                # a mesh marked _h3d_shadow = False casts no shadow of its own
+                # (window glass; a district of buildings casts as ONE merged
+                # caster, also when it is out of view)
+                _xs = globals().get("_h3d_shadow_extra")
+                if _xs is not None:
+                    try:
+                        _casters = [_c for _c in _casters
+                                    if getattr(_c[1], "_h3d_shadow", True)] + _xs(scene)
+                    except Exception as _xe:
+                        Log.warn(f"[Renderer] merged shadow casters: {_xe}")
                 _cull = globals().get("_h3d274_shadow_casters")   # [H3D274:perf]
                 if _cull is not None:
                     try:

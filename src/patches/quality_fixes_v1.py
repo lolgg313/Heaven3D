@@ -211,11 +211,14 @@ def _finalpatch_render_selection_outline(self):
             self._finalpatch_outline_edge_vao = edge_vao
 
         targets = []
+        batched = globals().get("_bk_city_batched")       # building parts drawn by their district
         for node in selected.traverse():
             mesh = getattr(node, "mesh", None)
-            if mesh is None or getattr(mesh, "vbo", None) is None:
+            if mesh is None or not getattr(node, "visible", True):
                 continue
-            if not getattr(node, "visible", True):
+            if batched is not None and batched(self.scene, node):
+                continue                                   # (a whole town selected: no outline per house)
+            if getattr(mesh, "vbo", None) is None:
                 continue
             try:
                 targets.append((mesh, node.world_matrix()))

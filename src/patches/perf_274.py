@@ -27,9 +27,14 @@ try:
         while stack:
             n, pw = stack.pop()
             w = n.local_matrix() if pw is None else pw * n.local_matrix()
-            if n.visible and n.mesh is not None:
-                out.append((n, n.mesh, w))
-            ch = n.children
+            if n.visible:
+                if n.mesh is not None:
+                    out.append((n, n.mesh, w))
+                ch = n.children
+            else:
+                # hiding an object hides the locked parts it is made of (the
+                # material parts of an imported model, the storeys of a building)
+                ch = [c for c in n.children if not c.__dict__.get("_heaven3d_imported_part")]
             for i in range(len(ch) - 1, -1, -1):
                 stack.append((ch[i], w))
         return out

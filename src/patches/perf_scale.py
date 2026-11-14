@@ -199,11 +199,15 @@ try:
         items = scene.traverse_meshes()
         fr = _SB["frame"].get(id(scene)) if "_SB" in globals() else None
         sect = fr[1] if fr is not None and fr[0] is scene else []
-        if len(items) < 64 and not sect:
+        xs = globals().get("_h3d_shadow_extra")
+        extra = xs(scene) if xs is not None else []
+        if len(items) < 64 and not sect and not extra:
             return _PS_PREV_FIT(self, scene, light_view)
         try:
             LV = np.frombuffer(light_view.to_bytes(), np.float32).reshape(4, 4).astype(np.float64)
             pts = []
+            if xs is not None:               # merged casters (districts of buildings, also out of view)
+                items = [it for it in items if getattr(it[1], "_h3d_shadow", True)] + extra
             if items:
                 d = _ps_batch(items)
                 lo, hi, M = d["lo"], d["hi"], d["M"]
@@ -361,16 +365,33 @@ try:
             sel = sel.parent
         return out
 
+    # world/bk_city.py puts its town batcher here: painted buildings are drawn
+    # as merged districts with levels of detail instead of part by part
+    _PS_CITY = [None]
+
     def _sb_collect(scene):
         """In-render mesh list: like _h3d274_collect, but building sectors come
-        back as cached batches (their transparent pieces stay in the list)."""
+        back as cached batches (their transparent pieces stay in the list)
+        and painted buildings as district batches."""
         out, batches = [], []
         skip = _sb_selected_chain()
+        city = _PS_CITY[0]
+        if city is not None:
+            try:
+                city = city(scene, skip)
+            except Exception as ex:
+                city = None
+                Log.warn(f"[Perf] town batches skipped: {ex}")
         stack = [(scene.root, None)]
         while stack:
             n, pw = stack.pop()
             w = n.local_matrix() if pw is None else pw * n.local_matrix()
             ch = n.children
+            if city is not None and n.mesh_type == "bk_building":
+                ch = city.building(n, w, ch)          # the children still to draw one by one
+                for i in range(len(ch) - 1, -1, -1):
+                    stack.append((ch[i], w))
+                continue
             if len(ch) >= 32 and n.mesh is None and id(n) not in skip:
                 try:
                     e = _sb_entry(n, w)
@@ -381,10 +402,18 @@ try:
                     batches.append(e)
                     out.extend(e["loose"])
                     continue
-            if n.visible and n.mesh is not None:
-                out.append((n, n.mesh, w))
+            if n.visible:
+                if n.mesh is not None:
+                    out.append((n, n.mesh, w))
+            elif ch:                          # a hidden object hides its locked parts
+                ch = [c for c in ch if not c.__dict__.get("_heaven3d_imported_part")]
             for i in range(len(ch) - 1, -1, -1):
                 stack.append((ch[i], w))
+        if city is not None:
+            try:
+                city.finish(out)
+            except Exception as ex:
+                Log.warn(f"[Perf] town batches not drawn: {ex}")
         _SB["frame"][id(scene)] = (scene, batches)
         return out
 
@@ -470,6 +499,9 @@ try:
     _PS_SPECIAL = {}
 
     def _ps_plain_module(n):
+        if n.__dict__.get("_bk_level") is not None:        # a baked part of a painted building
+            return (not n.blueprints and n.rigidbody is None and not n.is_point_light
+                    and not n.is_spot_light and not n.spawn_kind and not n.user_data)
         if n.mesh_type != "procedural_module":
             return False
         ud = n.user_data
@@ -478,8 +510,8 @@ try:
                 and not (ud and "particle_system" in ud))
 
     def _ps_special_nodes(self):
-        """Every node except plain building modules (no script, light, spawn,
-        particles): what the per-frame scanners (lights, icons, sounds,
+        """Every node except plain building modules and baked building parts
+        (no script, light, spawn, particles): what the per-frame scanners (lights, icons, sounds,
         particles, terrain, characters) look through.  Cached until the tree
         changes."""
         if not _PS_ON:

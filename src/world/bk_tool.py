@@ -113,6 +113,8 @@ class BKTool:
             self.style = d.style
             lo, hi = d.levels()
             self.level = int(np.clip(self.level, lo - 1, hi + 1))
+        else:
+            self.level = 0                 # a new building is painted on the ground, under the cursor
         self._view()
 
     def _view(self):
@@ -272,6 +274,100 @@ class BKTool:
         self.level = 0
         self._view()
         return out
+
+    def generate_town(self, blocks_x=3, blocks_z=3, damage=0.1, position=None, seed=None, variety=36,
+                      progress=None):
+        """A town in front of the camera: blocks of houses on a grid of
+        cobbled streets.  Every house is its own building; the houses repeat
+        ``variety`` designs (the same design is baked once and shared), and
+        they all sit in one "Town" group.  ``progress(done, total)`` is
+        called while it works.  -> the group"""
+        e = self.engine
+        seed = int(time.time() * 1000) % 1000003 if seed is None else int(seed)
+        bx, bz = int(np.clip(blocks_x, 1, 40)), int(np.clip(blocks_z, 1, 40))
+        variety = int(np.clip(variety, 4, 400))
+        BW, SW, RD, PZ = 14, 3, 4, 12           # cells: block width, street width, row depth, block depth
+        PX = BW + SW
+        styles = [s for s in ("town", "village", "rose", "manor", "town", "stone", "rose", "factory") if s in BK_STYLES]
+        designs = []
+        for i in range(variety):
+            w = 3 + int(_bk_hash("tw", seed, i) * 3)
+            dp = 3 + int(_bk_hash("td", seed, i) * 2)
+            fl = 1 + int(_bk_hash("tf", seed, i) * 2.7)
+            st = styles[int(_bk_hash("ts", seed, i) * len(styles)) % len(styles)]
+            dm = (0.35 + 0.4 * _bk_hash("tm", seed, i)) if _bk_hash("tr", seed, i) < damage else 0.0
+            designs.append((w, dp, fl, st, dm, seed + i))
+        if position is None:
+            try:
+                ro, rd = e._mouse_ray((e.width * 0.5, e.height * 0.6))
+                t = float(np.clip(-ro.y / rd.y if rd.y < -1e-4 else 40.0, 10.0, 120.0))
+                position = (ro.x + rd.x * t - min(bx, 3) * PX * _BK_C / 2, 0.0, ro.z + rd.z * t)
+            except Exception:
+                position = (0.0, 0.0, 0.0)
+        ox = round(position[0] / _BK_C) * _BK_C
+        oz = round(position[2] / _BK_C) * _BK_C
+        try:
+            gname = e._unique_node_name("Town")
+        except Exception:
+            gname = "Town"
+        group = SceneNode(gname, parent=e.scene.root)
+        group.tag = "town"                      # (its houses stay selectable one by one)
+        plan = []
+        for ix in range(bx):
+            for iz in range(bz):
+                k0 = ix * 1000 + iz
+                for row in (0, 1):
+                    x = 0
+                    j = 0
+                    while True:
+                        dz = designs[int(_bk_hash("tp", seed, k0, row, j) * variety) % variety]
+                        if x + dz[0] > BW:
+                            fit = [q for q in designs if x + q[0] <= BW]
+                            if not fit:
+                                break
+                            dz = fit[int(_bk_hash("tq", seed, k0, row, j) * len(fit)) % len(fit)]
+                        z = (RD - dz[1]) if row == 0 else RD + SW
+                        plan.append((ix, iz, x, z, row, dz))
+                        x += dz[0] + (1 if _bk_hash("tg", seed, k0, row, j) > 0.6 else 0)
+                        j += 1
+        total = len(plan) + bx * bz
+        done = 0
+        keep_style = self.style
+        hold, self.on_edit = self.on_edit, None
+        try:
+            for ix in range(bx):
+                for iz in range(bz):
+                    bxo, bzo = ox + ix * PX * _BK_C, oz + iz * PZ * _BK_C
+                    road = bk_new(e, "town", (bxo, position[1], bzo), name="Street")
+                    dr = bk_data(road)
+                    fi = dr.finish_index("yard")
+                    for x in range(PX):
+                        for z in range(RD, RD + SW):
+                            dr.cells[(x, 0, z)] = fi
+                    for x in range(BW, PX):
+                        for z in range(PZ):
+                            dr.cells[(x, 0, z)] = fi
+                    bk_rebuild(e, road)
+                    group.add_child(road)
+                    done += 1
+            for ix, iz, x, z, row, (w, dp, fl, st, dm, sd) in plan:
+                pos = (ox + (ix * PX + x) * _BK_C, position[1], oz + (iz * PZ + z) * _BK_C)
+                node = bk_new(e, st, pos, seed=sd)
+                bk_generate_house(bk_data(node), w, dp, fl, dm, seed=sd, front=1 if row == 0 else 0)
+                bk_rebuild(e, node)
+                group.add_child(node)
+                done += 1
+                if progress is not None and done % 8 == 0:
+                    try:
+                        progress(done, total)
+                    except Exception:
+                        pass
+        finally:
+            self.style = keep_style
+            self.on_edit = hold
+        self.level = 0
+        self._view()
+        return group
 
     # ---- picking ----
     def _frame(self):
@@ -633,6 +729,23 @@ if not globals().get("_BK_TOOL_INSTALLED"):
         except Exception:
             pass
 
+    # with the grid hidden (View > Grid) the tool still needs its cursor and
+    # its strokes followed: draw it from the every-frame overlay hook instead
+    _BK_PREV_OUTLINE = HeavenEngine._render_selection_outline
+
+    def _bk_render_selection_outline(self):
+        r = _BK_PREV_OUTLINE(self)
+        try:
+            if getattr(self, "editor_grid", None) is None:
+                t = _bk_tool_on(self)
+                if t is not None:
+                    t.draw(self.camera)
+        except Exception:
+            pass
+        return r
+
+    HeavenEngine._render_selection_outline = _bk_render_selection_outline
+
     def _bk_delete_node(self, node):
         try:
             t = getattr(self, "building_tool", None)
@@ -644,6 +757,14 @@ if not globals().get("_BK_TOOL_INSTALLED"):
             pass
         return _BK_PREV_DELETE(self, node)
 
+    def _bk_add_town(self, blocks_x=3, blocks_z=3, position=(0.0, 0.0, 0.0), seed=None, damage=0.1, variety=36):
+        """engine.add_town(6, 6, (0, 0, 0)) -> a "Town" group: blocks of
+        houses on a grid of cobbled streets (about 7 houses a block, each
+        block 34 m x 24 m).  ``damage``: the share of shelled houses,
+        ``variety``: how many different house designs it repeats."""
+        return _bk_tool(self).generate_town(blocks_x, blocks_z, damage, position, seed, variety)
+
+    HeavenEngine.add_town = _bk_add_town
     HeavenEngine._on_mouse_down = _bk_on_mouse_down
     HeavenEngine._on_mouse_up = _bk_on_mouse_up
     HeavenEngine._on_key = _bk_on_key

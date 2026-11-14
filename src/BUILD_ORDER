@@ -75,5 +75,6 @@ world/prefabs.py
 world/bk_textures.py
 world/bk_building.py
 world/bk_tool.py
+world/bk_city.py
 editor/vitrail_hook.py
 engine/run.py

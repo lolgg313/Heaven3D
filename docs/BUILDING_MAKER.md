@@ -29,6 +29,34 @@ The textures are generated once per computer (a few seconds per material, then c
 `~/.heaven3d/cache`). Saving a project copies the ones it uses into `assets/building_maker`, so the
 project folder and every exported game are complete.
 
+## Towns
+
+**Town** in the Buildings panel makes blocks of houses on a grid of cobbled streets (about 7 houses a block,
+a block is 34 m x 24 m). The houses repeat a few dozen designs; every house is its own building in one
+"Town" group, and a click in the viewport still selects a single house. The whole town is one undo step.
+
+Buildings that stand still are drawn in **districts** (48 m squares) instead of part by part:
+
+| Level | Distance (Medium) | What is drawn |
+| --- | --- | --- |
+| near | under 45 m | everything: rooms, stairs, glazing bars, glass |
+| mid | under 140 m | the outside with frames, shutters, sills; dark panes instead of glass and rooms |
+| far | beyond | the bare shell (walls, roofs) with dark panes: about an eighth of the triangles |
+
+A district is one draw call per material and one in the shadow pass, a far district only keeps its shell in
+video memory, and one out of view costs nothing. A building with a room open to the sky, a shelled or a
+missing outside wall keeps its inside at every distance. **Detail** in the panel picks the distances
+(Low 25 / 80 m, Medium 45 / 140 m, High 80 / 220 m, Ultra 150 / 400 m); the two lines under it show what
+the last frame drew. A selected, moving or storey-cut building is drawn on its own until it is left alone.
+
+```python
+town = engine.add_town(6, 6, position=(0, 0, 0), seed=7, damage=0.1)   # 6 x 6 blocks, ~250 houses
+engine.set_building_detail(preset="high")              # or near=60, mid=200, far=800 (far: stop drawing beyond)
+print(engine.building_stats())                         # districts, triangles, draw calls, video memory
+```
+
+`HEAVEN3D_NO_CITY=1` draws every building part by part again (to compare).
+
 ## From a script
 
 ```python

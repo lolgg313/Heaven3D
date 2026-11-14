@@ -25,6 +25,26 @@ Heaven3D is a from-scratch 3D game engine written in Python on top of [ModernGL]
 
 The whole engine ships as a single file, `Heaven3D.py`, so it is easy to bundle into your own projects; it is developed as modular source in `src/`. The editor's interface lives next to it in `h3d_editor/`.
 
+## 🏙️ New since 3.1.4: whole towns, the view modes are back
+
+**Towns of painted buildings (Building Maker).** A house is a few meshes per storey; a town of a thousand was 20,000 draw calls. Buildings that just stand there are now drawn in **districts** (48 m squares), the way open-world games do it:
+
+- A district is one vertex buffer: one draw call per material, and **one** call in the shadow pass. A 62-building town went from 1,297 draw calls to 96 and renders the same picture (the test compares the pixels).
+- **Three levels of detail** by distance: *near* has everything (rooms, stairs, glazing bars, glass), *mid* keeps the outside with frames, shutters and sills and closes windows and doorways with dark panes, *far* is the bare shell. Far is about an eighth of the triangles.
+- **Streaming:** a far district only holds its shell in video memory. Detail is loaded as the camera comes closer (a few milliseconds a frame) and dropped again when it has left.
+- A district out of view costs one box test. A building that is selected, being painted, moving or hidden by storey is drawn on its own as before and joins its district again when it is left alone.
+- The same house design is **baked once** and shared (a town repeats a few dozen designs, a project is loaded again, a building is duplicated).
+- **Play starts fast:** the collision tree of a mesh collider is built about 4 times faster (every mesh collider, not only buildings).
+- Window glass no longer casts a solid shadow: the sun shines into the rooms.
+- New: **Buildings > Town** generates blocks of houses on a grid of streets (one undo step, one "Town" group whose houses stay selectable one by one), with a **Detail** setting (Low / Medium / High / Ultra) and live numbers. From a script: `engine.add_town(6, 6)`, `engine.set_building_detail(preset="high")`, `engine.building_stats()`. See [docs/BUILDING_MAKER.md](docs/BUILDING_MAKER.md).
+
+**The three view modes are back in the new editor.** *Lit*, *Lit + Wire* and *Wire* are buttons at the top-left of the 3D view again (they had moved into the View menu only), and **F4** goes to the next one. The wireframe is no longer drawn over a running game.
+
+**Fixes**
+- Hiding an object in the Outliner now hides the locked parts it is made of (the material parts of an imported model, the storeys of a building); only the root mesh used to disappear.
+- Building Maker: with the grid hidden (View > Grid) the paint tool lost its cursor and edge tools only painted the first edge of a drag; a new building started while another storey was selected was painted off the cursor; the Outliner showed a new building only after its next refresh.
+- Selecting a whole group of buildings no longer outlines (and uploads) every part of every house.
+
 ## 🔧 3.1.4: bug-fix release
 
 A full bug hunt over 3.1.3 (every test file run on Linux, the Windows edition run under Wine, every template played with random input). Projects and exported games are unchanged.

@@ -22,6 +22,12 @@ _BK_WH = _BK_H - _BK_SLAB                       # clear wall height
 _BK_MESH_TYPE = "bk_building"
 _BK_KEEP = object()
 _BK_WALLISH = ("wall", "door", "window", "arch")
+# what a face is for the level-of-detail of a town (see world/bk_city.py):
+#   blocker   a dark pane that closes a window / doorway of a far building
+#   shell     outside walls, roofs: what a building is from a distance
+#   detail    frames, shutters, sills, plinths: gone when really far
+#   interior  rooms, stairs, glazing bars, glass: only drawn close by
+_BK_B, _BK_S, _BK_D, _BK_I = 0, 1, 2, 3
 
 # interior finishes: wall + floor (+ ceiling) materials of a room
 BK_FINISHES = {
@@ -167,6 +173,19 @@ class BKData:
             out[(x + dx, y, z + dz)] = ((x, y, z), d)
         return out
 
+    def exposed(self):
+        """True when the rooms can be seen from far away: a room without a
+        ceiling or roof, or an outside wall that is shelled, low or gone.
+        Such a building keeps its inside at every distance."""
+        if self.roof_type() == "none" or any(self.indoor(c) for c in self.open):
+            return True
+        for e, k in self.edges.items():
+            if k in ("ruin", "half", "sandbags", "none"):
+                a, b = self.edge_cells(e)
+                if self.indoor(a) != self.indoor(b):
+                    return True
+        return False
+
     def roof_type(self):
         return self.roof.get("type") or self.st()["roof_type"]
 
@@ -182,13 +201,15 @@ class BKData:
 # ---------------------------------------------------------------------------
 class _BKGeo:
     def __init__(self):
-        self.m = {}                    # material -> [positions, normals, uvs] flat lists
+        self.m = {}                    # (material, class) -> [positions, normals, uvs] flat lists
+        self.cls = _BK_S               # class of the faces being added (_BK_B / S / D / I)
         self.col = []                  # collision boxes (x0, y0, z0, x1, y1, z1)
         self.col_tris = []             # extra collision triangles (9 floats each)
 
-    def quad(self, mat, p0, p1, p2, p3, uv=None, out=None, up=False):
+    def quad(self, mat, p0, p1, p2, p3, uv=None, out=None, up=False, cls=None):
         """A quad (corners in order).  ``out``: a point the face must look
-        away from; ``up``: the face must look upwards."""
+        away from; ``up``: the face must look upwards.  ``cls``: its
+        level-of-detail class (default: the current ``self.cls``)."""
         ax, ay, az = p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2]
         bx, by, bz = p3[0] - p0[0], p3[1] - p0[1], p3[2] - p0[2]
         nx, ny, nz = ay * bz - az * by, az * bx - ax * bz, ax * by - ay * bx
@@ -215,21 +236,23 @@ class _BKGeo:
                 uv = [(-p[2] if nx > 0 else p[2], p[1]) for p in (p0, p1, p2, p3)]
             else:
                 uv = [(p[0] if nz > 0 else -p[0], p[1]) for p in (p0, p1, p2, p3)]
-        g = self.m.get(mat)
+        key = (mat, self.cls if cls is None else cls)
+        g = self.m.get(key)
         if g is None:
-            g = self.m[mat] = [[], [], []]
+            g = self.m[key] = [[], [], []]
         P, N, U = g
         for p, t in ((p0, uv[0]), (p1, uv[1]), (p2, uv[2]), (p3, uv[3])):
             P.extend(p)
             N.extend((nx, ny, nz))
             U.extend((t[0] / tw, t[1] / th))
 
-    def tri(self, mat, p0, p1, p2, uv, out=None, up=False):
-        self.quad(mat, p0, p1, p2, p2, (uv[0], uv[1], uv[2], uv[2]), out, up)
+    def tri(self, mat, p0, p1, p2, uv, out=None, up=False, cls=None):
+        self.quad(mat, p0, p1, p2, p2, (uv[0], uv[1], uv[2], uv[2]), out, up, cls)
 
-    def box(self, lo, hi, mats, collide=False):
+    def box(self, lo, hi, mats, collide=False, cls=None):
         """Axis-aligned box.  mats: a material for every face, or a dict
-        {"x-", "x+", "y-", "y+", "z-", "z+"} (missing faces are skipped)."""
+        {"x-", "x+", "y-", "y+", "z-", "z+"} (missing faces are skipped).
+        cls: one class for the box, or a dict per face ("*": the others)."""
         x0, y0, z0 = min(lo[0], hi[0]), min(lo[1], hi[1]), min(lo[2], hi[2])
         x1, y1, z1 = max(lo[0], hi[0]), max(lo[1], hi[1]), max(lo[2], hi[2])
         if x1 - x0 < 1e-6 or y1 - y0 < 1e-6 or z1 - z0 < 1e-6:
@@ -239,37 +262,82 @@ class _BKGeo:
         if mats is None:
             return
         g = (lambda k: mats) if isinstance(mats, str) else mats.get
+        if isinstance(cls, dict):
+            dflt = cls.get("*", self.cls)
+            k = lambda f: cls.get(f, dflt)                   # noqa: E731
+        else:
+            one = self.cls if cls is None else cls
+            k = lambda f: one                                # noqa: E731
         c = ((x0 + x1) * 0.5, (y0 + y1) * 0.5, (z0 + z1) * 0.5)
         m = g("x-")
         if m:
-            self.quad(m, (x0, y0, z0), (x0, y0, z1), (x0, y1, z1), (x0, y1, z0), out=c)
+            self.quad(m, (x0, y0, z0), (x0, y0, z1), (x0, y1, z1), (x0, y1, z0), out=c, cls=k("x-"))
         m = g("x+")
         if m:
-            self.quad(m, (x1, y0, z1), (x1, y0, z0), (x1, y1, z0), (x1, y1, z1), out=c)
+            self.quad(m, (x1, y0, z1), (x1, y0, z0), (x1, y1, z0), (x1, y1, z1), out=c, cls=k("x+"))
         m = g("z-")
         if m:
-            self.quad(m, (x1, y0, z0), (x0, y0, z0), (x0, y1, z0), (x1, y1, z0), out=c)
+            self.quad(m, (x1, y0, z0), (x0, y0, z0), (x0, y1, z0), (x1, y1, z0), out=c, cls=k("z-"))
         m = g("z+")
         if m:
-            self.quad(m, (x0, y0, z1), (x1, y0, z1), (x1, y1, z1), (x0, y1, z1), out=c)
+            self.quad(m, (x0, y0, z1), (x1, y0, z1), (x1, y1, z1), (x0, y1, z1), out=c, cls=k("z+"))
         m = g("y-")
         if m:
-            self.quad(m, (x0, y0, z0), (x1, y0, z0), (x1, y0, z1), (x0, y0, z1), out=c)
+            self.quad(m, (x0, y0, z0), (x1, y0, z0), (x1, y0, z1), (x0, y0, z1), out=c, cls=k("y-"))
         m = g("y+")
         if m:
-            self.quad(m, (x0, y1, z1), (x1, y1, z1), (x1, y1, z0), (x0, y1, z0), out=c)
+            self.quad(m, (x0, y1, z1), (x1, y1, z1), (x1, y1, z0), (x0, y1, z0), out=c, cls=k("y+"))
+
+    def parts(self, exposed=False):
+        """{material: (positions, normals, uvs, (blocker, shell, detail,
+        interior) quad counts)} with the quads in that class order.
+        ``exposed``: the inside can be seen from far away (no roof, a
+        shelled wall): the interior counts as shell and there are no
+        blockers."""
+        by = {}
+        for (mat, cls), (P, N, U) in self.m.items():
+            if not P:
+                continue
+            if exposed:
+                if cls == _BK_B:
+                    continue
+                if cls == _BK_I and mat != "glass":
+                    cls = _BK_S
+            by.setdefault(mat, {}).setdefault(cls, [[], [], []])
+            g = by[mat][cls]
+            g[0].append(P)
+            g[1].append(N)
+            g[2].append(U)
+        out = {}
+        for mat, classes in by.items():
+            P, N, U, counts = [], [], [], [0, 0, 0, 0]
+            for cls in (_BK_B, _BK_S, _BK_D, _BK_I):
+                g = classes.get(cls)
+                if g is None:
+                    continue
+                for a in g[0]:
+                    P.extend(a)
+                    counts[cls] += len(a) // 12
+                for a in g[1]:
+                    N.extend(a)
+                for a in g[2]:
+                    U.extend(a)
+            out[mat] = (np.asarray(P, np.float32).reshape(-1, 3), np.asarray(N, np.float32).reshape(-1, 3),
+                        np.asarray(U, np.float32).reshape(-1, 2), tuple(counts))
+        return out
 
     def arrays(self):
-        """{material: (positions, normals, uvs, indices)}"""
+        """{material: (positions, normals, uvs, indices)}: the building as
+        it is seen close by (everything but the far-away blockers)."""
         out = {}
-        for mat, (P, N, U) in self.m.items():
-            n = len(P) // 3
-            if not n:
+        for mat, (pos, nrm, uv, counts) in self.parts().items():
+            v0 = counts[0] * 4
+            n = len(pos) - v0
+            if n <= 0:
                 continue
             q = np.arange(0, n, 4, dtype=np.uint32)
             idx = np.stack([q, q + 1, q + 2, q, q + 2, q + 3], 1).ravel()
-            out[mat] = (np.asarray(P, np.float32).reshape(-1, 3), np.asarray(N, np.float32).reshape(-1, 3),
-                        np.asarray(U, np.float32).reshape(-1, 2), idx)
+            out[mat] = (pos[v0:], nrm[v0:], uv[v0:], idx)
         return out
 
     def collision(self):
@@ -309,16 +377,32 @@ class _BKEdge:
             self.ox, self.oz = (x + 1) * _BK_C, z * _BK_C
         self.face = ({"a-": "x-", "a+": "x+", "n-": "z-", "n+": "z+"} if o == "N" else
                      {"a-": "z-", "a+": "z+", "n-": "x-", "n+": "x+"})
+        # level-of-detail classes: the faces towards cell a / cell b, the other
+        # faces of the wall, and what is fixed on it (frames, sills ...)
+        self.ca = self.cb = self.cd = _BK_S
+        self.dd = _BK_D
 
     def pt(self, a, y, n):
         if self.o == "N":
             return (self.ox + a, self.y0 + y, self.oz + n)
         return (self.ox + n, self.y0 + y, self.oz + a)
 
-    def box(self, geo, a0, a1, y0, y1, n0, n1, mats, collide=False):
+    def box(self, geo, a0, a1, y0, y1, n0, n1, mats, collide=False, cls=None):
         if isinstance(mats, dict):
             mats = {(self.face.get(k, k)): v for k, v in mats.items()}
-        geo.box(self.pt(a0, y0, n0), self.pt(a1, y1, n1), mats, collide)
+        if isinstance(cls, dict):
+            cls = {(self.face.get(k, k)): v for k, v in cls.items()}
+        geo.box(self.pt(a0, y0, n0), self.pt(a1, y1, n1), mats, collide, cls)
+
+    def wall_cls(self):
+        return {"n-": self.ca, "n+": self.cb, "*": self.cd}
+
+    def blocker(self, geo, a0, a1, y0, y1, n, s):
+        """A dark pane across an opening, looking outwards (s: the n
+        direction of the outside): what a far building shows instead of its
+        glass and rooms."""
+        geo.quad("blocker", self.pt(a0, y0, n), self.pt(a1, y0, n), self.pt(a1, y1, n), self.pt(a0, y1, n),
+                 uv=[(0, 0), (1, 0), (1, 1), (0, 1)], out=self.pt((a0 + a1) / 2, (y0 + y1) / 2, n - s), cls=_BK_B)
 
 
 # ---------------------------------------------------------------------------
@@ -339,10 +423,10 @@ def _bk_wall_piece(geo, E, a0, a1, y0, y1, ma, mb, t, top=None, ends=(None, None
         mats["a-"] = ends[0]
     if ends[1]:
         mats["a+"] = ends[1]
-    E.box(geo, a0, a1, y0, y1, -t / 2, t / 2, mats, collide=True)
+    E.box(geo, a0, a1, y0, y1, -t / 2, t / 2, mats, collide=True, cls=E.wall_cls())
 
 
-def _bk_reveals(geo, E, a0, a1, y0, y1, t, mat, sill=True, n0=None, n1=None):
+def _bk_reveals(geo, E, a0, a1, y0, y1, t, mat, sill=True, n0=None, n1=None, cls=None):
     """The inside faces of an opening through the wall (between n0 and n1)."""
     lo = -t / 2 if n0 is None else min(n0, n1)
     hi = t / 2 if n1 is None else max(n0, n1)
@@ -353,7 +437,7 @@ def _bk_reveals(geo, E, a0, a1, y0, y1, t, mat, sill=True, n0=None, n1=None):
     def q(p0, p1, p2, p3):
         w = E.pt(*p0)
         geo.quad(mat, w, E.pt(*p1), E.pt(*p2), E.pt(*p3),
-                 out=(2 * w[0] - c[0], 2 * w[1] - c[1], 2 * w[2] - c[2]))
+                 out=(2 * w[0] - c[0], 2 * w[1] - c[1], 2 * w[2] - c[2]), cls=cls)
     q((a0, y0, lo), (a0, y0, hi), (a0, y1, hi), (a0, y1, lo))
     q((a1, y0, lo), (a1, y0, hi), (a1, y1, hi), (a1, y1, lo))
     q((a0, y1, lo), (a1, y1, lo), (a1, y1, hi), (a0, y1, hi))
@@ -361,7 +445,7 @@ def _bk_reveals(geo, E, a0, a1, y0, y1, t, mat, sill=True, n0=None, n1=None):
         q((a0, y0, lo), (a1, y0, lo), (a1, y0, hi), (a0, y0, hi))
 
 
-def _bk_rot_box(geo, E, mat, hinge_a, hinge_n, width, thick, y0, y1, ang, tile_uv=True):
+def _bk_rot_box(geo, E, mat, hinge_a, hinge_n, width, thick, y0, y1, ang, tile_uv=True, cls=None):
     """A door leaf: a box hinged at (hinge_a, hinge_n), swung by ``ang``."""
     ca, sa = math.cos(ang), math.sin(ang)
 
@@ -370,12 +454,12 @@ def _bk_rot_box(geo, E, mat, hinge_a, hinge_n, width, thick, y0, y1, ang, tile_u
     c = P(width / 2, thick / 2, (y0 + y1) / 2)
     for (u0, w0, u1, w1) in ((0, 0, width, 0), (0, thick, width, thick)):          # the two big faces
         geo.quad(mat, P(u0, w0, y0), P(u1, w1, y0), P(u1, w1, y1), P(u0, w0, y1),
-                 uv=[(0, y0), (width, y0), (width, y1), (0, y1)], out=c)
+                 uv=[(0, y0), (width, y0), (width, y1), (0, y1)], out=c, cls=cls)
     for u in (0, width):                                                            # the edges
         geo.quad(mat, P(u, 0, y0), P(u, thick, y0), P(u, thick, y1), P(u, 0, y1),
-                 uv=[(0, y0), (thick, y0), (thick, y1), (0, y1)], out=c)
+                 uv=[(0, y0), (thick, y0), (thick, y1), (0, y1)], out=c, cls=cls)
     geo.quad(mat, P(0, 0, y1), P(width, 0, y1), P(width, thick, y1), P(0, thick, y1),
-             uv=[(0, 0), (width, 0), (width, thick), (0, thick)], out=c)
+             uv=[(0, 0), (width, 0), (width, thick), (0, thick)], out=c, cls=cls)
 
 
 def _bk_window(geo, d, E, e, s, ma, mb, t, exterior):
@@ -392,40 +476,44 @@ def _bk_window(geo, d, E, e, s, ma, mb, t, exterior):
     nf = s * (t / 2 - 0.10) if (exterior and not slit) else 0.0     # the frame sits back from the outer face
     if exterior and not slit:
         inner = ma if s > 0 else mb
-        _bk_reveals(geo, E, a0, a1, y0, y1, t, st["ext"], n0=nf, n1=s * t / 2)
-        _bk_reveals(geo, E, a0, a1, y0, y1, t, inner, n0=-s * t / 2, n1=nf)
+        _bk_reveals(geo, E, a0, a1, y0, y1, t, st["ext"], n0=nf, n1=s * t / 2, cls=_BK_S)
+        _bk_reveals(geo, E, a0, a1, y0, y1, t, inner, n0=-s * t / 2, n1=nf, cls=_BK_I)
     else:
-        _bk_reveals(geo, E, a0, a1, y0, y1, t, st["ext"] if exterior else ma)
+        _bk_reveals(geo, E, a0, a1, y0, y1, t, st["ext"] if exterior else ma, cls=E.cd)
+    if exterior:
+        E.blocker(geo, a0, a1, y0, y1, nf - s * 0.012 if not slit else 0.0, s)
     if slit:
         return
     fm = st["frame"]
     fd, fw = 0.035, 0.05
-    E.box(geo, a0, a0 + fw, y0, y1, nf - fd, nf + fd, fm)
-    E.box(geo, a1 - fw, a1, y0, y1, nf - fd, nf + fd, fm)
-    E.box(geo, a0 + fw, a1 - fw, y0, y0 + fw, nf - fd, nf + fd, fm)
-    E.box(geo, a0 + fw, a1 - fw, y1 - fw, y1, nf - fd, nf + fd, fm)
+    E.box(geo, a0, a0 + fw, y0, y1, nf - fd, nf + fd, fm, cls=E.dd)
+    E.box(geo, a1 - fw, a1, y0, y1, nf - fd, nf + fd, fm, cls=E.dd)
+    E.box(geo, a0 + fw, a1 - fw, y0, y0 + fw, nf - fd, nf + fd, fm, cls=E.dd)
+    E.box(geo, a0 + fw, a1 - fw, y1 - fw, y1, nf - fd, nf + fd, fm, cls=E.dd)
     bw = 0.018 if st["window"] == "industrial" else 0.024
-    for i in range(bars_v):
+    for i in range(bars_v):                                  # glazing bars: too thin to see from afar
         ac = a0 + (a1 - a0) * (i + 1) / (bars_v + 1)
-        E.box(geo, ac - bw, ac + bw, y0 + fw, y1 - fw, nf - fd * 0.7, nf + fd * 0.7, fm)
+        E.box(geo, ac - bw, ac + bw, y0 + fw, y1 - fw, nf - fd * 0.7, nf + fd * 0.7, fm, cls=_BK_I)
     for i in range(bars_h):
         yc = y0 + (y1 - y0) * (i + 1) / (bars_h + 1)
-        E.box(geo, a0 + fw, a1 - fw, yc - bw, yc + bw, nf - fd * 0.7, nf + fd * 0.7, fm)
+        E.box(geo, a0 + fw, a1 - fw, yc - bw, yc + bw, nf - fd * 0.7, nf + fd * 0.7, fm, cls=_BK_I)
     g0, g1 = E.pt(a0 + fw, y0 + fw, nf), E.pt(a1 - fw, y1 - fw, nf)
     geo.quad("glass", g0, E.pt(a1 - fw, y0 + fw, nf), g1, E.pt(a0 + fw, y1 - fw, nf),
-             uv=[(0, 0), (1, 0), (1, 1), (0, 1)])
+             uv=[(0, 0), (1, 0), (1, 1), (0, 1)], cls=_BK_I)
     E.box(geo, a0, a1, y0, y1, nf - 0.02, nf + 0.02, None, collide=True)
     if not exterior:
         return
     tr = st["trim"]
-    E.box(geo, a0 - 0.08, a1 + 0.08, y0 - 0.08, y0, s * (t / 2 - 0.10), s * (t / 2 + 0.07), tr)      # sill
-    E.box(geo, a0 - 0.12, a1 + 0.12, y1, y1 + 0.20, s * (t / 2 - 0.005), s * (t / 2 + 0.03), tr)     # lintel
-    E.box(geo, a0 - 0.04, a1 + 0.04, y0 - 0.035, y0, -s * (t / 2 + 0.05), s * (t / 2 - 0.13), "wood_beam")
+    E.box(geo, a0 - 0.08, a1 + 0.08, y0 - 0.08, y0, s * (t / 2 - 0.10), s * (t / 2 + 0.07), tr, cls=_BK_D)   # sill
+    E.box(geo, a0 - 0.12, a1 + 0.12, y1, y1 + 0.20, s * (t / 2 - 0.005), s * (t / 2 + 0.03), tr, cls=_BK_D)  # lintel
+    E.box(geo, a0 - 0.04, a1 + 0.04, y0 - 0.035, y0, -s * (t / 2 + 0.05), s * (t / 2 - 0.13), "wood_beam",
+          cls=_BK_I)
     if st.get("shutter") and _bk_hash("sh", d.seed, *e[:3]) > 0.12:
         sw = min(hw, a0 - 0.03)
         if sw > 0.15:
             for b0, b1 in ((a0 - sw, a0 - 0.01), (a1 + 0.01, a1 + sw)):
-                E.box(geo, b0, b1, y0 - 0.02, y1 + 0.02, s * (t / 2 + 0.012), s * (t / 2 + 0.05), st["shutter"])
+                E.box(geo, b0, b1, y0 - 0.02, y1 + 0.02, s * (t / 2 + 0.012), s * (t / 2 + 0.05), st["shutter"],
+                      cls=_BK_D)
 
 
 def _bk_door(geo, d, E, e, s, ma, mb, t, exterior, wide=False):
@@ -437,23 +525,27 @@ def _bk_door(geo, d, E, e, s, ma, mb, t, exterior, wide=False):
     _bk_wall_piece(geo, E, lo, a0, 0, _BK_H, ma, mb, t)
     _bk_wall_piece(geo, E, a1, hi, 0, _BK_H, ma, mb, t)
     _bk_wall_piece(geo, E, a0, a1, top, _BK_H, ma, mb, t)
+    if exterior:                                            # (a plain doorway has no reveals of its own when far)
+        E.blocker(geo, a0, a1, 0, top, 0.0 if wide else s * (t / 2 - 0.03), s)
     if wide:                                                # an open archway with a timber lintel
-        _bk_reveals(geo, E, a0, a1, 0, top, t, st["ext"] if exterior else ma, sill=False)
-        E.box(geo, a0 - 0.12, a1 + 0.12, top - 0.02, top + 0.18, -t / 2 - 0.025, t / 2 + 0.025, "wood_beam")
+        _bk_reveals(geo, E, a0, a1, 0, top, t, st["ext"] if exterior else ma, sill=False, cls=E.cd)
+        E.box(geo, a0 - 0.12, a1 + 0.12, top - 0.02, top + 0.18, -t / 2 - 0.025, t / 2 + 0.025, "wood_beam",
+              cls=E.dd)
         return
     fm = "wood_beam" if st["door"].startswith("wood") else st["door"]
     lw = 0.05                                               # the door lining covers the reveals
-    E.box(geo, a0, a0 + lw, 0, top, -t / 2 - 0.02, t / 2 + 0.02, fm)
-    E.box(geo, a1 - lw, a1, 0, top, -t / 2 - 0.02, t / 2 + 0.02, fm)
-    E.box(geo, a0, a1, top - lw, top, -t / 2 - 0.02, t / 2 + 0.02, fm)
-    E.box(geo, a0, a1, 0.0, 0.025, -t / 2 - 0.03, t / 2 + 0.03, st["trim"])          # threshold
+    E.box(geo, a0, a0 + lw, 0, top, -t / 2 - 0.02, t / 2 + 0.02, fm, cls=E.dd)
+    E.box(geo, a1 - lw, a1, 0, top, -t / 2 - 0.02, t / 2 + 0.02, fm, cls=E.dd)
+    E.box(geo, a0, a1, top - lw, top, -t / 2 - 0.02, t / 2 + 0.02, fm, cls=E.dd)
+    E.box(geo, a0, a1, 0.0, 0.025, -t / 2 - 0.03, t / 2 + 0.03, st["trim"], cls=E.dd)          # threshold
     # the leaf stands open into the room (the indoor side), so play is never blocked
     inside = -s if exterior else (1.0 if _bk_hash("dr", d.seed, *e[:3]) > 0.5 else -1.0)
     ang = math.radians(98.0 + 30.0 * _bk_hash("da", d.seed, *e[:3])) * inside
     _bk_rot_box(geo, E, st["door"], a0 + lw + 0.01, inside * (t / 2 - 0.02), a1 - a0 - 2 * lw - 0.02, 0.045,
-                0.03, top - lw - 0.01, ang)
+                0.03, top - lw - 0.01, ang, cls=_BK_I)
     if exterior:
-        E.box(geo, a0 - 0.12, a1 + 0.12, top, top + 0.20, s * (t / 2 - 0.005), s * (t / 2 + 0.03), st["trim"])
+        E.box(geo, a0 - 0.12, a1 + 0.12, top, top + 0.20, s * (t / 2 - 0.005), s * (t / 2 + 0.03), st["trim"],
+              cls=_BK_D)
 
 
 def _bk_ruin_height(d, vx, y, vz):
@@ -479,7 +571,7 @@ def _bk_ruin(geo, d, E, e, ma, mb, t):
         nxt = hs[i + 1] if i < n - 1 else h1
         E.box(geo, b0, b1, 0, hs[i], -t / 2, t / 2,
               {"n-": ma, "n+": mb, "y+": "rubble", "a-": "rubble" if prev < hs[i] else None,
-               "a+": "rubble" if nxt < hs[i] else None}, collide=True)
+               "a+": "rubble" if nxt < hs[i] else None}, collide=True, cls=E.wall_cls())
     # a heap of fallen masonry at the foot of the wall
     side = 1.0 if _bk_hash("rb", d.seed, x, y, z, o) > 0.5 else -1.0
     ca = lo + (hi - lo) * (0.3 + 0.4 * _bk_hash("rc", d.seed, x, y, z, o))
@@ -491,12 +583,13 @@ def _bk_ruin(geo, d, E, e, ma, mb, t):
         ring.append(E.pt(ca + math.cos(an) * r * 1.3, 0.0, side * (t / 2 + math.sin(an) * r)))
     for k in range(8):
         geo.tri("rubble", top, ring[k], ring[k + 1],
-                [(top[0], top[2]), (ring[k][0], ring[k][2]), (ring[k + 1][0], ring[k + 1][2])], up=True)
+                [(top[0], top[2]), (ring[k][0], ring[k][2]), (ring[k + 1][0], ring[k + 1][2])], up=True, cls=E.dd)
 
 
 def _bk_sandbags(geo, E, t):
     """Four courses of bags, broken-bond, 0.9 m high."""
     bw, bh, bd = 0.60, 0.22, 0.34
+    keep, geo.cls = geo.cls, E.dd
     for row in range(4):
         y0 = row * bh
         off = (bw / 2) if row % 2 else 0.0
@@ -522,6 +615,7 @@ def _bk_sandbags(geo, E, t):
                          E.pt(ring_e[2][0], y0 + bh, ring_e[2][1]), E.pt(ring_e[3][0], y0 + bh, ring_e[3][1]),
                          uv=[(a0, 0), (a1, 0), (a1, bd), (a0, bd)], up=True)
             a += bw
+    geo.cls = keep
     E.box(geo, 0, _BK_C, 0, 4 * bh, -bd / 2, bd / 2, None, collide=True)
 
 
@@ -534,6 +628,10 @@ def _bk_bake_edge(geo, d, e, kind):
     ma, mb = _bk_side_mat(d, a), _bk_side_mat(d, b)
     exterior = ia != ib
     s = 1.0 if (ia and not ib) else -1.0                    # n direction of the outside
+    E.ca = _BK_I if ia else _BK_S
+    E.cb = _BK_I if ib else _BK_S
+    E.cd = _BK_I if (ia and ib) else _BK_S
+    E.dd = _BK_I if (ia and ib) else _BK_D
     lo, hi = t / 2, _BK_C - t / 2
     if kind == "wall":
         _bk_wall_piece(geo, E, lo, hi, 0, _BK_H, ma, mb, t)
@@ -544,8 +642,9 @@ def _bk_bake_edge(geo, d, e, kind):
     elif kind == "ruin":
         _bk_ruin(geo, d, E, e, ma, mb, t)
     elif kind == "half":
-        E.box(geo, lo, hi, 0, 1.0, -t / 2, t / 2, {"n-": ma, "n+": mb, "y+": st["trim"]}, collide=True)
-        E.box(geo, lo - 0.02, hi + 0.02, 1.0, 1.06, -t / 2 - 0.03, t / 2 + 0.03, st["trim"])
+        E.box(geo, lo, hi, 0, 1.0, -t / 2, t / 2, {"n-": ma, "n+": mb, "y+": st["trim"]}, collide=True,
+              cls=E.wall_cls())
+        E.box(geo, lo - 0.02, hi + 0.02, 1.0, 1.06, -t / 2 - 0.03, t / 2 + 0.03, st["trim"], cls=E.dd)
     elif kind == "sandbags":
         _bk_sandbags(geo, E, t)
     if kind not in _BK_WALLISH:
@@ -561,13 +660,13 @@ def _bk_bake_edge(geo, d, e, kind):
         if indoor and st.get("beams") is not None and (d.finish(a if side < 0 else b) or {}).get("wall") not in (
                 "concrete", "stone", "brick_yellow"):
             for p0, p1 in parts:
-                E.box(geo, p0, p1, 0, 0.11, side * t / 2, side * (t / 2 + 0.018), "wood_beam")
+                E.box(geo, p0, p1, 0, 0.11, side * t / 2, side * (t / 2 + 0.018), "wood_beam", cls=_BK_I)
     # stone plinth along the foot of outside walls on the ground
     if exterior and e[1] == 0 and st.get("plinth", True):
         ext = t / 2 + 0.04
         pp = [(-ext, _BK_C + ext)] if span is None else [(-ext, span[0]), (span[1], _BK_C + ext)]
         for p0, p1 in pp:
-            E.box(geo, p0, p1, -0.30, 0.50, s * (t / 2 - 0.01), s * (t / 2 + 0.04), st["trim"])
+            E.box(geo, p0, p1, -0.30, 0.50, s * (t / 2 - 0.01), s * (t / 2 + 0.04), st["trim"], cls=_BK_D)
 
 
 def _bk_bake_pillars(geo, d, y, kinds):
@@ -606,20 +705,29 @@ def _bk_bake_pillars(geo, d, y, kinds):
             for half in (-1, 1):
                 q = quad[(sg, half)] if ax == 0 else quad[(half, sg)]
                 m = _bk_side_mat(d, q)
+                k = _BK_I if d.indoor(q) else _BK_S
                 if ax == 0:
                     xx = X + sg * h
                     z0, z1 = (Z - h, Z) if half < 0 else (Z, Z + h)
-                    geo.quad(m, (xx, y0, z0), (xx, y0, z1), (xx, y0 + top, z1), (xx, y0 + top, z0), out=c)
+                    geo.quad(m, (xx, y0, z0), (xx, y0, z1), (xx, y0 + top, z1), (xx, y0 + top, z0), out=c, cls=k)
                 else:
                     zz = Z + sg * h
                     x0, x1 = (X - h, X) if half < 0 else (X, X + h)
-                    geo.quad(m, (x0, y0, zz), (x1, y0, zz), (x1, y0 + top, zz), (x0, y0 + top, zz), out=c)
+                    geo.quad(m, (x0, y0, zz), (x1, y0, zz), (x1, y0 + top, zz), (x0, y0 + top, zz), out=c, cls=k)
         geo.box((X - h, y0, Z - h), (X + h, y0 + top, Z + h), {"y+": cap} if cap else None, collide=True)
 
 
 def _bk_bake_stairs(geo, d, y):
     st = d.st()
     mat = st["stairs"]
+    keep, geo.cls = geo.cls, _BK_I
+    try:
+        _bk_bake_stairs_in(geo, d, y, mat)
+    finally:
+        geo.cls = keep
+
+
+def _bk_bake_stairs_in(geo, d, y, mat):
     for (x, yy, z), dr in d.stairs.items():
         if yy != y:
             continue
@@ -699,11 +807,12 @@ def _bk_bake_slabs(geo, d, L):
         for face, nb in (("x-", (x - 1, z)), ("x+", (x + 1, z)), ("z-", (x, z - 1)), ("z+", (x, z + 1))):
             if nb not in slabs:
                 mats[face] = st["trim"]
-        geo.box((X0, y0, Z0), (X1, y1, Z1), mats)
+        geo.box((X0, y0, Z0), (X1, y1, Z1), mats,
+                cls={"y+": _BK_I if (up and d.indoor(up)) else _BK_S, "y-": _BK_I, "*": _BK_S})
         if dn and st.get("beams") and (fd_ or {}).get("ceil") is None:
             for k in (0.5, 1.5):
                 geo.box((X0, y0 - 0.13, Z0 + k - 0.055), (X1, y0, Z0 + k + 0.055),
-                        {"y-": "wood_beam", "z-": "wood_beam", "z+": "wood_beam"})
+                        {"y-": "wood_beam", "z-": "wood_beam", "z+": "wood_beam"}, cls=_BK_I)
     # collision: merge runs of slab cells along x
     for (x, z) in sorted(slabs, key=lambda c: (c[1], c[0])):
         if (x - 1, z) in slabs:
@@ -724,7 +833,7 @@ def _bk_bake_slabs(geo, d, L):
                     continue
                 E = _BKEdge(e)
                 E.y0 = 0.0
-                E.box(geo, -ext, _BK_C + ext, y0 - 0.02, y1 + 0.02, 0.0, sg * ext, st["trim"])
+                E.box(geo, -ext, _BK_C + ext, y0 - 0.02, y1 + 0.02, 0.0, sg * ext, st["trim"], cls=_BK_D)
 
 
 def _bk_components(cells):
@@ -803,9 +912,9 @@ def _bk_bake_roof(geo, d, L):
                 outp = P(ag - sg, Y0, bc)
                 geo.tri(st["ext"], p0, p1, p2, uvw, out=outp)
                 geo.tri(st["ceil"], P(ag - sg * 0.02, Y0, bc - half), P(ag - sg * 0.02, Y0, bc + half),
-                        P(ag - sg * 0.02, Y0 + ridge, bc), uvw, out=P(ag + sg, Y0, bc))
+                        P(ag - sg * 0.02, Y0 + ridge, bc), uvw, out=P(ag + sg, Y0, bc), cls=_BK_I)
             # ridge capping
-            geo.box(P(va, Y0 + ridge - 0.02, bc - 0.09), P(vb, Y0 + ridge + 0.05, bc + 0.09), st["trim"])
+            geo.box(P(va, Y0 + ridge - 0.02, bc - 0.09), P(vb, Y0 + ridge + 0.05, bc + 0.09), st["trim"], cls=_BK_D)
             top_at = lambda px, pz: Y0 + max(0.0, (half - abs((pz if along_x else px) - bc))) * tan
         else:
             # hipped roof over any footprint: height = Chebyshev distance to the open edge
@@ -886,8 +995,8 @@ def _bk_bake_roof(geo, d, L):
             geo.box((px - 0.34, Y0, pz - 0.34), (px + 0.34, ytop, pz + 0.34),
                     {k: "brick_red" if st["ext"].startswith("plaster") else st["ext"] for k in ("x-", "x+", "z-", "z+")},
                     collide=True)
-            geo.box((px - 0.42, ytop, pz - 0.42), (px + 0.42, ytop + 0.09, pz + 0.42), st["trim"])
-            geo.box((px - 0.20, ytop + 0.09, pz - 0.20), (px + 0.20, ytop + 0.34, pz + 0.20), "roof_tiles")
+            geo.box((px - 0.42, ytop, pz - 0.42), (px + 0.42, ytop + 0.09, pz + 0.42), st["trim"], cls=_BK_D)
+            geo.box((px - 0.20, ytop + 0.09, pz - 0.20), (px + 0.20, ytop + 0.34, pz + 0.20), "roof_tiles", cls=_BK_D)
 
 
 def bk_bake_level(d, L):
@@ -928,6 +1037,10 @@ def bk_material(name):
     m = _BK_MATERIAL_CACHE.get(name)
     if m is not None:
         return m
+    if name == "blocker":                 # the dark pane in the windows of far buildings: no texture
+        m = Material(name="bk_blocker", base_color=(0.030, 0.034, 0.042, 1.0), metallic=0.0, roughness=0.32)
+        _BK_MATERIAL_CACHE[name] = m
+        return m
     t0 = time.time()
     try:
         f = bk_material_files(name)
@@ -967,6 +1080,102 @@ class _BKProxy:
                                 float(np.linalg.norm(pos - c, axis=1).max()) if len(pos) else 0.0)
 
 
+class _BKPart:
+    """One material of one storey, baked: interleaved vertices (position,
+    normal, tangent, uv: 12 floats) of quads in class order (blocker, shell,
+    detail, interior) and the number of quads of each class."""
+    __slots__ = ("mat", "data", "counts")
+
+    def __init__(self, mat, pos, nrm, uv, counts):
+        n = len(pos)
+        q = np.arange(0, n, 4, dtype=np.uint32)
+        idx = np.stack([q, q + 1, q + 2, q, q + 2, q + 3], 1).ravel()
+        data = np.empty((n, 12), np.float32)
+        data[:, 0:3] = pos
+        data[:, 3:6] = nrm
+        data[:, 6:10] = Mesh._compute_tangents(pos, nrm, uv, idx)
+        data[:, 10:12] = uv
+        self.mat, self.data, self.counts = mat, data, tuple(int(c) for c in counts)
+
+    def near(self):
+        """The vertices drawn close by (everything but the blockers)."""
+        return self.data[self.counts[0] * 4:]
+
+
+def _bk_quad_indices(nquads):
+    q = np.arange(0, nquads * 4, 4, dtype=np.uint32)
+    return np.stack([q, q + 1, q + 2, q, q + 2, q + 3], 1).ravel()
+
+
+class _BKPartMesh(Mesh):
+    """A building part as its own mesh.  Its GPU buffers are only made when
+    something really draws it (the selected building, a thumbnail ...): the
+    buildings of a town are drawn by their district batch (world/bk_city.py),
+    so a thousand houses don't sit in video memory twice."""
+
+    def __init__(self, ctx, name, part):
+        self._bk_src = None
+        Mesh.__init__(self, ctx, name)
+        data = part.near()
+        n = len(data)
+        self._bk_src = data
+        self.vertex_count = n
+        self.cpu_positions = data[:, 0:3]
+        self.cpu_indices = _bk_quad_indices(n // 4)
+        self.index_count = len(self.cpu_indices)
+        self.indexed = True
+        pos = self.cpu_positions
+        lo, hi = pos.min(axis=0), pos.max(axis=0)
+        c = (lo + hi) * 0.5
+        self.bounding_box = (glm.vec3(float(lo[0]), float(lo[1]), float(lo[2])),
+                             glm.vec3(float(hi[0]), float(hi[1]), float(hi[2])))
+        self.bounding_sphere = (glm.vec3(float(c[0]), float(c[1]), float(c[2])),
+                                float(np.sqrt(((pos - c) ** 2).sum(axis=1).max())))
+
+    def _bk_upload(self):
+        src = self._bk_src
+        if src is None or self.ctx is None:
+            return
+        self.__dict__["_bk_vbo"] = self.ctx.buffer(np.ascontiguousarray(src).tobytes())
+        self.__dict__["_bk_ibo"] = self.ctx.buffer(self.cpu_indices.tobytes())
+
+    @property
+    def vbo(self):
+        b = self.__dict__.get("_bk_vbo")
+        if b is None and self.__dict__.get("_bk_src") is not None:
+            self._bk_upload()
+            b = self.__dict__.get("_bk_vbo")
+        return b
+
+    @vbo.setter
+    def vbo(self, value):
+        self.__dict__["_bk_vbo"] = value
+
+    @property
+    def ibo(self):
+        if self.__dict__.get("_bk_ibo") is None and self.__dict__.get("_bk_src") is not None:
+            self.vbo                                           # noqa: B018  (uploads both)
+        return self.__dict__.get("_bk_ibo")
+
+    @ibo.setter
+    def ibo(self, value):
+        self.__dict__["_bk_ibo"] = value
+
+    def on_gpu(self):
+        return self.__dict__.get("_bk_vbo") is not None
+
+    def release(self):
+        """Free the GPU buffers (they come back by themselves when drawn again)."""
+        if self.__dict__.get("_bk_vbo") is None and not self._vaos:
+            return
+        Mesh.release(self)
+
+    def bk_drop(self):
+        """Free for good (the part was re-baked or its building deleted)."""
+        self._bk_src = None
+        Mesh.release(self)
+
+
 def bk_is_building(node):
     return node is not None and getattr(node, "mesh_type", None) == _BK_MESH_TYPE
 
@@ -987,10 +1196,53 @@ def _bk_free_children(node, level=None):
         c.mesh = None
         c.remove()
         try:
-            if m is not None and hasattr(m, "release"):
+            if m is not None and hasattr(m, "bk_drop"):
+                m.bk_drop()
+            elif m is not None and hasattr(m, "release"):
                 m.release()
         except Exception:
             pass
+
+
+# Baked buildings by what they are made of: a town repeats a few dozen house
+# designs, a project is loaded again and again, a building is duplicated ...
+# the same design is baked once and its vertex data shared.
+_BK_BAKE_CACHE = {}
+_BK_BAKE_LIMIT = [192 * 1024 * 1024, 0]          # bytes allowed, bytes held
+
+
+def _bk_bake_key(d, exposed):
+    try:
+        fin = [(f, sorted(BK_FINISHES[f].items(), key=str)) for f in d.finishes]
+        return json.dumps([d.to_params(), sorted(d.st().items(), key=str), fin, bool(exposed)],
+                          sort_keys=True, default=str)
+    except Exception:
+        return None
+
+
+def _bk_bake_all(d, exposed, wanted):
+    """{level: (collision, {material: _BKPart})} of a whole building (cached)."""
+    key = _bk_bake_key(d, exposed) if len(d.cells) <= 900 else None
+    hit = _BK_BAKE_CACHE.pop(key, None) if key is not None else None
+    if hit is not None:
+        _BK_BAKE_CACHE[key] = hit                 # (most recently used last)
+        return hit[0]
+    out = {}
+    size = 0
+    for L in sorted(wanted):
+        geo = bk_bake_level(d, L)
+        lp = {}
+        for mat, (pos, nrm, uv, counts) in sorted(geo.parts(exposed).items()):
+            lp[mat] = _BKPart(mat, pos, nrm, uv, counts)
+            size += lp[mat].data.nbytes
+        out[L] = (geo.collision(), lp)
+    if key is not None and size < _BK_BAKE_LIMIT[0] // 8:
+        _BK_BAKE_CACHE[key] = (out, size)
+        _BK_BAKE_LIMIT[1] += size
+        while _BK_BAKE_LIMIT[1] > _BK_BAKE_LIMIT[0] and len(_BK_BAKE_CACHE) > 1:
+            old = next(iter(_BK_BAKE_CACHE))
+            _BK_BAKE_LIMIT[1] -= _BK_BAKE_CACHE.pop(old)[1]
+    return out
 
 
 def bk_rebuild(engine, node, levels=None):
@@ -1001,11 +1253,18 @@ def bk_rebuild(engine, node, levels=None):
     node.mesh_params = d.to_params()
     node.mesh = None
     ctx = getattr(engine, "ctx", None)
+    node._bk_ctx = ctx
     lo, hi = d.levels()
     wanted = set(range(lo, hi + 2)) if d.cells else set()
     cols = getattr(node, "_bk_cols", None)
-    if cols is None or levels is None:
+    parts = getattr(node, "_bk_parts", None)
+    exposed = d.exposed()
+    if getattr(node, "_bk_exposed", None) != exposed:
+        levels = None                    # what counts as "inside" changed: every storey is baked again
+    node._bk_exposed = exposed
+    if cols is None or parts is None or levels is None:
         cols = node._bk_cols = {}
+        parts = node._bk_parts = {}
         _bk_free_children(node)
         todo = wanted
     else:
@@ -1013,26 +1272,36 @@ def bk_rebuild(engine, node, levels=None):
         for L in set(levels) | (set(cols) - wanted):
             _bk_free_children(node, L)
             cols.pop(L, None)
-    tris = 0
+            parts.pop(L, None)
+    if todo is wanted:                   # the whole building: the same design may be baked already
+        baked = _bk_bake_all(d, exposed, wanted)
+    else:
+        baked = {}
+        for L in todo:
+            geo = bk_bake_level(d, L)
+            baked[L] = (geo.collision(), {mat: _BKPart(mat, pos, nrm, uv, counts)
+                                          for mat, (pos, nrm, uv, counts) in geo.parts(exposed).items()})
     for L in sorted(todo):
-        geo = bk_bake_level(d, L)
-        cols[L] = geo.collision()
-        if ctx is None:
-            continue
-        for mat, (pos, nrm, uv, idx) in sorted(geo.arrays().items()):
+        cols[L] = baked[L][0]
+        lp = parts[L] = dict(baked[L][1])
+        for mat, part in sorted(lp.items()):
+            if ctx is None or sum(part.counts[1:]) == 0:
+                continue                 # (a blocker has nothing to show close by)
             child = SceneNode(f"{node.name}_L{L}_{mat}", parent=node)
             child._heaven3d_imported_part = "building"
             child._h3d_locked = True
             child._bk_level = L
-            child.mesh = Mesh.from_arrays(ctx, pos, nrm, uv, idx, name=child.name)
+            child.mesh = _BKPartMesh(ctx, child.name, part)
             child.material = bk_material(mat)
             child.mesh._h3d_cull = not child.material.double_sided
-            tris += len(idx) // 3
-    parts = [cols[L] for L in sorted(cols) if len(cols[L][1])]
-    if parts:
+            if mat == "glass":
+                child.mesh._h3d_shadow = False             # the sun shines in through the windows
+    node._bk_rev = getattr(node, "_bk_rev", 0) + 1         # the town batches notice (world/bk_city.py)
+    cparts = [cols[L] for L in sorted(cols) if len(cols[L][1])]
+    if cparts:
         off = 0
         P, I = [], []
-        for pos, idx in parts:
+        for pos, idx in cparts:
             P.append(pos)
             I.append(idx + off)
             off += len(pos)
@@ -1063,6 +1332,11 @@ def bk_apply_view(node, top=_BK_KEEP):
         lv = getattr(c, "_bk_level", None)
         if lv is not None:
             c.visible = top is None or lv <= top
+
+
+def bk_materials_used(node):
+    """Names of the library materials a building is made of."""
+    return {mat for lp in (getattr(node, "_bk_parts", None) or {}).values() for mat in lp if mat != "blocker"}
 
 
 def bk_new(engine, style="town", position=(0.0, 0.0, 0.0), name=None, seed=None):
@@ -1234,8 +1508,10 @@ if not globals().get("_BK_INSTALLED"):
     def _bk_save_project(self, path=None):
         r = _BK_PREV_SAVE_PROJECT(self, path)
         try:
-            used = {c.material.name[3:] for n in self.scene.root.traverse() if bk_is_building(n)
-                    for c in n.children if c.material is not None and str(c.material.name).startswith("bk_")}
+            used = set()
+            for n in self.scene.root.traverse():
+                if bk_is_building(n):
+                    used |= bk_materials_used(n)
             if used:
                 k = bk_store_project_textures(used)
                 if k:
@@ -1255,6 +1531,20 @@ if not globals().get("_BK_INSTALLED"):
         return _BK_PREV_SELECT_NODE(self, node)
 
     HeavenEngine.select_node = _bk_select_node
+
+    # a house of a generated town (a "Town" group, tag "town") is selected on
+    # its own: a click in the viewport must not grab the whole town
+    _BK_PREV_SELECTABLE_ROOT = HeavenEngine._selectable_root
+
+    def _bk_selectable_root(self, node):
+        n = node
+        while n is not None and n is not self.scene.root:
+            if bk_is_building(n) and n.parent is not None and n.parent.tag == "town":
+                return n
+            n = n.parent
+        return _BK_PREV_SELECTABLE_ROOT(self, node)
+
+    HeavenEngine._selectable_root = _bk_selectable_root
 
     # the collision mesh of a building is its own low-poly proxy
     _BK_PREV_SHAPE_VIEW = globals().get("_H3D27_PREV_SHAPE_VIEW") or _mesh_shape_view

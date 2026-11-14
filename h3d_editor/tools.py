@@ -238,7 +238,7 @@ class ToolPanels:
         ed = self.ed
         if created:
             ed._push_created(node, label)
-            ed.refresh_outliner() if hasattr(ed, "refresh_outliner") else None
+            ed.outliner.sync()
             self.rebuild()
             return
         name = node.name
@@ -283,6 +283,35 @@ class ToolPanels:
         self.ed.select(nodes[-1])
         self.ed.toast("Generated a village of %d houses" % (len(nodes) - 1))
 
+    def _bk_town(self):
+        t = self._bk()
+        g = self._bk_gen
+        t0 = time.time()
+        group = t.generate_town(g["bx"], g["bz"], max(g["damage"], 0) / 100.0)
+        n = sum(1 for c in group.children if not c.name.startswith("Street"))
+        self.ed._push_created(group, "Generate town")          # one undo step for the whole town
+        self.ed.outliner.rebuild()
+        self.ed.select(None)
+        self.ed.toast("Generated a town of %d houses in %.1f s (Ctrl+Z removes it)" % (n, time.time() - t0))
+
+    def _bk_set_detail(self, key):
+        self.ed.prefs["building_detail"] = key
+        self.ed.save_prefs()
+        fn = getattr(self.engine, "set_building_detail", None)
+        if fn is not None:
+            fn(preset=key)
+
+    def _bk_town_stats(self, line):
+        fn = getattr(self.engine, "building_stats", None)
+        s = fn() if fn is not None else None
+        if not s or not s.get("batched"):
+            return ("Buildings that stand still are drawn in districts", "with three levels of detail")[line]
+        if line == 0:
+            return "%d buildings in %d districts, %d in view (%d near, %d mid, %d far)" % (
+                s["batched"], s["districts"], s["drawn"], s["near"], s["mid"], s["far"])
+        return "%s triangles, %d draw calls, %d MB video memory" % (
+            "{:,}".format(s["triangles"]), s["draws"], round(s["video_mb"]))
+
     def _buildings(self):
         t = self._bk()
         if t is None or getattr(self, "classic", False):
@@ -294,10 +323,15 @@ class ToolPanels:
         node = t.target()
         d = h.bk_data(node) if node is not None else None
         if not hasattr(self, "_bk_gen"):
-            self._bk_gen = {"w": 4, "d": 3, "floors": 2, "damage": 0}
+            self._bk_gen = {"w": 4, "d": 3, "floors": 2, "damage": 0, "bx": 3, "bz": 3}
         # ---- building ----
         p = self.section("Building", "home")
         blds = t.buildings()
+        if len(blds) > 60:                    # a town: list the buildings nearest to the camera
+            cp = self.engine.camera.position
+            near = sorted(blds, key=lambda n: (n.world_matrix()[3].x - cp.x) ** 2 + (n.world_matrix()[3].z - cp.z) ** 2)
+            blds = sorted(near[:60] + ([node] if node is not None and node not in near[:60] else []),
+                          key=lambda n: n.name)
         opts = [(-1, "New building (paint to start)")] + [(i, n.name) for i, n in enumerate(blds)]
         cur = next((i for i, n in enumerate(blds) if n is node), -1)
         Dropdown(opts, cur, label="Editing", parent=p,
@@ -349,6 +383,24 @@ class ToolPanels:
                tooltip="A new house in the current style, in front of the camera")
         Button("Generate village", lambda: self._bk_do(self._bk_village), icon="sparkle", parent=p,
                tooltip="Eight varied houses along a cobbled street, some shelled (uses Damage %)")
+        # ---- town ----
+        p = self.section("Town", "grid")
+        r = Row(spacing=3, parent=p)
+        NumberField("Blocks wide", g["bx"], integer=True, min=1, max=16, parent=r,
+                    on_change=lambda v: g.update(bx=int(v)))
+        NumberField("Blocks deep", g["bz"], integer=True, min=1, max=16, parent=r,
+                    on_change=lambda v: g.update(bz=int(v)))
+        self.bind(Label("", dim=True, parent=p),
+                  lambda: "About %d houses on %d x %d m (uses Damage %%)" % (g["bx"] * g["bz"] * 7, g["bx"] * 34,
+                                                                             g["bz"] * 24))
+        Button("Generate town", lambda: self._bk_do(self._bk_town), icon="grid", parent=p,
+               tooltip="Blocks of houses on a grid of streets, in one 'Town' group. A big town takes a moment.")
+        presets = getattr(h, "BK_DETAIL_PRESETS", None)
+        if presets:
+            Dropdown([(k, v[0]) for k, v in presets.items()], self.ed.prefs.get("building_detail", "medium"),
+                     label="Detail", parent=p, on_change=self._bk_set_detail)
+            self.bind(Label("", dim=True, parent=p), lambda: self._bk_town_stats(0))
+            self.bind(Label("", dim=True, parent=p), lambda: self._bk_town_stats(1))
         # ---- info ----
         p = self.section("Scene", "info")
         self.bind(Label("", parent=p), self._bk_stats)

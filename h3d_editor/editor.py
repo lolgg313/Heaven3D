@@ -181,6 +181,15 @@ class Editor:
                tooltip="Stop the game (Ctrl+P / F5)")
         self.pill_label = Label("Esc frees the mouse", dim=True, width=150, expand=0, parent=self.play_pill)
         self.viewport.place(self.play_pill, 8, 8)
+        # viewport shading, top-left of the 3D view (where the classic editor had its "View" button)
+        self.shade_pill = Bar(color=(0.08, 0.09, 0.1, 0.82))
+        self.shade_btns = {}
+        for mode, label, tip in (("lit", "Lit", "Shaded view"),
+                                 ("lit_wire", "Lit + Wire", "Shaded view with the triangle edges on top"),
+                                 ("wire", "Wire", "Wireframe only (x-ray)")):
+            self.shade_btns[mode] = Button(label, lambda m=mode: self.set_shading(m), expand=0, parent=self.shade_pill,
+                                           tooltip=tip + "  (F4: next view mode)")
+        self.viewport.place(self.shade_pill, 8, 8)
         self.right = Dock(width=self.RIGHT_W, expand=0, parent=mid)
         self.insp_label = Label("Inspector", bold=True, icon="sliders", parent=self.right)
         self.inspector = Inspector(self)
@@ -206,6 +215,10 @@ class Editor:
         self.ui.on_update.connect(self._on_update)
         # keyboard shortcuts that aren't on a menu
         ui.add_shortcut("Ctrl+Shift+S", self.save_as)
+        ui.add_shortcut("F4", self.next_shading, enabled=lambda: not getattr(e, "_playing", False))
+        # the level of detail of painted towns (Buildings panel > Town > Detail)
+        if self.prefs.get("building_detail") and hasattr(e, "set_building_detail"):
+            self.run(lambda: e.set_building_detail(preset=self.prefs.get("building_detail")))
 
     def build_toolbar(self, root):
         bar = Bar(parent=root)
@@ -258,6 +271,8 @@ class Editor:
         # while playing, the game gets the whole window: a small Stop pill floats over it
         self.menubar.visible = self.toolbar.visible = self.status.visible = not hide
         self.play_pill.visible = hide
+        self.shade_pill.visible = (not hide and not playing and p.get("show_shading", True)
+                                   and hasattr(self.engine, "set_shading"))
         self.ui.invalidate(layout=True)
 
     def tool_panel_open(self):
@@ -296,7 +311,7 @@ class Editor:
     def menus(self):
         e = self.engine
         G = self.h3d.Gizmo
-        shading = lambda m: lambda: self.run(lambda: e.set_shading(m))  # noqa: E731
+        shading = lambda m: lambda: self.set_shading(m)  # noqa: E731
         cur_shading = lambda m: lambda: e.__dict__.get("_h3d27_view_state", {}).get("shading", "lit") == m  # noqa
         pref = self.prefs
         hint = self._hint
@@ -336,7 +351,9 @@ class Editor:
             ("View", [
                 MenuItem("Lit", shading("lit"), checked=cur_shading("lit")),
                 MenuItem("Lit + wireframe", shading("lit_wire"), checked=cur_shading("lit_wire")),
-                MenuItem("Wireframe", shading("wire"), checked=cur_shading("wire")),
+                hint(MenuItem("Wireframe", shading("wire"), checked=cur_shading("wire")), "F4: next"),
+                MenuItem("View mode buttons", lambda: self.toggle_pref("show_shading"),
+                         checked=lambda: pref.get("show_shading", True)),
                 MenuItem("Grid", lambda: self.run(lambda: e.set_grid_visible(
                     not e.__dict__.get("_h3d27_view_state", {}).get("grid", True))),
                     checked=lambda: e.__dict__.get("_h3d27_view_state", {}).get("grid", True)),
@@ -596,6 +613,11 @@ class Editor:
                 self.project_label.invalidate()
 
     def _update_tools(self):
+        cur = self.shading()
+        for mode, b in self.shade_btns.items():
+            if b.primary != (mode == cur):
+                b.primary = mode == cur
+                b.invalidate()
         g = getattr(self.engine, "gizmo", None)
         if g is None:
             return
@@ -604,6 +626,25 @@ class Editor:
             if b.primary != on:
                 b.primary = on
                 b.invalidate()
+
+    # ---- viewport shading: Lit / Lit + wireframe / Wireframe ----
+    SHADING = ("lit", "lit_wire", "wire")
+
+    def shading(self):
+        return self.engine.__dict__.get("_h3d27_view_state", {}).get("shading", "lit")
+
+    def set_shading(self, mode):
+        e = self.engine
+        if not hasattr(e, "set_shading"):
+            return
+        self.run(lambda: e.set_shading(mode))
+        self._update_tools()
+        self.toast("View: " + {"lit": "Lit", "lit_wire": "Lit + wireframe", "wire": "Wireframe"}.get(mode, mode))
+
+    def next_shading(self):
+        cur = self.shading()
+        i = self.SHADING.index(cur) if cur in self.SHADING else 0
+        self.set_shading(self.SHADING[(i + 1) % len(self.SHADING)])
 
     def _update_viewport_rect(self):
         vg = getattr(self.engine, "view_gizmo", None)
@@ -1609,6 +1650,7 @@ class Editor:
         MessageBox.ask(self.ui, "\n".join([
             "Viewport:  right-drag look   WASD/QE fly (while right-dragging)   wheel zoom",
             "           click select   W move   E rotate   R scale   F focus   Esc deselect",
+            "           F4 next view mode (Lit / Lit + wireframe / Wireframe)",
             "Objects:   Ctrl+D duplicate   Delete delete   F2 rename   Ctrl+Z / Ctrl+Y undo / redo",
             "Project:   Ctrl+S save   Ctrl+O open   Ctrl+I import   Ctrl+E export",
             "Play:      Ctrl+P or F5 play / stop   Esc frees the mouse   Ctrl+R reload scripts",

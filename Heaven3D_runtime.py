@@ -92,6 +92,7 @@ import math
 import struct
 import time
 import traceback
+import weakref
 import argparse
 from dataclasses import dataclass, field
 from typing import Any, Optional, Callable, Dict, List, Tuple, Union
@@ -9215,6 +9216,16 @@ class Renderer:
             if shadow_prog:
                 shadow_prog["u_light_space"].write(light_vp.to_bytes())
                 _casters = scene.traverse_meshes()
+                # a mesh marked _h3d_shadow = False casts no shadow of its own
+                # (window glass; a district of buildings casts as ONE merged
+                # caster, also when it is out of view)
+                _xs = globals().get("_h3d_shadow_extra")
+                if _xs is not None:
+                    try:
+                        _casters = [_c for _c in _casters
+                                    if getattr(_c[1], "_h3d_shadow", True)] + _xs(scene)
+                    except Exception as _xe:
+                        Log.warn(f"[Renderer] merged shadow casters: {_xe}")
                 _cull = globals().get("_h3d274_shadow_casters")   # [H3D274:perf]
                 if _cull is not None:
                     try:
@@ -13231,48 +13242,68 @@ class _TriMeshBVH:
         self.tri_hi = np.maximum(np.maximum(v0, v1), v2)
         cent = (v0 + v1 + v2) * (1.0 / 3.0)
 
-        node_lo: List[np.ndarray] = []
-        node_hi: List[np.ndarray] = []
-        left: List[int] = []
-        right: List[int] = []
-        start: List[int] = []
-        count: List[int] = []
-        packed: List[int] = []
-
-        def build(idxs: np.ndarray) -> int:
-            ni = len(node_lo)
-            node_lo.append(None); node_hi.append(None)
-            left.append(-1); right.append(-1)
-            start.append(-1); count.append(0)
-            lo = self.tri_lo[idxs].min(axis=0)
-            hi = self.tri_hi[idxs].max(axis=0)
-            node_lo[ni] = lo
-            node_hi[ni] = hi
-            if len(idxs) <= self.LEAF:
-                start[ni] = len(packed)
-                count[ni] = len(idxs)
-                packed.extend(int(i) for i in idxs)
-                return ni
-            ext = hi - lo
-            axis = int(np.argmax(ext))
-            srt = idxs[np.argsort(cent[idxs, axis], kind="quicksort")]
-            mid = len(srt) // 2
-            left[ni] = build(srt[:mid])
-            right[ni] = build(srt[mid:])
-            return ni
-
-        if n > 0:
-            build(np.arange(n))
-        self.packed = np.asarray(packed, dtype=np.int32)
-        self.node_lo = (np.stack(node_lo) if node_lo
-                        else np.zeros((0, 3), np.float32))
-        self.node_hi = (np.stack(node_hi) if node_hi
-                        else np.zeros((0, 3), np.float32))
-        self.left = np.asarray(left, dtype=np.int32)
-        self.right = np.asarray(right, dtype=np.int32)
-        self.start = np.asarray(start, dtype=np.int32)
-        self.count = np.asarray(count, dtype=np.int32)
-        self.node_count = len(left)
+        # Median split along the longest axis, exactly as before, but built
+        # level by level with numpy on every node of a level at once (the
+        # recursive build made thousands of tiny numpy calls: 15 ms for the
+        # 1,300 triangles of a house, half a minute at Play for a town).
+        if n == 0:
+            self.packed = np.zeros(0, np.int32)
+            self.node_lo = np.zeros((0, 3), np.float32)
+            self.node_hi = np.zeros((0, 3), np.float32)
+            self.left = self.right = self.start = self.count = np.zeros(0, np.int32)
+            self.node_count = 0
+            return
+        order = np.arange(n, dtype=np.int64)
+        starts = np.zeros(1, np.int64)
+        ends = np.full(1, n, np.int64)
+        L_lo, L_hi, L_left, L_right, L_start, L_count = [], [], [], [], [], []
+        next_id = 1
+        pad_lo = np.full((1, 3), np.inf, np.float32)
+        pad_hi = np.full((1, 3), -np.inf, np.float32)
+        while len(starts):
+            k = len(starts)
+            size = ends - starts
+            pairs = np.empty(2 * k, np.int64)
+            pairs[0::2] = starts
+            pairs[1::2] = ends
+            lo = np.minimum.reduceat(np.concatenate([self.tri_lo[order], pad_lo]), pairs, axis=0)[0::2]
+            hi = np.maximum.reduceat(np.concatenate([self.tri_hi[order], pad_hi]), pairs, axis=0)[0::2]
+            leaf = size <= self.LEAF
+            lf = np.full(k, -1, np.int32)
+            rt = np.full(k, -1, np.int32)
+            L_lo.append(lo)
+            L_hi.append(hi)
+            L_left.append(lf)
+            L_right.append(rt)
+            L_start.append(np.where(leaf, starts, -1).astype(np.int32))
+            L_count.append(np.where(leaf, size, 0).astype(np.int32))
+            inner = np.nonzero(~leaf)[0]
+            if not len(inner):
+                break
+            s_in, e_in, z_in = starts[inner], ends[inner], size[inner]
+            axis = np.argmax(hi[inner] - lo[inner], axis=1)
+            seg = np.repeat(np.arange(len(inner)), z_in)
+            first = np.cumsum(z_in) - z_in
+            pos = np.repeat(s_in - first, z_in) + np.arange(int(z_in.sum()))
+            sub = order[pos]
+            order[pos] = sub[np.lexsort((cent[sub, axis[seg]], seg))]
+            mid = s_in + z_in // 2
+            kids = next_id + np.arange(2 * len(inner), dtype=np.int32)
+            lf[inner] = kids[0::2]
+            rt[inner] = kids[1::2]
+            next_id += 2 * len(inner)
+            starts = np.empty(2 * len(inner), np.int64)
+            ends = np.empty(2 * len(inner), np.int64)
+            starts[0::2], starts[1::2] = s_in, mid
+            ends[0::2], ends[1::2] = mid, e_in
+        self.packed = order.astype(np.int32)
+        self.node_lo = np.concatenate(L_lo).astype(np.float32)
+        self.node_hi = np.concatenate(L_hi).astype(np.float32)
+        self.left = np.concatenate(L_left)
+        self.right = np.concatenate(L_right)
+        self.start = np.concatenate(L_start)
+        self.count = np.concatenate(L_count)
+        self.node_count = len(self.left)
 
     # ------------------------------------------------------------ queries
     def query_aabb(self, lo, hi, out: Optional[List[int]] = None) -> List[int]:
@@ -22980,11 +23011,14 @@ def _finalpatch_render_selection_outline(self):
             self._finalpatch_outline_edge_vao = edge_vao
 
         targets = []
+        batched = globals().get("_bk_city_batched")       # building parts drawn by their district
         for node in selected.traverse():
             mesh = getattr(node, "mesh", None)
-            if mesh is None or getattr(mesh, "vbo", None) is None:
+            if mesh is None or not getattr(node, "visible", True):
                 continue
-            if not getattr(node, "visible", True):
+            if batched is not None and batched(self.scene, node):
+                continue                                   # (a whole town selected: no outline per house)
+            if getattr(mesh, "vbo", None) is None:
                 continue
             try:
                 targets.append((mesh, node.world_matrix()))
@@ -47215,8 +47249,8 @@ void main() { frag = texture(u_tex, v_uv); }
     def _h3d27_draw_wire(self):
         st = _h3d27_view(self)
         mode = st["shading"]
-        if mode == "lit" or getattr(self, "mode", None) != "editor":
-            return
+        if mode == "lit" or getattr(self, "mode", None) != "editor" or getattr(self, "_playing", False):
+            return                                # (the game itself is always drawn lit)
         ctx = self.ctx
         res = self.__dict__.get("_h3d27_wire_res")
         if res is None:
@@ -47246,16 +47280,23 @@ void main() { frag = texture(u_tex, v_uv); }
         sel = getattr(self, "selected", None)
         sel_ids = {id(n) for n in sel.traverse()} if sel is not None else set()
         items = []
+        batched = globals().get("_bk_city_batched")         # building parts drawn by their district
         for node in self.scene.root.traverse():
             mesh = getattr(node, "mesh", None)
-            if mesh is None or getattr(mesh, "vbo", None) is None or not getattr(node, "visible", True):
+            if mesh is None or not getattr(node, "visible", True):
                 continue
-            if node.name.startswith("__"):
+            if batched is not None and batched(self.scene, node):
+                continue
+            if getattr(mesh, "vbo", None) is None or node.name.startswith("__"):
                 continue
             try:
                 items.append((mesh, vp * node.world_matrix(), id(node) in sel_ids))
             except Exception:
                 continue
+        draws = globals().get("_bk_city_draws")
+        if draws is not None:
+            for mesh, model in draws(self.scene):
+                items.append((mesh, vp * model, False))
 
         def draw(color_fn):
             for mesh, mvp, is_sel in items:
@@ -47655,9 +47696,14 @@ try:
         while stack:
             n, pw = stack.pop()
             w = n.local_matrix() if pw is None else pw * n.local_matrix()
-            if n.visible and n.mesh is not None:
-                out.append((n, n.mesh, w))
-            ch = n.children
+            if n.visible:
+                if n.mesh is not None:
+                    out.append((n, n.mesh, w))
+                ch = n.children
+            else:
+                # hiding an object hides the locked parts it is made of (the
+                # material parts of an imported model, the storeys of a building)
+                ch = [c for c in n.children if not c.__dict__.get("_heaven3d_imported_part")]
             for i in range(len(ch) - 1, -1, -1):
                 stack.append((ch[i], w))
         return out
@@ -47980,11 +48026,15 @@ try:
         items = scene.traverse_meshes()
         fr = _SB["frame"].get(id(scene)) if "_SB" in globals() else None
         sect = fr[1] if fr is not None and fr[0] is scene else []
-        if len(items) < 64 and not sect:
+        xs = globals().get("_h3d_shadow_extra")
+        extra = xs(scene) if xs is not None else []
+        if len(items) < 64 and not sect and not extra:
             return _PS_PREV_FIT(self, scene, light_view)
         try:
             LV = np.frombuffer(light_view.to_bytes(), np.float32).reshape(4, 4).astype(np.float64)
             pts = []
+            if xs is not None:               # merged casters (districts of buildings, also out of view)
+                items = [it for it in items if getattr(it[1], "_h3d_shadow", True)] + extra
             if items:
                 d = _ps_batch(items)
                 lo, hi, M = d["lo"], d["hi"], d["M"]
@@ -48142,16 +48192,33 @@ try:
             sel = sel.parent
         return out
 
+    # world/bk_city.py puts its town batcher here: painted buildings are drawn
+    # as merged districts with levels of detail instead of part by part
+    _PS_CITY = [None]
+
     def _sb_collect(scene):
         """In-render mesh list: like _h3d274_collect, but building sectors come
-        back as cached batches (their transparent pieces stay in the list)."""
+        back as cached batches (their transparent pieces stay in the list)
+        and painted buildings as district batches."""
         out, batches = [], []
         skip = _sb_selected_chain()
+        city = _PS_CITY[0]
+        if city is not None:
+            try:
+                city = city(scene, skip)
+            except Exception as ex:
+                city = None
+                Log.warn(f"[Perf] town batches skipped: {ex}")
         stack = [(scene.root, None)]
         while stack:
             n, pw = stack.pop()
             w = n.local_matrix() if pw is None else pw * n.local_matrix()
             ch = n.children
+            if city is not None and n.mesh_type == "bk_building":
+                ch = city.building(n, w, ch)          # the children still to draw one by one
+                for i in range(len(ch) - 1, -1, -1):
+                    stack.append((ch[i], w))
+                continue
             if len(ch) >= 32 and n.mesh is None and id(n) not in skip:
                 try:
                     e = _sb_entry(n, w)
@@ -48162,10 +48229,18 @@ try:
                     batches.append(e)
                     out.extend(e["loose"])
                     continue
-            if n.visible and n.mesh is not None:
-                out.append((n, n.mesh, w))
+            if n.visible:
+                if n.mesh is not None:
+                    out.append((n, n.mesh, w))
+            elif ch:                          # a hidden object hides its locked parts
+                ch = [c for c in ch if not c.__dict__.get("_heaven3d_imported_part")]
             for i in range(len(ch) - 1, -1, -1):
                 stack.append((ch[i], w))
+        if city is not None:
+            try:
+                city.finish(out)
+            except Exception as ex:
+                Log.warn(f"[Perf] town batches not drawn: {ex}")
         _SB["frame"][id(scene)] = (scene, batches)
         return out
 
@@ -48251,6 +48326,9 @@ try:
     _PS_SPECIAL = {}
 
     def _ps_plain_module(n):
+        if n.__dict__.get("_bk_level") is not None:        # a baked part of a painted building
+            return (not n.blueprints and n.rigidbody is None and not n.is_point_light
+                    and not n.is_spot_light and not n.spawn_kind and not n.user_data)
         if n.mesh_type != "procedural_module":
             return False
         ud = n.user_data
@@ -48259,8 +48337,8 @@ try:
                 and not (ud and "particle_system" in ud))
 
     def _ps_special_nodes(self):
-        """Every node except plain building modules (no script, light, spawn,
-        particles): what the per-frame scanners (lights, icons, sounds,
+        """Every node except plain building modules and baked building parts
+        (no script, light, spawn, particles): what the per-frame scanners (lights, icons, sounds,
         particles, terrain, characters) look through.  Cached until the tree
         changes."""
         if not _PS_ON:
@@ -51578,6 +51656,12 @@ _BK_WH = _BK_H - _BK_SLAB                       # clear wall height
 _BK_MESH_TYPE = "bk_building"
 _BK_KEEP = object()
 _BK_WALLISH = ("wall", "door", "window", "arch")
+# what a face is for the level-of-detail of a town (see world/bk_city.py):
+#   blocker   a dark pane that closes a window / doorway of a far building
+#   shell     outside walls, roofs: what a building is from a distance
+#   detail    frames, shutters, sills, plinths: gone when really far
+#   interior  rooms, stairs, glazing bars, glass: only drawn close by
+_BK_B, _BK_S, _BK_D, _BK_I = 0, 1, 2, 3
 
 # interior finishes: wall + floor (+ ceiling) materials of a room
 BK_FINISHES = {
@@ -51723,6 +51807,19 @@ class BKData:
             out[(x + dx, y, z + dz)] = ((x, y, z), d)
         return out
 
+    def exposed(self):
+        """True when the rooms can be seen from far away: a room without a
+        ceiling or roof, or an outside wall that is shelled, low or gone.
+        Such a building keeps its inside at every distance."""
+        if self.roof_type() == "none" or any(self.indoor(c) for c in self.open):
+            return True
+        for e, k in self.edges.items():
+            if k in ("ruin", "half", "sandbags", "none"):
+                a, b = self.edge_cells(e)
+                if self.indoor(a) != self.indoor(b):
+                    return True
+        return False
+
     def roof_type(self):
         return self.roof.get("type") or self.st()["roof_type"]
 
@@ -51738,13 +51835,15 @@ class BKData:
 # ---------------------------------------------------------------------------
 class _BKGeo:
     def __init__(self):
-        self.m = {}                    # material -> [positions, normals, uvs] flat lists
+        self.m = {}                    # (material, class) -> [positions, normals, uvs] flat lists
+        self.cls = _BK_S               # class of the faces being added (_BK_B / S / D / I)
         self.col = []                  # collision boxes (x0, y0, z0, x1, y1, z1)
         self.col_tris = []             # extra collision triangles (9 floats each)
 
-    def quad(self, mat, p0, p1, p2, p3, uv=None, out=None, up=False):
+    def quad(self, mat, p0, p1, p2, p3, uv=None, out=None, up=False, cls=None):
         """A quad (corners in order).  ``out``: a point the face must look
-        away from; ``up``: the face must look upwards."""
+        away from; ``up``: the face must look upwards.  ``cls``: its
+        level-of-detail class (default: the current ``self.cls``)."""
         ax, ay, az = p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2]
         bx, by, bz = p3[0] - p0[0], p3[1] - p0[1], p3[2] - p0[2]
         nx, ny, nz = ay * bz - az * by, az * bx - ax * bz, ax * by - ay * bx
@@ -51771,21 +51870,23 @@ class _BKGeo:
                 uv = [(-p[2] if nx > 0 else p[2], p[1]) for p in (p0, p1, p2, p3)]
             else:
                 uv = [(p[0] if nz > 0 else -p[0], p[1]) for p in (p0, p1, p2, p3)]
-        g = self.m.get(mat)
+        key = (mat, self.cls if cls is None else cls)
+        g = self.m.get(key)
         if g is None:
-            g = self.m[mat] = [[], [], []]
+            g = self.m[key] = [[], [], []]
         P, N, U = g
         for p, t in ((p0, uv[0]), (p1, uv[1]), (p2, uv[2]), (p3, uv[3])):
             P.extend(p)
             N.extend((nx, ny, nz))
             U.extend((t[0] / tw, t[1] / th))
 
-    def tri(self, mat, p0, p1, p2, uv, out=None, up=False):
-        self.quad(mat, p0, p1, p2, p2, (uv[0], uv[1], uv[2], uv[2]), out, up)
+    def tri(self, mat, p0, p1, p2, uv, out=None, up=False, cls=None):
+        self.quad(mat, p0, p1, p2, p2, (uv[0], uv[1], uv[2], uv[2]), out, up, cls)
 
-    def box(self, lo, hi, mats, collide=False):
+    def box(self, lo, hi, mats, collide=False, cls=None):
         """Axis-aligned box.  mats: a material for every face, or a dict
-        {"x-", "x+", "y-", "y+", "z-", "z+"} (missing faces are skipped)."""
+        {"x-", "x+", "y-", "y+", "z-", "z+"} (missing faces are skipped).
+        cls: one class for the box, or a dict per face ("*": the others)."""
         x0, y0, z0 = min(lo[0], hi[0]), min(lo[1], hi[1]), min(lo[2], hi[2])
         x1, y1, z1 = max(lo[0], hi[0]), max(lo[1], hi[1]), max(lo[2], hi[2])
         if x1 - x0 < 1e-6 or y1 - y0 < 1e-6 or z1 - z0 < 1e-6:
@@ -51795,37 +51896,82 @@ class _BKGeo:
         if mats is None:
             return
         g = (lambda k: mats) if isinstance(mats, str) else mats.get
+        if isinstance(cls, dict):
+            dflt = cls.get("*", self.cls)
+            k = lambda f: cls.get(f, dflt)                   # noqa: E731
+        else:
+            one = self.cls if cls is None else cls
+            k = lambda f: one                                # noqa: E731
         c = ((x0 + x1) * 0.5, (y0 + y1) * 0.5, (z0 + z1) * 0.5)
         m = g("x-")
         if m:
-            self.quad(m, (x0, y0, z0), (x0, y0, z1), (x0, y1, z1), (x0, y1, z0), out=c)
+            self.quad(m, (x0, y0, z0), (x0, y0, z1), (x0, y1, z1), (x0, y1, z0), out=c, cls=k("x-"))
         m = g("x+")
         if m:
-            self.quad(m, (x1, y0, z1), (x1, y0, z0), (x1, y1, z0), (x1, y1, z1), out=c)
+            self.quad(m, (x1, y0, z1), (x1, y0, z0), (x1, y1, z0), (x1, y1, z1), out=c, cls=k("x+"))
         m = g("z-")
         if m:
-            self.quad(m, (x1, y0, z0), (x0, y0, z0), (x0, y1, z0), (x1, y1, z0), out=c)
+            self.quad(m, (x1, y0, z0), (x0, y0, z0), (x0, y1, z0), (x1, y1, z0), out=c, cls=k("z-"))
         m = g("z+")
         if m:
-            self.quad(m, (x0, y0, z1), (x1, y0, z1), (x1, y1, z1), (x0, y1, z1), out=c)
+            self.quad(m, (x0, y0, z1), (x1, y0, z1), (x1, y1, z1), (x0, y1, z1), out=c, cls=k("z+"))
         m = g("y-")
         if m:
-            self.quad(m, (x0, y0, z0), (x1, y0, z0), (x1, y0, z1), (x0, y0, z1), out=c)
+            self.quad(m, (x0, y0, z0), (x1, y0, z0), (x1, y0, z1), (x0, y0, z1), out=c, cls=k("y-"))
         m = g("y+")
         if m:
-            self.quad(m, (x0, y1, z1), (x1, y1, z1), (x1, y1, z0), (x0, y1, z0), out=c)
+            self.quad(m, (x0, y1, z1), (x1, y1, z1), (x1, y1, z0), (x0, y1, z0), out=c, cls=k("y+"))
+
+    def parts(self, exposed=False):
+        """{material: (positions, normals, uvs, (blocker, shell, detail,
+        interior) quad counts)} with the quads in that class order.
+        ``exposed``: the inside can be seen from far away (no roof, a
+        shelled wall): the interior counts as shell and there are no
+        blockers."""
+        by = {}
+        for (mat, cls), (P, N, U) in self.m.items():
+            if not P:
+                continue
+            if exposed:
+                if cls == _BK_B:
+                    continue
+                if cls == _BK_I and mat != "glass":
+                    cls = _BK_S
+            by.setdefault(mat, {}).setdefault(cls, [[], [], []])
+            g = by[mat][cls]
+            g[0].append(P)
+            g[1].append(N)
+            g[2].append(U)
+        out = {}
+        for mat, classes in by.items():
+            P, N, U, counts = [], [], [], [0, 0, 0, 0]
+            for cls in (_BK_B, _BK_S, _BK_D, _BK_I):
+                g = classes.get(cls)
+                if g is None:
+                    continue
+                for a in g[0]:
+                    P.extend(a)
+                    counts[cls] += len(a) // 12
+                for a in g[1]:
+                    N.extend(a)
+                for a in g[2]:
+                    U.extend(a)
+            out[mat] = (np.asarray(P, np.float32).reshape(-1, 3), np.asarray(N, np.float32).reshape(-1, 3),
+                        np.asarray(U, np.float32).reshape(-1, 2), tuple(counts))
+        return out
 
     def arrays(self):
-        """{material: (positions, normals, uvs, indices)}"""
+        """{material: (positions, normals, uvs, indices)}: the building as
+        it is seen close by (everything but the far-away blockers)."""
         out = {}
-        for mat, (P, N, U) in self.m.items():
-            n = len(P) // 3
-            if not n:
+        for mat, (pos, nrm, uv, counts) in self.parts().items():
+            v0 = counts[0] * 4
+            n = len(pos) - v0
+            if n <= 0:
                 continue
             q = np.arange(0, n, 4, dtype=np.uint32)
             idx = np.stack([q, q + 1, q + 2, q, q + 2, q + 3], 1).ravel()
-            out[mat] = (np.asarray(P, np.float32).reshape(-1, 3), np.asarray(N, np.float32).reshape(-1, 3),
-                        np.asarray(U, np.float32).reshape(-1, 2), idx)
+            out[mat] = (pos[v0:], nrm[v0:], uv[v0:], idx)
         return out
 
     def collision(self):
@@ -51865,16 +52011,32 @@ class _BKEdge:
             self.ox, self.oz = (x + 1) * _BK_C, z * _BK_C
         self.face = ({"a-": "x-", "a+": "x+", "n-": "z-", "n+": "z+"} if o == "N" else
                      {"a-": "z-", "a+": "z+", "n-": "x-", "n+": "x+"})
+        # level-of-detail classes: the faces towards cell a / cell b, the other
+        # faces of the wall, and what is fixed on it (frames, sills ...)
+        self.ca = self.cb = self.cd = _BK_S
+        self.dd = _BK_D
 
     def pt(self, a, y, n):
         if self.o == "N":
             return (self.ox + a, self.y0 + y, self.oz + n)
         return (self.ox + n, self.y0 + y, self.oz + a)
 
-    def box(self, geo, a0, a1, y0, y1, n0, n1, mats, collide=False):
+    def box(self, geo, a0, a1, y0, y1, n0, n1, mats, collide=False, cls=None):
         if isinstance(mats, dict):
             mats = {(self.face.get(k, k)): v for k, v in mats.items()}
-        geo.box(self.pt(a0, y0, n0), self.pt(a1, y1, n1), mats, collide)
+        if isinstance(cls, dict):
+            cls = {(self.face.get(k, k)): v for k, v in cls.items()}
+        geo.box(self.pt(a0, y0, n0), self.pt(a1, y1, n1), mats, collide, cls)
+
+    def wall_cls(self):
+        return {"n-": self.ca, "n+": self.cb, "*": self.cd}
+
+    def blocker(self, geo, a0, a1, y0, y1, n, s):
+        """A dark pane across an opening, looking outwards (s: the n
+        direction of the outside): what a far building shows instead of its
+        glass and rooms."""
+        geo.quad("blocker", self.pt(a0, y0, n), self.pt(a1, y0, n), self.pt(a1, y1, n), self.pt(a0, y1, n),
+                 uv=[(0, 0), (1, 0), (1, 1), (0, 1)], out=self.pt((a0 + a1) / 2, (y0 + y1) / 2, n - s), cls=_BK_B)
 
 
 # ---------------------------------------------------------------------------
@@ -51895,10 +52057,10 @@ def _bk_wall_piece(geo, E, a0, a1, y0, y1, ma, mb, t, top=None, ends=(None, None
         mats["a-"] = ends[0]
     if ends[1]:
         mats["a+"] = ends[1]
-    E.box(geo, a0, a1, y0, y1, -t / 2, t / 2, mats, collide=True)
+    E.box(geo, a0, a1, y0, y1, -t / 2, t / 2, mats, collide=True, cls=E.wall_cls())
 
 
-def _bk_reveals(geo, E, a0, a1, y0, y1, t, mat, sill=True, n0=None, n1=None):
+def _bk_reveals(geo, E, a0, a1, y0, y1, t, mat, sill=True, n0=None, n1=None, cls=None):
     """The inside faces of an opening through the wall (between n0 and n1)."""
     lo = -t / 2 if n0 is None else min(n0, n1)
     hi = t / 2 if n1 is None else max(n0, n1)
@@ -51909,7 +52071,7 @@ def _bk_reveals(geo, E, a0, a1, y0, y1, t, mat, sill=True, n0=None, n1=None):
     def q(p0, p1, p2, p3):
         w = E.pt(*p0)
         geo.quad(mat, w, E.pt(*p1), E.pt(*p2), E.pt(*p3),
-                 out=(2 * w[0] - c[0], 2 * w[1] - c[1], 2 * w[2] - c[2]))
+                 out=(2 * w[0] - c[0], 2 * w[1] - c[1], 2 * w[2] - c[2]), cls=cls)
     q((a0, y0, lo), (a0, y0, hi), (a0, y1, hi), (a0, y1, lo))
     q((a1, y0, lo), (a1, y0, hi), (a1, y1, hi), (a1, y1, lo))
     q((a0, y1, lo), (a1, y1, lo), (a1, y1, hi), (a0, y1, hi))
@@ -51917,7 +52079,7 @@ def _bk_reveals(geo, E, a0, a1, y0, y1, t, mat, sill=True, n0=None, n1=None):
         q((a0, y0, lo), (a1, y0, lo), (a1, y0, hi), (a0, y0, hi))
 
 
-def _bk_rot_box(geo, E, mat, hinge_a, hinge_n, width, thick, y0, y1, ang, tile_uv=True):
+def _bk_rot_box(geo, E, mat, hinge_a, hinge_n, width, thick, y0, y1, ang, tile_uv=True, cls=None):
     """A door leaf: a box hinged at (hinge_a, hinge_n), swung by ``ang``."""
     ca, sa = math.cos(ang), math.sin(ang)
 
@@ -51926,12 +52088,12 @@ def _bk_rot_box(geo, E, mat, hinge_a, hinge_n, width, thick, y0, y1, ang, tile_u
     c = P(width / 2, thick / 2, (y0 + y1) / 2)
     for (u0, w0, u1, w1) in ((0, 0, width, 0), (0, thick, width, thick)):          # the two big faces
         geo.quad(mat, P(u0, w0, y0), P(u1, w1, y0), P(u1, w1, y1), P(u0, w0, y1),
-                 uv=[(0, y0), (width, y0), (width, y1), (0, y1)], out=c)
+                 uv=[(0, y0), (width, y0), (width, y1), (0, y1)], out=c, cls=cls)
     for u in (0, width):                                                            # the edges
         geo.quad(mat, P(u, 0, y0), P(u, thick, y0), P(u, thick, y1), P(u, 0, y1),
-                 uv=[(0, y0), (thick, y0), (thick, y1), (0, y1)], out=c)
+                 uv=[(0, y0), (thick, y0), (thick, y1), (0, y1)], out=c, cls=cls)
     geo.quad(mat, P(0, 0, y1), P(width, 0, y1), P(width, thick, y1), P(0, thick, y1),
-             uv=[(0, 0), (width, 0), (width, thick), (0, thick)], out=c)
+             uv=[(0, 0), (width, 0), (width, thick), (0, thick)], out=c, cls=cls)
 
 
 def _bk_window(geo, d, E, e, s, ma, mb, t, exterior):
@@ -51948,40 +52110,44 @@ def _bk_window(geo, d, E, e, s, ma, mb, t, exterior):
     nf = s * (t / 2 - 0.10) if (exterior and not slit) else 0.0     # the frame sits back from the outer face
     if exterior and not slit:
         inner = ma if s > 0 else mb
-        _bk_reveals(geo, E, a0, a1, y0, y1, t, st["ext"], n0=nf, n1=s * t / 2)
-        _bk_reveals(geo, E, a0, a1, y0, y1, t, inner, n0=-s * t / 2, n1=nf)
+        _bk_reveals(geo, E, a0, a1, y0, y1, t, st["ext"], n0=nf, n1=s * t / 2, cls=_BK_S)
+        _bk_reveals(geo, E, a0, a1, y0, y1, t, inner, n0=-s * t / 2, n1=nf, cls=_BK_I)
     else:
-        _bk_reveals(geo, E, a0, a1, y0, y1, t, st["ext"] if exterior else ma)
+        _bk_reveals(geo, E, a0, a1, y0, y1, t, st["ext"] if exterior else ma, cls=E.cd)
+    if exterior:
+        E.blocker(geo, a0, a1, y0, y1, nf - s * 0.012 if not slit else 0.0, s)
     if slit:
         return
     fm = st["frame"]
     fd, fw = 0.035, 0.05
-    E.box(geo, a0, a0 + fw, y0, y1, nf - fd, nf + fd, fm)
-    E.box(geo, a1 - fw, a1, y0, y1, nf - fd, nf + fd, fm)
-    E.box(geo, a0 + fw, a1 - fw, y0, y0 + fw, nf - fd, nf + fd, fm)
-    E.box(geo, a0 + fw, a1 - fw, y1 - fw, y1, nf - fd, nf + fd, fm)
+    E.box(geo, a0, a0 + fw, y0, y1, nf - fd, nf + fd, fm, cls=E.dd)
+    E.box(geo, a1 - fw, a1, y0, y1, nf - fd, nf + fd, fm, cls=E.dd)
+    E.box(geo, a0 + fw, a1 - fw, y0, y0 + fw, nf - fd, nf + fd, fm, cls=E.dd)
+    E.box(geo, a0 + fw, a1 - fw, y1 - fw, y1, nf - fd, nf + fd, fm, cls=E.dd)
     bw = 0.018 if st["window"] == "industrial" else 0.024
-    for i in range(bars_v):
+    for i in range(bars_v):                                  # glazing bars: too thin to see from afar
         ac = a0 + (a1 - a0) * (i + 1) / (bars_v + 1)
-        E.box(geo, ac - bw, ac + bw, y0 + fw, y1 - fw, nf - fd * 0.7, nf + fd * 0.7, fm)
+        E.box(geo, ac - bw, ac + bw, y0 + fw, y1 - fw, nf - fd * 0.7, nf + fd * 0.7, fm, cls=_BK_I)
     for i in range(bars_h):
         yc = y0 + (y1 - y0) * (i + 1) / (bars_h + 1)
-        E.box(geo, a0 + fw, a1 - fw, yc - bw, yc + bw, nf - fd * 0.7, nf + fd * 0.7, fm)
+        E.box(geo, a0 + fw, a1 - fw, yc - bw, yc + bw, nf - fd * 0.7, nf + fd * 0.7, fm, cls=_BK_I)
     g0, g1 = E.pt(a0 + fw, y0 + fw, nf), E.pt(a1 - fw, y1 - fw, nf)
     geo.quad("glass", g0, E.pt(a1 - fw, y0 + fw, nf), g1, E.pt(a0 + fw, y1 - fw, nf),
-             uv=[(0, 0), (1, 0), (1, 1), (0, 1)])
+             uv=[(0, 0), (1, 0), (1, 1), (0, 1)], cls=_BK_I)
     E.box(geo, a0, a1, y0, y1, nf - 0.02, nf + 0.02, None, collide=True)
     if not exterior:
         return
     tr = st["trim"]
-    E.box(geo, a0 - 0.08, a1 + 0.08, y0 - 0.08, y0, s * (t / 2 - 0.10), s * (t / 2 + 0.07), tr)      # sill
-    E.box(geo, a0 - 0.12, a1 + 0.12, y1, y1 + 0.20, s * (t / 2 - 0.005), s * (t / 2 + 0.03), tr)     # lintel
-    E.box(geo, a0 - 0.04, a1 + 0.04, y0 - 0.035, y0, -s * (t / 2 + 0.05), s * (t / 2 - 0.13), "wood_beam")
+    E.box(geo, a0 - 0.08, a1 + 0.08, y0 - 0.08, y0, s * (t / 2 - 0.10), s * (t / 2 + 0.07), tr, cls=_BK_D)   # sill
+    E.box(geo, a0 - 0.12, a1 + 0.12, y1, y1 + 0.20, s * (t / 2 - 0.005), s * (t / 2 + 0.03), tr, cls=_BK_D)  # lintel
+    E.box(geo, a0 - 0.04, a1 + 0.04, y0 - 0.035, y0, -s * (t / 2 + 0.05), s * (t / 2 - 0.13), "wood_beam",
+          cls=_BK_I)
     if st.get("shutter") and _bk_hash("sh", d.seed, *e[:3]) > 0.12:
         sw = min(hw, a0 - 0.03)
         if sw > 0.15:
             for b0, b1 in ((a0 - sw, a0 - 0.01), (a1 + 0.01, a1 + sw)):
-                E.box(geo, b0, b1, y0 - 0.02, y1 + 0.02, s * (t / 2 + 0.012), s * (t / 2 + 0.05), st["shutter"])
+                E.box(geo, b0, b1, y0 - 0.02, y1 + 0.02, s * (t / 2 + 0.012), s * (t / 2 + 0.05), st["shutter"],
+                      cls=_BK_D)
 
 
 def _bk_door(geo, d, E, e, s, ma, mb, t, exterior, wide=False):
@@ -51993,23 +52159,27 @@ def _bk_door(geo, d, E, e, s, ma, mb, t, exterior, wide=False):
     _bk_wall_piece(geo, E, lo, a0, 0, _BK_H, ma, mb, t)
     _bk_wall_piece(geo, E, a1, hi, 0, _BK_H, ma, mb, t)
     _bk_wall_piece(geo, E, a0, a1, top, _BK_H, ma, mb, t)
+    if exterior:                                            # (a plain doorway has no reveals of its own when far)
+        E.blocker(geo, a0, a1, 0, top, 0.0 if wide else s * (t / 2 - 0.03), s)
     if wide:                                                # an open archway with a timber lintel
-        _bk_reveals(geo, E, a0, a1, 0, top, t, st["ext"] if exterior else ma, sill=False)
-        E.box(geo, a0 - 0.12, a1 + 0.12, top - 0.02, top + 0.18, -t / 2 - 0.025, t / 2 + 0.025, "wood_beam")
+        _bk_reveals(geo, E, a0, a1, 0, top, t, st["ext"] if exterior else ma, sill=False, cls=E.cd)
+        E.box(geo, a0 - 0.12, a1 + 0.12, top - 0.02, top + 0.18, -t / 2 - 0.025, t / 2 + 0.025, "wood_beam",
+              cls=E.dd)
         return
     fm = "wood_beam" if st["door"].startswith("wood") else st["door"]
     lw = 0.05                                               # the door lining covers the reveals
-    E.box(geo, a0, a0 + lw, 0, top, -t / 2 - 0.02, t / 2 + 0.02, fm)
-    E.box(geo, a1 - lw, a1, 0, top, -t / 2 - 0.02, t / 2 + 0.02, fm)
-    E.box(geo, a0, a1, top - lw, top, -t / 2 - 0.02, t / 2 + 0.02, fm)
-    E.box(geo, a0, a1, 0.0, 0.025, -t / 2 - 0.03, t / 2 + 0.03, st["trim"])          # threshold
+    E.box(geo, a0, a0 + lw, 0, top, -t / 2 - 0.02, t / 2 + 0.02, fm, cls=E.dd)
+    E.box(geo, a1 - lw, a1, 0, top, -t / 2 - 0.02, t / 2 + 0.02, fm, cls=E.dd)
+    E.box(geo, a0, a1, top - lw, top, -t / 2 - 0.02, t / 2 + 0.02, fm, cls=E.dd)
+    E.box(geo, a0, a1, 0.0, 0.025, -t / 2 - 0.03, t / 2 + 0.03, st["trim"], cls=E.dd)          # threshold
     # the leaf stands open into the room (the indoor side), so play is never blocked
     inside = -s if exterior else (1.0 if _bk_hash("dr", d.seed, *e[:3]) > 0.5 else -1.0)
     ang = math.radians(98.0 + 30.0 * _bk_hash("da", d.seed, *e[:3])) * inside
     _bk_rot_box(geo, E, st["door"], a0 + lw + 0.01, inside * (t / 2 - 0.02), a1 - a0 - 2 * lw - 0.02, 0.045,
-                0.03, top - lw - 0.01, ang)
+                0.03, top - lw - 0.01, ang, cls=_BK_I)
     if exterior:
-        E.box(geo, a0 - 0.12, a1 + 0.12, top, top + 0.20, s * (t / 2 - 0.005), s * (t / 2 + 0.03), st["trim"])
+        E.box(geo, a0 - 0.12, a1 + 0.12, top, top + 0.20, s * (t / 2 - 0.005), s * (t / 2 + 0.03), st["trim"],
+              cls=_BK_D)
 
 
 def _bk_ruin_height(d, vx, y, vz):
@@ -52035,7 +52205,7 @@ def _bk_ruin(geo, d, E, e, ma, mb, t):
         nxt = hs[i + 1] if i < n - 1 else h1
         E.box(geo, b0, b1, 0, hs[i], -t / 2, t / 2,
               {"n-": ma, "n+": mb, "y+": "rubble", "a-": "rubble" if prev < hs[i] else None,
-               "a+": "rubble" if nxt < hs[i] else None}, collide=True)
+               "a+": "rubble" if nxt < hs[i] else None}, collide=True, cls=E.wall_cls())
     # a heap of fallen masonry at the foot of the wall
     side = 1.0 if _bk_hash("rb", d.seed, x, y, z, o) > 0.5 else -1.0
     ca = lo + (hi - lo) * (0.3 + 0.4 * _bk_hash("rc", d.seed, x, y, z, o))
@@ -52047,12 +52217,13 @@ def _bk_ruin(geo, d, E, e, ma, mb, t):
         ring.append(E.pt(ca + math.cos(an) * r * 1.3, 0.0, side * (t / 2 + math.sin(an) * r)))
     for k in range(8):
         geo.tri("rubble", top, ring[k], ring[k + 1],
-                [(top[0], top[2]), (ring[k][0], ring[k][2]), (ring[k + 1][0], ring[k + 1][2])], up=True)
+                [(top[0], top[2]), (ring[k][0], ring[k][2]), (ring[k + 1][0], ring[k + 1][2])], up=True, cls=E.dd)
 
 
 def _bk_sandbags(geo, E, t):
     """Four courses of bags, broken-bond, 0.9 m high."""
     bw, bh, bd = 0.60, 0.22, 0.34
+    keep, geo.cls = geo.cls, E.dd
     for row in range(4):
         y0 = row * bh
         off = (bw / 2) if row % 2 else 0.0
@@ -52078,6 +52249,7 @@ def _bk_sandbags(geo, E, t):
                          E.pt(ring_e[2][0], y0 + bh, ring_e[2][1]), E.pt(ring_e[3][0], y0 + bh, ring_e[3][1]),
                          uv=[(a0, 0), (a1, 0), (a1, bd), (a0, bd)], up=True)
             a += bw
+    geo.cls = keep
     E.box(geo, 0, _BK_C, 0, 4 * bh, -bd / 2, bd / 2, None, collide=True)
 
 
@@ -52090,6 +52262,10 @@ def _bk_bake_edge(geo, d, e, kind):
     ma, mb = _bk_side_mat(d, a), _bk_side_mat(d, b)
     exterior = ia != ib
     s = 1.0 if (ia and not ib) else -1.0                    # n direction of the outside
+    E.ca = _BK_I if ia else _BK_S
+    E.cb = _BK_I if ib else _BK_S
+    E.cd = _BK_I if (ia and ib) else _BK_S
+    E.dd = _BK_I if (ia and ib) else _BK_D
     lo, hi = t / 2, _BK_C - t / 2
     if kind == "wall":
         _bk_wall_piece(geo, E, lo, hi, 0, _BK_H, ma, mb, t)
@@ -52100,8 +52276,9 @@ def _bk_bake_edge(geo, d, e, kind):
     elif kind == "ruin":
         _bk_ruin(geo, d, E, e, ma, mb, t)
     elif kind == "half":
-        E.box(geo, lo, hi, 0, 1.0, -t / 2, t / 2, {"n-": ma, "n+": mb, "y+": st["trim"]}, collide=True)
-        E.box(geo, lo - 0.02, hi + 0.02, 1.0, 1.06, -t / 2 - 0.03, t / 2 + 0.03, st["trim"])
+        E.box(geo, lo, hi, 0, 1.0, -t / 2, t / 2, {"n-": ma, "n+": mb, "y+": st["trim"]}, collide=True,
+              cls=E.wall_cls())
+        E.box(geo, lo - 0.02, hi + 0.02, 1.0, 1.06, -t / 2 - 0.03, t / 2 + 0.03, st["trim"], cls=E.dd)
     elif kind == "sandbags":
         _bk_sandbags(geo, E, t)
     if kind not in _BK_WALLISH:
@@ -52117,13 +52294,13 @@ def _bk_bake_edge(geo, d, e, kind):
         if indoor and st.get("beams") is not None and (d.finish(a if side < 0 else b) or {}).get("wall") not in (
                 "concrete", "stone", "brick_yellow"):
             for p0, p1 in parts:
-                E.box(geo, p0, p1, 0, 0.11, side * t / 2, side * (t / 2 + 0.018), "wood_beam")
+                E.box(geo, p0, p1, 0, 0.11, side * t / 2, side * (t / 2 + 0.018), "wood_beam", cls=_BK_I)
     # stone plinth along the foot of outside walls on the ground
     if exterior and e[1] == 0 and st.get("plinth", True):
         ext = t / 2 + 0.04
         pp = [(-ext, _BK_C + ext)] if span is None else [(-ext, span[0]), (span[1], _BK_C + ext)]
         for p0, p1 in pp:
-            E.box(geo, p0, p1, -0.30, 0.50, s * (t / 2 - 0.01), s * (t / 2 + 0.04), st["trim"])
+            E.box(geo, p0, p1, -0.30, 0.50, s * (t / 2 - 0.01), s * (t / 2 + 0.04), st["trim"], cls=_BK_D)
 
 
 def _bk_bake_pillars(geo, d, y, kinds):
@@ -52162,20 +52339,29 @@ def _bk_bake_pillars(geo, d, y, kinds):
             for half in (-1, 1):
                 q = quad[(sg, half)] if ax == 0 else quad[(half, sg)]
                 m = _bk_side_mat(d, q)
+                k = _BK_I if d.indoor(q) else _BK_S
                 if ax == 0:
                     xx = X + sg * h
                     z0, z1 = (Z - h, Z) if half < 0 else (Z, Z + h)
-                    geo.quad(m, (xx, y0, z0), (xx, y0, z1), (xx, y0 + top, z1), (xx, y0 + top, z0), out=c)
+                    geo.quad(m, (xx, y0, z0), (xx, y0, z1), (xx, y0 + top, z1), (xx, y0 + top, z0), out=c, cls=k)
                 else:
                     zz = Z + sg * h
                     x0, x1 = (X - h, X) if half < 0 else (X, X + h)
-                    geo.quad(m, (x0, y0, zz), (x1, y0, zz), (x1, y0 + top, zz), (x0, y0 + top, zz), out=c)
+                    geo.quad(m, (x0, y0, zz), (x1, y0, zz), (x1, y0 + top, zz), (x0, y0 + top, zz), out=c, cls=k)
         geo.box((X - h, y0, Z - h), (X + h, y0 + top, Z + h), {"y+": cap} if cap else None, collide=True)
 
 
 def _bk_bake_stairs(geo, d, y):
     st = d.st()
     mat = st["stairs"]
+    keep, geo.cls = geo.cls, _BK_I
+    try:
+        _bk_bake_stairs_in(geo, d, y, mat)
+    finally:
+        geo.cls = keep
+
+
+def _bk_bake_stairs_in(geo, d, y, mat):
     for (x, yy, z), dr in d.stairs.items():
         if yy != y:
             continue
@@ -52255,11 +52441,12 @@ def _bk_bake_slabs(geo, d, L):
         for face, nb in (("x-", (x - 1, z)), ("x+", (x + 1, z)), ("z-", (x, z - 1)), ("z+", (x, z + 1))):
             if nb not in slabs:
                 mats[face] = st["trim"]
-        geo.box((X0, y0, Z0), (X1, y1, Z1), mats)
+        geo.box((X0, y0, Z0), (X1, y1, Z1), mats,
+                cls={"y+": _BK_I if (up and d.indoor(up)) else _BK_S, "y-": _BK_I, "*": _BK_S})
         if dn and st.get("beams") and (fd_ or {}).get("ceil") is None:
             for k in (0.5, 1.5):
                 geo.box((X0, y0 - 0.13, Z0 + k - 0.055), (X1, y0, Z0 + k + 0.055),
-                        {"y-": "wood_beam", "z-": "wood_beam", "z+": "wood_beam"})
+                        {"y-": "wood_beam", "z-": "wood_beam", "z+": "wood_beam"}, cls=_BK_I)
     # collision: merge runs of slab cells along x
     for (x, z) in sorted(slabs, key=lambda c: (c[1], c[0])):
         if (x - 1, z) in slabs:
@@ -52280,7 +52467,7 @@ def _bk_bake_slabs(geo, d, L):
                     continue
                 E = _BKEdge(e)
                 E.y0 = 0.0
-                E.box(geo, -ext, _BK_C + ext, y0 - 0.02, y1 + 0.02, 0.0, sg * ext, st["trim"])
+                E.box(geo, -ext, _BK_C + ext, y0 - 0.02, y1 + 0.02, 0.0, sg * ext, st["trim"], cls=_BK_D)
 
 
 def _bk_components(cells):
@@ -52359,9 +52546,9 @@ def _bk_bake_roof(geo, d, L):
                 outp = P(ag - sg, Y0, bc)
                 geo.tri(st["ext"], p0, p1, p2, uvw, out=outp)
                 geo.tri(st["ceil"], P(ag - sg * 0.02, Y0, bc - half), P(ag - sg * 0.02, Y0, bc + half),
-                        P(ag - sg * 0.02, Y0 + ridge, bc), uvw, out=P(ag + sg, Y0, bc))
+                        P(ag - sg * 0.02, Y0 + ridge, bc), uvw, out=P(ag + sg, Y0, bc), cls=_BK_I)
             # ridge capping
-            geo.box(P(va, Y0 + ridge - 0.02, bc - 0.09), P(vb, Y0 + ridge + 0.05, bc + 0.09), st["trim"])
+            geo.box(P(va, Y0 + ridge - 0.02, bc - 0.09), P(vb, Y0 + ridge + 0.05, bc + 0.09), st["trim"], cls=_BK_D)
             top_at = lambda px, pz: Y0 + max(0.0, (half - abs((pz if along_x else px) - bc))) * tan
         else:
             # hipped roof over any footprint: height = Chebyshev distance to the open edge
@@ -52442,8 +52629,8 @@ def _bk_bake_roof(geo, d, L):
             geo.box((px - 0.34, Y0, pz - 0.34), (px + 0.34, ytop, pz + 0.34),
                     {k: "brick_red" if st["ext"].startswith("plaster") else st["ext"] for k in ("x-", "x+", "z-", "z+")},
                     collide=True)
-            geo.box((px - 0.42, ytop, pz - 0.42), (px + 0.42, ytop + 0.09, pz + 0.42), st["trim"])
-            geo.box((px - 0.20, ytop + 0.09, pz - 0.20), (px + 0.20, ytop + 0.34, pz + 0.20), "roof_tiles")
+            geo.box((px - 0.42, ytop, pz - 0.42), (px + 0.42, ytop + 0.09, pz + 0.42), st["trim"], cls=_BK_D)
+            geo.box((px - 0.20, ytop + 0.09, pz - 0.20), (px + 0.20, ytop + 0.34, pz + 0.20), "roof_tiles", cls=_BK_D)
 
 
 def bk_bake_level(d, L):
@@ -52484,6 +52671,10 @@ def bk_material(name):
     m = _BK_MATERIAL_CACHE.get(name)
     if m is not None:
         return m
+    if name == "blocker":                 # the dark pane in the windows of far buildings: no texture
+        m = Material(name="bk_blocker", base_color=(0.030, 0.034, 0.042, 1.0), metallic=0.0, roughness=0.32)
+        _BK_MATERIAL_CACHE[name] = m
+        return m
     t0 = time.time()
     try:
         f = bk_material_files(name)
@@ -52523,6 +52714,102 @@ class _BKProxy:
                                 float(np.linalg.norm(pos - c, axis=1).max()) if len(pos) else 0.0)
 
 
+class _BKPart:
+    """One material of one storey, baked: interleaved vertices (position,
+    normal, tangent, uv: 12 floats) of quads in class order (blocker, shell,
+    detail, interior) and the number of quads of each class."""
+    __slots__ = ("mat", "data", "counts")
+
+    def __init__(self, mat, pos, nrm, uv, counts):
+        n = len(pos)
+        q = np.arange(0, n, 4, dtype=np.uint32)
+        idx = np.stack([q, q + 1, q + 2, q, q + 2, q + 3], 1).ravel()
+        data = np.empty((n, 12), np.float32)
+        data[:, 0:3] = pos
+        data[:, 3:6] = nrm
+        data[:, 6:10] = Mesh._compute_tangents(pos, nrm, uv, idx)
+        data[:, 10:12] = uv
+        self.mat, self.data, self.counts = mat, data, tuple(int(c) for c in counts)
+
+    def near(self):
+        """The vertices drawn close by (everything but the blockers)."""
+        return self.data[self.counts[0] * 4:]
+
+
+def _bk_quad_indices(nquads):
+    q = np.arange(0, nquads * 4, 4, dtype=np.uint32)
+    return np.stack([q, q + 1, q + 2, q, q + 2, q + 3], 1).ravel()
+
+
+class _BKPartMesh(Mesh):
+    """A building part as its own mesh.  Its GPU buffers are only made when
+    something really draws it (the selected building, a thumbnail ...): the
+    buildings of a town are drawn by their district batch (world/bk_city.py),
+    so a thousand houses don't sit in video memory twice."""
+
+    def __init__(self, ctx, name, part):
+        self._bk_src = None
+        Mesh.__init__(self, ctx, name)
+        data = part.near()
+        n = len(data)
+        self._bk_src = data
+        self.vertex_count = n
+        self.cpu_positions = data[:, 0:3]
+        self.cpu_indices = _bk_quad_indices(n // 4)
+        self.index_count = len(self.cpu_indices)
+        self.indexed = True
+        pos = self.cpu_positions
+        lo, hi = pos.min(axis=0), pos.max(axis=0)
+        c = (lo + hi) * 0.5
+        self.bounding_box = (glm.vec3(float(lo[0]), float(lo[1]), float(lo[2])),
+                             glm.vec3(float(hi[0]), float(hi[1]), float(hi[2])))
+        self.bounding_sphere = (glm.vec3(float(c[0]), float(c[1]), float(c[2])),
+                                float(np.sqrt(((pos - c) ** 2).sum(axis=1).max())))
+
+    def _bk_upload(self):
+        src = self._bk_src
+        if src is None or self.ctx is None:
+            return
+        self.__dict__["_bk_vbo"] = self.ctx.buffer(np.ascontiguousarray(src).tobytes())
+        self.__dict__["_bk_ibo"] = self.ctx.buffer(self.cpu_indices.tobytes())
+
+    @property
+    def vbo(self):
+        b = self.__dict__.get("_bk_vbo")
+        if b is None and self.__dict__.get("_bk_src") is not None:
+            self._bk_upload()
+            b = self.__dict__.get("_bk_vbo")
+        return b
+
+    @vbo.setter
+    def vbo(self, value):
+        self.__dict__["_bk_vbo"] = value
+
+    @property
+    def ibo(self):
+        if self.__dict__.get("_bk_ibo") is None and self.__dict__.get("_bk_src") is not None:
+            self.vbo                                           # noqa: B018  (uploads both)
+        return self.__dict__.get("_bk_ibo")
+
+    @ibo.setter
+    def ibo(self, value):
+        self.__dict__["_bk_ibo"] = value
+
+    def on_gpu(self):
+        return self.__dict__.get("_bk_vbo") is not None
+
+    def release(self):
+        """Free the GPU buffers (they come back by themselves when drawn again)."""
+        if self.__dict__.get("_bk_vbo") is None and not self._vaos:
+            return
+        Mesh.release(self)
+
+    def bk_drop(self):
+        """Free for good (the part was re-baked or its building deleted)."""
+        self._bk_src = None
+        Mesh.release(self)
+
+
 def bk_is_building(node):
     return node is not None and getattr(node, "mesh_type", None) == _BK_MESH_TYPE
 
@@ -52543,10 +52830,53 @@ def _bk_free_children(node, level=None):
         c.mesh = None
         c.remove()
         try:
-            if m is not None and hasattr(m, "release"):
+            if m is not None and hasattr(m, "bk_drop"):
+                m.bk_drop()
+            elif m is not None and hasattr(m, "release"):
                 m.release()
         except Exception:
             pass
+
+
+# Baked buildings by what they are made of: a town repeats a few dozen house
+# designs, a project is loaded again and again, a building is duplicated ...
+# the same design is baked once and its vertex data shared.
+_BK_BAKE_CACHE = {}
+_BK_BAKE_LIMIT = [192 * 1024 * 1024, 0]          # bytes allowed, bytes held
+
+
+def _bk_bake_key(d, exposed):
+    try:
+        fin = [(f, sorted(BK_FINISHES[f].items(), key=str)) for f in d.finishes]
+        return json.dumps([d.to_params(), sorted(d.st().items(), key=str), fin, bool(exposed)],
+                          sort_keys=True, default=str)
+    except Exception:
+        return None
+
+
+def _bk_bake_all(d, exposed, wanted):
+    """{level: (collision, {material: _BKPart})} of a whole building (cached)."""
+    key = _bk_bake_key(d, exposed) if len(d.cells) <= 900 else None
+    hit = _BK_BAKE_CACHE.pop(key, None) if key is not None else None
+    if hit is not None:
+        _BK_BAKE_CACHE[key] = hit                 # (most recently used last)
+        return hit[0]
+    out = {}
+    size = 0
+    for L in sorted(wanted):
+        geo = bk_bake_level(d, L)
+        lp = {}
+        for mat, (pos, nrm, uv, counts) in sorted(geo.parts(exposed).items()):
+            lp[mat] = _BKPart(mat, pos, nrm, uv, counts)
+            size += lp[mat].data.nbytes
+        out[L] = (geo.collision(), lp)
+    if key is not None and size < _BK_BAKE_LIMIT[0] // 8:
+        _BK_BAKE_CACHE[key] = (out, size)
+        _BK_BAKE_LIMIT[1] += size
+        while _BK_BAKE_LIMIT[1] > _BK_BAKE_LIMIT[0] and len(_BK_BAKE_CACHE) > 1:
+            old = next(iter(_BK_BAKE_CACHE))
+            _BK_BAKE_LIMIT[1] -= _BK_BAKE_CACHE.pop(old)[1]
+    return out
 
 
 def bk_rebuild(engine, node, levels=None):
@@ -52557,11 +52887,18 @@ def bk_rebuild(engine, node, levels=None):
     node.mesh_params = d.to_params()
     node.mesh = None
     ctx = getattr(engine, "ctx", None)
+    node._bk_ctx = ctx
     lo, hi = d.levels()
     wanted = set(range(lo, hi + 2)) if d.cells else set()
     cols = getattr(node, "_bk_cols", None)
-    if cols is None or levels is None:
+    parts = getattr(node, "_bk_parts", None)
+    exposed = d.exposed()
+    if getattr(node, "_bk_exposed", None) != exposed:
+        levels = None                    # what counts as "inside" changed: every storey is baked again
+    node._bk_exposed = exposed
+    if cols is None or parts is None or levels is None:
         cols = node._bk_cols = {}
+        parts = node._bk_parts = {}
         _bk_free_children(node)
         todo = wanted
     else:
@@ -52569,26 +52906,36 @@ def bk_rebuild(engine, node, levels=None):
         for L in set(levels) | (set(cols) - wanted):
             _bk_free_children(node, L)
             cols.pop(L, None)
-    tris = 0
+            parts.pop(L, None)
+    if todo is wanted:                   # the whole building: the same design may be baked already
+        baked = _bk_bake_all(d, exposed, wanted)
+    else:
+        baked = {}
+        for L in todo:
+            geo = bk_bake_level(d, L)
+            baked[L] = (geo.collision(), {mat: _BKPart(mat, pos, nrm, uv, counts)
+                                          for mat, (pos, nrm, uv, counts) in geo.parts(exposed).items()})
     for L in sorted(todo):
-        geo = bk_bake_level(d, L)
-        cols[L] = geo.collision()
-        if ctx is None:
-            continue
-        for mat, (pos, nrm, uv, idx) in sorted(geo.arrays().items()):
+        cols[L] = baked[L][0]
+        lp = parts[L] = dict(baked[L][1])
+        for mat, part in sorted(lp.items()):
+            if ctx is None or sum(part.counts[1:]) == 0:
+                continue                 # (a blocker has nothing to show close by)
             child = SceneNode(f"{node.name}_L{L}_{mat}", parent=node)
             child._heaven3d_imported_part = "building"
             child._h3d_locked = True
             child._bk_level = L
-            child.mesh = Mesh.from_arrays(ctx, pos, nrm, uv, idx, name=child.name)
+            child.mesh = _BKPartMesh(ctx, child.name, part)
             child.material = bk_material(mat)
             child.mesh._h3d_cull = not child.material.double_sided
-            tris += len(idx) // 3
-    parts = [cols[L] for L in sorted(cols) if len(cols[L][1])]
-    if parts:
+            if mat == "glass":
+                child.mesh._h3d_shadow = False             # the sun shines in through the windows
+    node._bk_rev = getattr(node, "_bk_rev", 0) + 1         # the town batches notice (world/bk_city.py)
+    cparts = [cols[L] for L in sorted(cols) if len(cols[L][1])]
+    if cparts:
         off = 0
         P, I = [], []
-        for pos, idx in parts:
+        for pos, idx in cparts:
             P.append(pos)
             I.append(idx + off)
             off += len(pos)
@@ -52619,6 +52966,11 @@ def bk_apply_view(node, top=_BK_KEEP):
         lv = getattr(c, "_bk_level", None)
         if lv is not None:
             c.visible = top is None or lv <= top
+
+
+def bk_materials_used(node):
+    """Names of the library materials a building is made of."""
+    return {mat for lp in (getattr(node, "_bk_parts", None) or {}).values() for mat in lp if mat != "blocker"}
 
 
 def bk_new(engine, style="town", position=(0.0, 0.0, 0.0), name=None, seed=None):
@@ -52790,8 +53142,10 @@ if not globals().get("_BK_INSTALLED"):
     def _bk_save_project(self, path=None):
         r = _BK_PREV_SAVE_PROJECT(self, path)
         try:
-            used = {c.material.name[3:] for n in self.scene.root.traverse() if bk_is_building(n)
-                    for c in n.children if c.material is not None and str(c.material.name).startswith("bk_")}
+            used = set()
+            for n in self.scene.root.traverse():
+                if bk_is_building(n):
+                    used |= bk_materials_used(n)
             if used:
                 k = bk_store_project_textures(used)
                 if k:
@@ -52811,6 +53165,20 @@ if not globals().get("_BK_INSTALLED"):
         return _BK_PREV_SELECT_NODE(self, node)
 
     HeavenEngine.select_node = _bk_select_node
+
+    # a house of a generated town (a "Town" group, tag "town") is selected on
+    # its own: a click in the viewport must not grab the whole town
+    _BK_PREV_SELECTABLE_ROOT = HeavenEngine._selectable_root
+
+    def _bk_selectable_root(self, node):
+        n = node
+        while n is not None and n is not self.scene.root:
+            if bk_is_building(n) and n.parent is not None and n.parent.tag == "town":
+                return n
+            n = n.parent
+        return _BK_PREV_SELECTABLE_ROOT(self, node)
+
+    HeavenEngine._selectable_root = _bk_selectable_root
 
     # the collision mesh of a building is its own low-poly proxy
     _BK_PREV_SHAPE_VIEW = globals().get("_H3D27_PREV_SHAPE_VIEW") or _mesh_shape_view
@@ -52941,6 +53309,8 @@ class BKTool:
             self.style = d.style
             lo, hi = d.levels()
             self.level = int(np.clip(self.level, lo - 1, hi + 1))
+        else:
+            self.level = 0                 # a new building is painted on the ground, under the cursor
         self._view()
 
     def _view(self):
@@ -53100,6 +53470,100 @@ class BKTool:
         self.level = 0
         self._view()
         return out
+
+    def generate_town(self, blocks_x=3, blocks_z=3, damage=0.1, position=None, seed=None, variety=36,
+                      progress=None):
+        """A town in front of the camera: blocks of houses on a grid of
+        cobbled streets.  Every house is its own building; the houses repeat
+        ``variety`` designs (the same design is baked once and shared), and
+        they all sit in one "Town" group.  ``progress(done, total)`` is
+        called while it works.  -> the group"""
+        e = self.engine
+        seed = int(time.time() * 1000) % 1000003 if seed is None else int(seed)
+        bx, bz = int(np.clip(blocks_x, 1, 40)), int(np.clip(blocks_z, 1, 40))
+        variety = int(np.clip(variety, 4, 400))
+        BW, SW, RD, PZ = 14, 3, 4, 12           # cells: block width, street width, row depth, block depth
+        PX = BW + SW
+        styles = [s for s in ("town", "village", "rose", "manor", "town", "stone", "rose", "factory") if s in BK_STYLES]
+        designs = []
+        for i in range(variety):
+            w = 3 + int(_bk_hash("tw", seed, i) * 3)
+            dp = 3 + int(_bk_hash("td", seed, i) * 2)
+            fl = 1 + int(_bk_hash("tf", seed, i) * 2.7)
+            st = styles[int(_bk_hash("ts", seed, i) * len(styles)) % len(styles)]
+            dm = (0.35 + 0.4 * _bk_hash("tm", seed, i)) if _bk_hash("tr", seed, i) < damage else 0.0
+            designs.append((w, dp, fl, st, dm, seed + i))
+        if position is None:
+            try:
+                ro, rd = e._mouse_ray((e.width * 0.5, e.height * 0.6))
+                t = float(np.clip(-ro.y / rd.y if rd.y < -1e-4 else 40.0, 10.0, 120.0))
+                position = (ro.x + rd.x * t - min(bx, 3) * PX * _BK_C / 2, 0.0, ro.z + rd.z * t)
+            except Exception:
+                position = (0.0, 0.0, 0.0)
+        ox = round(position[0] / _BK_C) * _BK_C
+        oz = round(position[2] / _BK_C) * _BK_C
+        try:
+            gname = e._unique_node_name("Town")
+        except Exception:
+            gname = "Town"
+        group = SceneNode(gname, parent=e.scene.root)
+        group.tag = "town"                      # (its houses stay selectable one by one)
+        plan = []
+        for ix in range(bx):
+            for iz in range(bz):
+                k0 = ix * 1000 + iz
+                for row in (0, 1):
+                    x = 0
+                    j = 0
+                    while True:
+                        dz = designs[int(_bk_hash("tp", seed, k0, row, j) * variety) % variety]
+                        if x + dz[0] > BW:
+                            fit = [q for q in designs if x + q[0] <= BW]
+                            if not fit:
+                                break
+                            dz = fit[int(_bk_hash("tq", seed, k0, row, j) * len(fit)) % len(fit)]
+                        z = (RD - dz[1]) if row == 0 else RD + SW
+                        plan.append((ix, iz, x, z, row, dz))
+                        x += dz[0] + (1 if _bk_hash("tg", seed, k0, row, j) > 0.6 else 0)
+                        j += 1
+        total = len(plan) + bx * bz
+        done = 0
+        keep_style = self.style
+        hold, self.on_edit = self.on_edit, None
+        try:
+            for ix in range(bx):
+                for iz in range(bz):
+                    bxo, bzo = ox + ix * PX * _BK_C, oz + iz * PZ * _BK_C
+                    road = bk_new(e, "town", (bxo, position[1], bzo), name="Street")
+                    dr = bk_data(road)
+                    fi = dr.finish_index("yard")
+                    for x in range(PX):
+                        for z in range(RD, RD + SW):
+                            dr.cells[(x, 0, z)] = fi
+                    for x in range(BW, PX):
+                        for z in range(PZ):
+                            dr.cells[(x, 0, z)] = fi
+                    bk_rebuild(e, road)
+                    group.add_child(road)
+                    done += 1
+            for ix, iz, x, z, row, (w, dp, fl, st, dm, sd) in plan:
+                pos = (ox + (ix * PX + x) * _BK_C, position[1], oz + (iz * PZ + z) * _BK_C)
+                node = bk_new(e, st, pos, seed=sd)
+                bk_generate_house(bk_data(node), w, dp, fl, dm, seed=sd, front=1 if row == 0 else 0)
+                bk_rebuild(e, node)
+                group.add_child(node)
+                done += 1
+                if progress is not None and done % 8 == 0:
+                    try:
+                        progress(done, total)
+                    except Exception:
+                        pass
+        finally:
+            self.style = keep_style
+            self.on_edit = hold
+        self.level = 0
+        self._view()
+        return group
 
     # ---- picking ----
     def _frame(self):
@@ -53461,6 +53925,23 @@ if not globals().get("_BK_TOOL_INSTALLED"):
         except Exception:
             pass
 
+    # with the grid hidden (View > Grid) the tool still needs its cursor and
+    # its strokes followed: draw it from the every-frame overlay hook instead
+    _BK_PREV_OUTLINE = HeavenEngine._render_selection_outline
+
+    def _bk_render_selection_outline(self):
+        r = _BK_PREV_OUTLINE(self)
+        try:
+            if getattr(self, "editor_grid", None) is None:
+                t = _bk_tool_on(self)
+                if t is not None:
+                    t.draw(self.camera)
+        except Exception:
+            pass
+        return r
+
+    HeavenEngine._render_selection_outline = _bk_render_selection_outline
+
     def _bk_delete_node(self, node):
         try:
             t = getattr(self, "building_tool", None)
@@ -53472,11 +53953,633 @@ if not globals().get("_BK_TOOL_INSTALLED"):
             pass
         return _BK_PREV_DELETE(self, node)
 
+    def _bk_add_town(self, blocks_x=3, blocks_z=3, position=(0.0, 0.0, 0.0), seed=None, damage=0.1, variety=36):
+        """engine.add_town(6, 6, (0, 0, 0)) -> a "Town" group: blocks of
+        houses on a grid of cobbled streets (about 7 houses a block, each
+        block 34 m x 24 m).  ``damage``: the share of shelled houses,
+        ``variety``: how many different house designs it repeats."""
+        return _bk_tool(self).generate_town(blocks_x, blocks_z, damage, position, seed, variety)
+
+    HeavenEngine.add_town = _bk_add_town
     HeavenEngine._on_mouse_down = _bk_on_mouse_down
     HeavenEngine._on_mouse_up = _bk_on_mouse_up
     HeavenEngine._on_key = _bk_on_key
     HeavenEngine._delete_node = _bk_delete_node
     EditorGrid.render = _bk_grid_render
+
+# #############################################################################
+# BUILDING MAKER - towns: districts, levels of detail, streaming
+#
+# A painted building is a few meshes per storey.  One house is cheap; a town
+# of a thousand is 20,000 meshes, far too many to draw one by one.  So the
+# buildings that just stand there are drawn in DISTRICTS (48 m squares):
+#
+#   * every district is ONE vertex buffer; a material of it is one draw call,
+#     and the whole district is one call in the shadow pass
+#   * three levels of detail, chosen by the distance to the district:
+#       near   everything: rooms, stairs, glazing bars, glass
+#       mid    the outside with its frames, shutters, sills; the windows and
+#              doorways are closed by dark panes instead of glass and rooms
+#       far    the bare shell (walls, roofs) with dark panes
+#     a level is a prefix of the same vertex data, so a far district only
+#     has its shell in video memory; more is loaded as the camera comes
+#     closer (a few milliseconds a frame) and dropped again when it has left
+#   * a district outside the view costs one box test
+#   * a building that is selected, being painted, moving or hidden by storey
+#     is drawn part by part as before, and joins its district again when it
+#     is left alone
+#
+# engine.set_building_detail(near=45, mid=140, far=0) changes the distances,
+# engine.building_stats() tells what is drawn.  HEAVEN3D_NO_CITY=1 turns the
+# districts off (every building part by part).
+# #############################################################################
+
+BK_CITY = {
+    "on": os.environ.get("HEAVEN3D_NO_CITY", "") not in ("1", "true", "yes"),
+    "chunk": 48.0,          # size of a district (m)
+    "near": 45.0,           # full detail when the district is closer than this
+    "mid": 140.0,           # frames, shutters, sills until here
+    "far": 0.0,             # districts beyond are not drawn at all (0: no limit)
+    "budget_ms": 4.0,       # time a frame may spend loading more detail
+    "unload_frames": 180,   # frames a district keeps detail it no longer shows
+    "settle_frames": 12,    # frames a building must stand still before it joins a district
+}
+# how far the rooms / the frames and shutters are drawn (the Buildings panel's "Detail")
+BK_DETAIL_PRESETS = {"low": ("Low: rooms to 25 m", 25.0, 80.0), "medium": ("Medium: rooms to 45 m", 45.0, 140.0),
+                     "high": ("High: rooms to 80 m", 80.0, 220.0), "ultra": ("Ultra: rooms to 150 m", 150.0, 400.0)}
+_BK_CITY_CLASSES = {1: (_BK_B, _BK_S), 2: (_BK_B, _BK_S, _BK_D), 3: (_BK_B, _BK_S, _BK_D, _BK_I)}
+_BKC = {"scenes": {}, "cams": [], "ibo": None, "stats": {}}
+
+
+class _BKRangeVAO:
+    """A slice of a district's vertex array (one material at one level of
+    detail), with back-face culling for single-sided materials."""
+    __slots__ = ("_vao", "_ctx", "_first", "_count", "_cull")
+
+    def __init__(self, vao, ctx, first, count, cull):
+        self._vao, self._ctx, self._first, self._count, self._cull = vao, ctx, first, count, cull
+
+    def render(self, mode=None, vertices=-1, first=0, instances=-1):
+        if mode is None:
+            mode = moderngl.TRIANGLES
+        if self._cull:
+            self._ctx.enable(moderngl.CULL_FACE)
+            try:
+                return self._vao.render(mode, vertices=self._count, first=self._first, instances=instances)
+            finally:
+                self._ctx.disable(moderngl.CULL_FACE)
+        return self._vao.render(mode, vertices=self._count, first=self._first, instances=instances)
+
+    def __getattr__(self, name):
+        return getattr(self._vao, name)
+
+
+class _BKChunkMesh(Mesh):
+    """What the renderer gets for a district: a range of the district's
+    buffers that behaves like a mesh."""
+
+    def __init__(self, owner, name, first, count, cull, box):
+        Mesh.__init__(self, owner.ctx, name)
+        self._bk_owner = owner
+        self._bk_first, self._bk_count, self._bk_cull = int(first), int(count), bool(cull)
+        self.vbo, self.ibo = owner.vbo, owner.ibo
+        self.indexed = True
+        self.vertex_count = owner.vertex_count
+        self.index_count = int(count)
+        lo, hi = box
+        self.bounding_box = (glm.vec3(float(lo[0]), float(lo[1]), float(lo[2])),
+                             glm.vec3(float(hi[0]), float(hi[1]), float(hi[2])))
+        c = (np.asarray(lo, np.float64) + np.asarray(hi, np.float64)) * 0.5
+        self.bounding_sphere = (glm.vec3(float(c[0]), float(c[1]), float(c[2])),
+                                float(np.linalg.norm(np.asarray(hi, np.float64) - c)))
+
+    def get_vao(self, program):
+        key = ("bk", id(program))
+        v = self._vaos.get(key)
+        if v is None:
+            raw = _h3d27_get_vao_raw(self._bk_owner, program)
+            v = _BKRangeVAO(raw, self.ctx, self._bk_first, self._bk_count,
+                            self._bk_cull and _h3d27_is_surface_prog(program))
+            self._vaos[key] = v
+        return v
+
+    def release(self):                       # the buffers belong to the district
+        self._vaos.clear()
+        self.vbo = self.ibo = None
+
+
+class _BKChunkNode:
+    """The 'object' of a district draw: all the renderer asks of it."""
+    __slots__ = ("name", "material", "visible", "mesh")
+
+    def __init__(self, name, material):
+        self.name, self.material, self.visible, self.mesh = name, material, True, None
+
+
+def _bk_city_ibo(ctx, nquads):
+    """One index buffer serves every district: the indices of quad after quad."""
+    cur = _BKC["ibo"]
+    if cur is None or cur[0] is not ctx or cur[1] < nquads:
+        cap = 1 << max(14, int(nquads - 1).bit_length())
+        cur = _BKC["ibo"] = (ctx, cap, ctx.buffer(_bk_quad_indices(cap).tobytes()))
+    return cur[2]
+
+
+def _bk_city_xf(w):
+    """numpy pieces of a world matrix: rotation / scale (row r, column c),
+    translation, the matrix for normals and whether it mirrors."""
+    M = np.frombuffer(w.to_bytes(), np.float32).reshape(4, 4).astype(np.float64).T      # M[r, c]
+    R = M[:3, :3]
+    det = float(np.linalg.det(R))
+    try:
+        Nm = np.linalg.inv(R).T
+    except Exception:
+        Nm = R
+    return R, M[:3, 3], Nm, det < 0.0
+
+
+class _BKChunk:
+    def __init__(self, key, size):
+        self.key = key
+        self.members = {}              # id(node) -> record
+        self.dirty = True
+        self.level = 0                 # what is in video memory: 0 nothing, 1 far, 2 mid, 3 near
+        self.owner = None
+        self.mats = []                 # [(node, {level: mesh})]
+        self.shadow = None             # (node, mesh): the whole district for the shadow pass
+        self.box = None                # world box (lo, hi) of everything in it
+        self.size = size
+        self.origin = glm.vec3((key[0] + 0.5) * size, 0.0, (key[1] + 0.5) * size)
+        self.model = glm.translate(glm.mat4(1.0), self.origin)
+        self.idle = 0                  # frames with more detail loaded than shown
+        self.tris = {1: 0, 2: 0, 3: 0}
+        self.bytes = 0
+
+    def free(self):
+        o, self.owner = self.owner, None
+        if o is not None:
+            try:
+                for v in o._vaos.values():
+                    try:
+                        v.release()
+                    except Exception:
+                        pass
+                o._vaos.clear()
+                if o.vbo is not None:
+                    o.vbo.release()
+            except Exception:
+                pass
+            o.vbo = o.ibo = None
+        for _n, lods in self.mats:
+            for m in lods.values():
+                m.release()
+        self.mats, self.shadow, self.level, self.bytes = [], None, 0, 0
+
+    def world_box(self):
+        """Box of the members from their collision / part boxes (cheap, no bake)."""
+        lo = np.full(3, np.inf)
+        hi = np.full(3, -np.inf)
+        for rec in self.members.values():
+            lo = np.minimum(lo, rec["wlo"])
+            hi = np.maximum(hi, rec["whi"])
+        return lo, hi
+
+    def build(self, ctx, level):
+        """Put the district in video memory at ``level`` (1 far .. 3 near)."""
+        self.free()
+        self.dirty = False
+        self.idle = 0
+        recs = list(self.members.values())
+        if not recs:
+            return
+        by = {}
+        for bi, rec in enumerate(recs):
+            for lp in rec["node"]._bk_parts.values():
+                for mat, part in lp.items():
+                    by.setdefault(mat, []).append((bi, part))
+        # glass and the dark panes come first: the shadow pass skips them
+        order = [m for m in ("glass", "blocker") if m in by] + sorted(m for m in by if m not in ("glass", "blocker"))
+        classes = _BK_CITY_CLASSES[level]
+        blocks, owners, layout = [], [], []
+        q = 0
+        for mat in order:
+            cq = [0, 0, 0, 0]
+            for cls in classes:
+                for bi, part in by[mat]:
+                    c = part.counts
+                    a = 4 * sum(c[:cls])
+                    b = a + 4 * c[cls]
+                    if b > a:
+                        blocks.append(part.data[a:b])
+                        owners.append((bi, b - a))
+                        cq[cls] += c[cls]
+            if sum(cq):
+                layout.append((mat, q, cq))
+                q += sum(cq)
+        if not q:
+            return
+        data = np.concatenate(blocks)
+        bidx = np.repeat(np.fromiter((o[0] for o in owners), np.int64, len(owners)),
+                         np.fromiter((o[1] for o in owners), np.int64, len(owners)))
+        xf = [_bk_city_xf(rec["w"]) for rec in recs]
+        org = np.array([self.origin.x, self.origin.y, self.origin.z], np.float64)
+        same = all(np.allclose(x[0], xf[0][0], atol=1e-7) for x in xf[1:])
+        if same:                              # the usual town: every house turned the same way
+            R, _t, Nm, _neg = xf[0]
+            T = np.stack([x[1] for x in xf]) - org
+            pos = data[:, 0:3].astype(np.float64) @ R.T + T[bidx]
+            nrm = data[:, 3:6].astype(np.float64) @ Nm.T
+            tan = data[:, 6:9].astype(np.float64) @ R.T
+        else:
+            Rs = np.stack([x[0] for x in xf])[bidx]
+            Ns = np.stack([x[2] for x in xf])[bidx]
+            T = (np.stack([x[1] for x in xf]) - org)[bidx]
+            pos = np.einsum("nij,nj->ni", Rs, data[:, 0:3].astype(np.float64)) + T
+            nrm = np.einsum("nij,nj->ni", Ns, data[:, 3:6].astype(np.float64))
+            tan = np.einsum("nij,nj->ni", Rs, data[:, 6:9].astype(np.float64))
+        nrm /= np.maximum(np.linalg.norm(nrm, axis=1, keepdims=True), 1e-12)
+        tan /= np.maximum(np.linalg.norm(tan, axis=1, keepdims=True), 1e-12)
+        out = np.empty((len(data), 12), np.float32)
+        out[:, 0:3] = pos
+        out[:, 3:6] = nrm
+        out[:, 6:9] = tan
+        out[:, 9] = data[:, 9]
+        out[:, 10:12] = data[:, 10:12]
+        neg = np.array([x[3] for x in xf])
+        if neg.any():                         # a mirrored building: turn its quads round
+            m = neg[bidx].reshape(-1, 4)[:, 0]
+            rows = np.arange(len(out)).reshape(-1, 4)
+            rows[m] = rows[m][:, [0, 3, 2, 1]]
+            out = out[rows.ravel()]
+            out[np.repeat(m, 4), 9] *= -1.0
+        owner = Mesh(ctx, "district_%d_%d" % self.key)
+        owner.vbo = ctx.buffer(out.tobytes())
+        owner.ibo = _bk_city_ibo(ctx, q)
+        owner.indexed = True
+        owner.vertex_count = len(out)
+        owner.index_count = q * 6
+        self.owner = owner
+        self.bytes = out.nbytes
+        self.level = level
+        self.tris = {1: 0, 2: 0, 3: 0}
+        lo_all, hi_all = pos.min(axis=0), pos.max(axis=0)
+        self.box = (lo_all + org, hi_all + org)
+        skip_q = 0
+        for mat, q0, cq in layout:
+            material = bk_material(mat)
+            p = pos[q0 * 4:(q0 + sum(cq)) * 4]
+            box = (p.min(axis=0), p.max(axis=0))
+            node = _BKChunkNode("district_%d_%d_%s" % (self.key[0], self.key[1], mat), material)
+            lods = {}
+            cull = not material.double_sided
+            for lv in range(1, level + 1):
+                if lv == 3:                   # near: everything but the dark panes
+                    first, count = q0 + cq[0], cq[1] + cq[2] + cq[3]
+                else:
+                    first, count = q0, cq[0] + cq[1] + (cq[2] if lv == 2 else 0)
+                if count <= 0:
+                    continue
+                m = _BKChunkMesh(owner, node.name, first * 6, count * 6, cull, box)
+                m._h3d_shadow = False         # the district casts as one
+                lods[lv] = m
+                self.tris[lv] += count * 2
+            if lods:
+                self.mats.append((node, lods))
+            if mat in ("glass", "blocker"):
+                skip_q = q0 + sum(cq)
+        if q > skip_q:
+            sm = _BKChunkMesh(owner, owner.name + "_shadow", skip_q * 6, (q - skip_q) * 6, False, (lo_all, hi_all))
+            self.shadow = (_BKChunkNode(owner.name + "_shadow", None), sm)
+
+
+class _BKCityScene:
+    """The districts of one scene."""
+
+    def __init__(self, scene):
+        self.scene = weakref.ref(scene, self._gone)
+        self.sid = id(scene)
+        self.chunks = {}
+        self.where = {}                # id(node) -> record
+        self.frame = 0
+        self.seen = 0
+        self.skip = ()
+        self.tool_node = None
+        self.cam = None
+        self.planes = None
+        self.items = []                # this frame's district draws [(node, mesh, model)]
+        self.shadow_items = []
+        self.ver = None
+
+    def _gone(self, _ref):
+        try:
+            for c in self.chunks.values():
+                c.free()
+        except Exception:
+            pass
+        self.chunks, self.where = {}, {}
+        _BKC["scenes"].pop(self.sid, None)
+
+    # ---- the scene walk calls this for every painted building ----
+    def building(self, n, w, ch):
+        nd = n.__dict__
+        rec = self.where.get(id(n))
+        if rec is not None and rec["node"] is not n:
+            self._drop(rec)
+            rec = None
+        parts = nd.get("_bk_parts")
+        ok = (parts and n.visible and nd.get("_bk_ctx") is not None and nd.get("_bk_view_top") is None
+              and n.rigidbody is None and n is not self.tool_node and id(n) not in self.skip)
+        if not ok:
+            if rec is not None:
+                self._drop(rec)
+            if not n.visible:                 # a hidden building hides its baked parts
+                return [c for c in ch if c.__dict__.get("_bk_level") is None]
+            return ch
+        rev = nd.get("_bk_rev", 0)
+        if rec is None:
+            rec = self.where[id(n)] = {"node": n, "w": glm.mat4(w), "rev": rev, "chunk": None, "since": self.frame,
+                                       "kids": None, "new": True, "seen": 0}
+        elif rec["w"] != w:
+            # it moves (a gizmo drag of its group, an animation): out of its
+            # district until it has stood still for a moment
+            self._leave(rec)
+            rec["w"] = glm.mat4(w)
+            rec["since"] = self.frame
+            rec["new"] = False
+        elif rec["rev"] != rev:
+            self._leave(rec)
+        rec["rev"] = rev
+        rec["seen"] = self.frame
+        self.seen += 1
+        if rec["chunk"] is None:
+            if not rec["new"] and self.frame - rec["since"] < BK_CITY["settle_frames"]:
+                return ch
+            self._join(rec)
+        kids = rec["kids"]
+        if kids is None or kids[0] != _PS_VER[0]:
+            kids = rec["kids"] = (_PS_VER[0], [c for c in ch if c.__dict__.get("_bk_level") is None])
+        return kids[1]
+
+    def _join(self, rec):
+        n = rec["node"]
+        lo, hi = _bk_local_box(n)
+        R, t, _n, _neg = _bk_city_xf(rec["w"])
+        corners = np.array([[hi[0] if k & 1 else lo[0], hi[1] if k & 2 else lo[1], hi[2] if k & 4 else lo[2]]
+                            for k in range(8)], np.float64) @ R.T + t
+        rec["wlo"], rec["whi"] = corners.min(axis=0), corners.max(axis=0)
+        c = (rec["wlo"] + rec["whi"]) * 0.5
+        size = float(BK_CITY["chunk"])
+        key = (int(math.floor(c[0] / size)), int(math.floor(c[2] / size)))
+        chunk = self.chunks.get(key)
+        if chunk is None:
+            chunk = self.chunks[key] = _BKChunk(key, size)
+        chunk.members[id(n)] = rec
+        chunk.dirty = True
+        rec["chunk"] = chunk
+        rec["new"] = False
+        for c in n.children:                  # its own buffers aren't needed while the district draws it
+            m = c.mesh
+            if m is not None and c.__dict__.get("_bk_level") is not None and hasattr(m, "on_gpu") and m.on_gpu():
+                m.release()
+
+    def _leave(self, rec):
+        chunk = rec["chunk"]
+        if chunk is not None:
+            chunk.members.pop(id(rec["node"]), None)
+            chunk.dirty = True
+            rec["chunk"] = None
+
+    def _drop(self, rec):
+        self._leave(rec)
+        self.where.pop(id(rec["node"]), None)
+
+    # ---- after the walk: update the districts, hand out this frame's draws ----
+    def finish(self, out):
+        if self.seen != len(self.where):      # buildings that left the scene
+            for rec in [r for r in self.where.values() if r["seen"] != self.frame]:
+                self._drop(rec)
+        items, shadows = [], []
+        cam, planes = self.cam, self.planes
+        near, mid, far = float(BK_CITY["near"]), float(BK_CITY["mid"]), float(BK_CITY["far"])
+        mid = max(mid, near)
+        t_end = time.perf_counter() + float(BK_CITY["budget_ms"]) / 1000.0
+        wanted, todo = [], []
+        st = {"districts": 0, "drawn": 0, "near": 0, "mid": 0, "far": 0, "triangles": 0, "draws": 0,
+              "buildings": len(self.where), "batched": 0, "video_mb": 0.0}
+        for key in list(self.chunks):
+            chunk = self.chunks[key]
+            if not chunk.members:
+                chunk.free()
+                del self.chunks[key]
+                continue
+            st["districts"] += 1
+            st["batched"] += len(chunk.members)
+            ctx = next(iter(chunk.members.values()))["node"].__dict__.get("_bk_ctx")
+            if chunk.dirty or chunk.box is None:
+                lo, hi = chunk.world_box()
+            else:
+                lo, hi = chunk.box
+            if cam is None:
+                d, inside = 0.0, True
+            else:
+                dx = max(lo[0] - cam[0], 0.0, cam[0] - hi[0])
+                dy = max(lo[1] - cam[1], 0.0, cam[1] - hi[1])
+                dz = max(lo[2] - cam[2], 0.0, cam[2] - hi[2])
+                d = math.sqrt(dx * dx + dy * dy + dz * dz)
+                inside = True
+                if planes is not None:
+                    for nx, ny, nz, dd in planes:
+                        if (nx * (hi[0] if nx >= 0.0 else lo[0]) + ny * (hi[1] if ny >= 0.0 else lo[1])
+                                + nz * (hi[2] if nz >= 0.0 else lo[2]) + dd) < 0.0:
+                            inside = False
+                            break
+            hide = far > 0.0 and d > far
+            want = 3 if d < near else (2 if d < mid else 1)
+            # a little hysteresis: detail that is loaded stays until 15 % further away
+            keep = 3 if d < near * 1.15 else (2 if d < mid * 1.15 else 1)
+            lv = chunk.level
+            if chunk.dirty:
+                # something in it changed: again at once, at the detail it had or needs
+                chunk.build(ctx, max(want, min(lv, keep)) if lv else want)
+            elif lv < want and (inside or d < near):
+                wanted.append((d, chunk, want, ctx))
+            elif lv > keep:
+                chunk.idle += 1
+                if chunk.idle > BK_CITY["unload_frames"]:
+                    wanted.append((1e9 + d, chunk, keep, ctx))
+            else:
+                chunk.idle = 0
+            todo.append((chunk, want, hide, inside))
+        # more (or less) detail: the nearest first, within the frame's time budget
+        if wanted:
+            wanted.sort(key=lambda x: x[0])
+            first = True
+            for _d, chunk, lv, ctx in wanted:
+                if not first and time.perf_counter() > t_end:
+                    break
+                first = False
+                chunk.build(ctx, lv)
+        bymat = {}
+        for chunk, want, hide, inside in todo:
+            if chunk.owner is None:
+                continue
+            st["video_mb"] += chunk.bytes / 1048576.0
+            if chunk.shadow is not None and not hide:
+                shadows.append((chunk.shadow[0], chunk.shadow[1], chunk.model))
+            if hide or not inside:
+                continue
+            show = min(want, chunk.level)
+            st["drawn"] += 1
+            st[("far", "mid", "near")[show - 1]] += 1
+            st["triangles"] += chunk.tris.get(show, 0)
+            for node, lods in chunk.mats:
+                m = lods.get(show)
+                if m is not None:
+                    g = bymat.get(id(node.material))
+                    if g is None:
+                        g = bymat[id(node.material)] = []
+                    g.append((node, m, chunk.model))
+        for g in bymat.values():              # material after material: each is bound once
+            items.extend(g)
+        st["draws"] = len(items)
+        self.items, self.shadow_items = items, shadows
+        _BKC["stats"] = st
+        out.extend(items)
+
+
+def _bk_local_box(node):
+    """(lo, hi) of a building in its own frame, from its baked parts."""
+    c = node.__dict__.get("_bk_box")
+    rev = node.__dict__.get("_bk_rev", 0)
+    if c is not None and c[0] == rev:
+        return c[1], c[2]
+    lo = np.full(3, np.inf)
+    hi = np.full(3, -np.inf)
+    for lp in (node.__dict__.get("_bk_parts") or {}).values():
+        for part in lp.values():
+            p = part.data[:, 0:3]
+            if len(p):
+                lo = np.minimum(lo, p.min(axis=0))
+                hi = np.maximum(hi, p.max(axis=0))
+    if not np.isfinite(lo).all():
+        lo, hi = np.zeros(3), np.zeros(3)
+    node._bk_box = (rev, lo, hi)
+    return lo, hi
+
+
+def _bk_city_begin(scene, skip):
+    """-> the district batcher of this scene for one scene walk (None: off)."""
+    if not BK_CITY["on"]:
+        if _BKC["scenes"]:
+            bk_city_reset()
+        return None
+    st = _BKC["scenes"].get(id(scene))
+    if st is None or st.scene() is not scene:
+        st = _BKC["scenes"][id(scene)] = _BKCityScene(scene)
+    st.frame += 1
+    st.seen = 0
+    st.skip = skip
+    eng = _SB.get("engine")
+    tool = getattr(eng, "building_tool", None) if eng is not None else None
+    st.tool_node = tool.node if (tool is not None and tool.active) else None
+    cam = _BKC["cams"][-1] if _BKC["cams"] else None
+    st.cam, st.planes = None, None
+    if cam is not None:
+        try:
+            p = cam.position
+            st.cam = (float(p.x), float(p.y), float(p.z))
+            vp = cam.projection() * cam.view()
+            row = [[vp[c][r] for c in range(4)] for r in range(4)]
+            planes = []
+            for ci, sg in ((0, 1.0), (0, -1.0), (1, 1.0), (1, -1.0), (2, 1.0), (2, -1.0)):
+                pl = [row[3][i] + sg * row[ci][i] for i in range(4)]
+                ln = math.sqrt(pl[0] * pl[0] + pl[1] * pl[1] + pl[2] * pl[2])
+                if ln > 1e-12:
+                    planes.append((pl[0] / ln, pl[1] / ln, pl[2] / ln, pl[3] / ln))
+            st.planes = planes if len(planes) == 6 else None
+        except Exception:
+            st.planes = None
+    return st
+
+
+def bk_city_reset():
+    """Forget every district (they are made again on the next frame)."""
+    for st in list(_BKC["scenes"].values()):
+        for c in st.chunks.values():
+            c.free()
+        st.chunks, st.where = {}, {}
+    _BKC["scenes"].clear()
+
+
+def _bk_city_state(scene):
+    st = _BKC["scenes"].get(id(scene))
+    return st if (st is not None and st.scene() is scene) else None
+
+
+def _h3d_shadow_extra(scene):
+    """Merged shadow casters of this frame: one per district."""
+    st = _bk_city_state(scene)
+    return st.shadow_items if st is not None else []
+
+
+def _bk_city_batched(scene, node):
+    """True when ``node`` is a building part that its district draws."""
+    st = _bk_city_state(scene)
+    if st is None or node.__dict__.get("_bk_level") is None or node.parent is None:
+        return False
+    rec = st.where.get(id(node.parent))
+    return rec is not None and rec["chunk"] is not None
+
+
+def _bk_city_draws(scene):
+    """[(mesh, model)] of the districts in view (wireframe view, tools)."""
+    st = _bk_city_state(scene)
+    return [(m, model) for _n, m, model in st.items] if st is not None else []
+
+
+def _bk_set_building_detail(self, near=None, mid=None, far=None, district=None, preset=None):
+    """Distances (m) of the levels of detail of painted buildings:
+    ``near`` rooms and glass, ``mid`` frames and shutters, beyond that bare
+    shells; ``far`` > 0 stops drawing buildings further away than that.
+    ``district``: the size of the squares the buildings are merged in.
+    ``preset``: "low", "medium", "high" or "ultra" (BK_DETAIL_PRESETS)."""
+    if preset in BK_DETAIL_PRESETS:
+        BK_CITY["near"], BK_CITY["mid"] = BK_DETAIL_PRESETS[preset][1], BK_DETAIL_PRESETS[preset][2]
+    if near is not None:
+        BK_CITY["near"] = max(0.0, float(near))
+    if mid is not None:
+        BK_CITY["mid"] = max(0.0, float(mid))
+    if far is not None:
+        BK_CITY["far"] = max(0.0, float(far))
+    if district is not None and abs(float(district) - BK_CITY["chunk"]) > 1e-6:
+        BK_CITY["chunk"] = float(np.clip(float(district), 16.0, 256.0))
+        bk_city_reset()
+    return {k: BK_CITY[k] for k in ("near", "mid", "far", "chunk")}
+
+
+def _bk_building_stats(self):
+    """What the last frame drew of the painted buildings: districts (all /
+    in view / per level of detail), triangles, draw calls, video memory."""
+    return dict(_BKC["stats"])
+
+
+if not globals().get("_BK_CITY_INSTALLED"):
+    _BK_CITY_INSTALLED = True
+    HeavenEngine.set_building_detail = _bk_set_building_detail
+    HeavenEngine.building_stats = _bk_building_stats
+    if "_PS_CITY" in globals() and globals().get("_PS_ON"):
+        _PS_CITY[0] = _bk_city_begin
+
+        _BK_CITY_PREV_RENDER = Renderer.render
+
+        def _bk_city_render(self, scene, camera):
+            _BKC["cams"].append(camera)
+            try:
+                return _BK_CITY_PREV_RENDER(self, scene, camera)
+            finally:
+                _BKC["cams"].pop()
+
+        Renderer.render = _bk_city_render
 
 # ---------------------------------------------------------------------------
 # [VITRAIL EDITOR]  The 2.8 editor UI (h3d_editor/, built with Vitrail)

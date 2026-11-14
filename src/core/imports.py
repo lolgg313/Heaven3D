@@ -10,6 +10,7 @@ import math
 import struct
 import time
 import traceback
+import weakref
 import argparse
 from dataclasses import dataclass, field
 from typing import Any, Optional, Callable, Dict, List, Tuple, Union
