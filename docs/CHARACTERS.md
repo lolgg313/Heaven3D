@@ -50,7 +50,7 @@ skin under them is hidden so it never pokes through.
 
 1. In the Hub, open **Packages** and **Install** *MakeHuman Characters*, then **Add to project**
    on your project (or create a project from the **Character Town** template).
-2. Open the project. The **Packages** menu (Hierarchy header) now has:
+2. Open the project. The **Packages** menu (menu bar) now has:
 
 | Tool | What it does |
 | --- | --- |

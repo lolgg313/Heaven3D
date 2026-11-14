@@ -87,8 +87,15 @@ check("a box that is not a number is left to the Python loop", H._sap_run_fast(e
 eng = H.HeavenEngine(mode="editor", width=960, height=540, project_path=PROJECT)
 for n in [n for n in eng.scene.root.children if n.name == "Ocean"]:
     eng._delete_node(n)
+seen = {"n": 0, "ok": 0}
+
+
 class Logger(H.Blueprint):
-    pass
+    def on_collision_enter(self, other, contact):          # contact.point and contact["point"] both work
+        seen["n"] += 1
+        seen["ok"] += (contact.point is contact["point"] and contact.depth == contact["depth"]
+                       and contact.normal is contact["normal"] and contact.impulse == contact["impulse"]
+                       and isinstance(contact, dict) and not hasattr(contact, "nothing"))
 eng.add_plane(size=120.0)
 random.seed(4)
 bodies = []
@@ -164,6 +171,8 @@ def sim():
     SAP.run, SAP.run_cross = _run, _cross
     eng.physics.events_for_all = True
     check("PhysicsWorld.events_for_all = True records every pair again", eng.physics.events_for_all)
+    check("a script reads its contact as contact.point or contact[\"point\"]",
+          seen["n"] > 100 and seen["ok"] == seen["n"], seen)
 
 
 st = {"f": 0}

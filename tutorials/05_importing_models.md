@@ -13,7 +13,7 @@ Click **Import** and pick a `.glb`, `.gltf`, `.blend` or `.obj` file. The model 
 
 However many parts and materials a model has, it is imported as **one object**:
 
-- the Hierarchy shows a single row for it
+- the Outliner shows a single row for it
 - clicking any part selects the whole model
 - moving, rotating, scaling, duplicating and deleting always act on the whole model
 - the parts can't be pulled apart (that keeps models intact)

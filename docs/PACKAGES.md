@@ -87,7 +87,7 @@ def register(h3d):
         def on_tick(self, dt):
             self.node.rotation_euler.y += float(self.properties["speed"]) * dt
 
-    def add_cube(engine):               # an editor tool (Packages menu in the Hierarchy header)
+    def add_cube(engine):               # an editor tool (Packages menu in the menu bar)
         cube = engine.add_cube(name="Spinning Cube")
         engine.attach_blueprint(cube, Spinner)
     tool = h3d.add_tool("My tools: add spinning cube", add_cube)

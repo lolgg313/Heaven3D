@@ -17,7 +17,7 @@ The **MakeHuman Characters** package gives you realistic people with hundreds of
 
 ## Make a character
 
-1. Open the project. In the Hierarchy header, open **Packages** and choose **Characters: new character**.
+1. Open the project. Open the **Packages** menu in the menu bar and choose **Characters: new character**.
 2. Click the character. The **Character Creator** opens beside the Inspector.
 3. **Body**: drag *Gender*, *Age*, *Muscle*, *Weight* and *Height*. Open a region (*Torso*, *Legs* ...) for detail sliders.
 4. **Face**: press *Random face* until you like it, then fine-tune the nose, mouth, eyes ...
@@ -37,7 +37,7 @@ The **MakeHuman Characters** package gives you realistic people with hundreds of
 
 ## Add an enemy
 
-1. Add a **Player Spawn** from the **Library** if your scene has none.
+1. Add a player spawn (**Create > Player spawn**) if your scene has none.
 2. **Packages > Characters: new enemy (foot IK)**. In the **AI** tab, give it a path to patrol.
 3. Press **Play**. When it sees you it runs at you and attacks. Shoot it (click) and it reacts, then falls when its health runs out.
 

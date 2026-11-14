@@ -35,6 +35,7 @@ rendering/instancing.py
 rendering/water.py
 editor/selection_outline.py
 physics/physics_overhaul.py
+physics/physics_kernels.py
 patches/quality_fixes_v1.py
 patches/single_object_imports_icons.py
 world/procedural_building.py

@@ -30,4 +30,6 @@ Click **Add RigidBody**. Without one, the object is a fixed part of the level.
 2. Click **Add RigidBody** and set **Bounce** to 0.8.
 3. Press Play and watch it bounce.
 
+> NOTE: Bodies that come to rest fall asleep and cost nothing, so a level can hold hundreds of crates. Stacks are the weak spot: boxes piled more than two high keep trembling slightly and sink a little into each other. Keep stacks low, or use one tall box.
+
 > TIP: A Mesh collider is for static or kinematic objects. A dynamic body with a Mesh collider falls back to a bounding sphere — use Box/Sphere/Capsule for things that move.

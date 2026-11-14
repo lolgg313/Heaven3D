@@ -17,9 +17,9 @@ The **First-Person Arena** template already has everything wired up. Create the 
 
 ## Add your own gameplay pieces
 
-1. **Library → Enemy Spawn.** Put it in the air (Y about 2.5). Duplicate for more drones.
-2. **Library → Health Pickup / Bullet Pickup.** Place them on the floor (Y 0.5).
-3. **Library → Trigger Point** at the far end — the exit. Click **Text** in the Inspector to change the message.
+1. **Create > Enemy spawn.** Put it in the air (Y about 2.5). [[Ctrl]] + [[D]] makes more drones.
+2. **Create > Health pickup / Bullet pickup.** Place them on the floor (Y 0.5).
+3. **Create > Trigger point** at the far end — the exit. Change **Text** in the Inspector to set the message.
 
 ## Tune the difficulty
 
@@ -29,6 +29,6 @@ Select a spawn or pickup and change its numbers in the Inspector:
 - **Enemy Spawn:** Health Value, Bullet Value (damage), Fly Speed, Shots / Sec
 - **Pickups:** Bullet Count / Health Count
 
-> TIP: Enemies and pickups can use any 3D model: select one, click **Change Mesh…** and pick a .glb, .gltf or .blend file. A drone model from a free site makes the game look professional instantly.
+> TIP: Enemies and pickups can use any 3D model: select one, click **Custom mesh...** in its settings panel and pick a .glb, .gltf or .blend file. A drone model from a free site makes the game look professional instantly.
 
-> NOTE: While playing, the editor is locked — only Stop works. Everything returns to its starting place when you stop.
+> NOTE: While playing, the game fills the window and the editor is locked — only **Stop** ([[Ctrl]] + [[P]]) works. Everything returns to its starting place when you stop.

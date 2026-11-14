@@ -176,6 +176,20 @@ class Contact:
         self.friction = 0.6
 
 
+class ContactInfo(dict):
+    """What on_collision_enter / on_collision_stay receive: point, normal
+    (from the other object towards this one), depth, impulse.  The guides
+    always wrote contact.point while the engine handed over a plain dict
+    (contact["point"]); both spellings work now."""
+    __slots__ = ()
+
+    def __getattr__(self, name):
+        try:
+            return self[name]
+        except KeyError:
+            raise AttributeError(name) from None
+
+
 class RayHit:
     """Result of PhysicsWorld.raycast."""
     __slots__ = ("node", "collider", "point", "normal", "distance")
@@ -2141,8 +2155,7 @@ class PhysicsWorld:
         # --- solve velocity (warm-started sequential impulses) ---
         self._solve_contacts_velocity(self._contacts)
         # --- positional correction (single pass, early-out) ---
-        for c in self._contacts:
-            self._solve_contact_position(c)
+        self._solve_contacts_position(self._contacts)
 
         # --- write dynamics back to their scene nodes (awake only) ---
         for e in entries:
@@ -2223,6 +2236,10 @@ class PhysicsWorld:
             if b.body is not None:
                 b.body.velocity -= fimp * b.inv_mass
         return dj
+
+    def _solve_contacts_position(self, contacts):
+        for c in contacts:
+            self._solve_contact_position(c)
 
     def _solve_contact_position(self, c: Contact):
         a, b = c.a, c.b

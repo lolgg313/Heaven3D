@@ -938,10 +938,10 @@ class HeavenEngine:
             if kind in ("collision_enter", "collision_stay"):
                 hook = ("on_collision_enter" if kind == "collision_enter"
                         else "on_collision_stay")
-                info_a = {"point": contact.point, "normal": contact.normal,
-                          "depth": contact.depth, "impulse": contact.jn}
-                info_b = {"point": contact.point, "normal": -contact.normal,
-                          "depth": contact.depth, "impulse": contact.jn}
+                info_a = ContactInfo(point=contact.point, normal=contact.normal,
+                                     depth=contact.depth, impulse=contact.jn)
+                info_b = ContactInfo(point=contact.point, normal=-contact.normal,
+                                     depth=contact.depth, impulse=contact.jn)
                 for bp in list(getattr(na, "blueprints", [])):
                     try:
                         getattr(bp, hook)(nb, info_a)

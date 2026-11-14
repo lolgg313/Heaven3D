@@ -42,7 +42,7 @@ The race car starts as a simple dummy car. Swap in real models:
 A game only uses the packages inside its project folder, so exported games never miss anything.
 
 1. On the **Packages** page, press **Add to project** on a package and pick your project. You can also use **⋯ > Packages…** on a project.
-2. Open the project. The **Packages** button in the Hierarchy header lists the package tools, for example:
+2. Open the project. The **Packages** menu in the menu bar lists the package tools, for example:
    - **Spline road: new road**: then move the orange points with the gizmo; the road follows live.
    - **Race kit: add car / add checkpoint / add race manager**, and **car body model… / car wheel model…** for your own car.
    - **Physics quality: High**: click to cycle Normal / High / Ultra.

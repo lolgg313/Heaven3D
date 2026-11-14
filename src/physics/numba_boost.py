@@ -805,6 +805,23 @@ def _h3d_numba_warmup():
         _sap_cross_kernel(idx, z, o, z, o, z, o, z, o, z, o, z, o, buf, buf.copy())
     except Exception:
         pass
+    try:                                    # contacts + contact solver (physics/physics_kernels.py)
+        if _PK_STATE["on"]:
+            _pk_box_box(0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.5, 0.5, 0.5,
+                        0.4, 0.3, 0.2, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.5, 0.5, 0.5)
+            _pk_box_plane(0.0, 0.2, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.5, 0.5, 0.5,
+                          0.0, 0.0, 0.0, 0.0, 1.0, 0.0, True, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 5.0, 5.0,
+                          np.empty((8, 4), np.float64))
+            i0 = np.zeros(1, np.int64)
+            i1 = np.ones(1, np.int64)
+            yes = np.ones(1, np.bool_)
+            one = np.ones(1, np.float64)
+            nr = np.array([[0.0, 1.0, 0.0]], np.float32)
+            _pk_solve(2, i0, i1, yes, yes, one, one, nr, one.copy(), one.copy(), one, one,
+                      np.zeros((3, 3), np.float32))
+            _pk_correct(i0, i1, yes, yes, one, one, nr, one, np.zeros((3, 3), np.float32), np.zeros(3, np.bool_))
+    except Exception:
+        pass
     _H3D_WARMUP["seconds"] = time.perf_counter() - t0
 
 

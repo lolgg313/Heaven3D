@@ -38,16 +38,21 @@ The whole engine ships as a single file, `Heaven3D.py`, so it is easy to bundle 
 - Window glass no longer casts a solid shadow: the sun shines into the rooms.
 - New: **Buildings > Town** generates blocks of houses on a grid of streets (one undo step, one "Town" group whose houses stay selectable one by one), with a **Detail** setting (Low / Medium / High / Ultra) and live numbers. From a script: `engine.add_town(6, 6)`, `engine.set_building_detail(preset="high")`, `engine.building_stats()`. See [docs/BUILDING_MAKER.md](docs/BUILDING_MAKER.md).
 
-**Physics: many bodies cost much less.** Measured with boxes dropped on a plane (same machine, before / after):
+**Physics: many bodies cost much less.** Measured before / after on the same machine (milliseconds per physics step):
 
-| Dynamic boxes | While falling and settling | At rest |
+| Scene | Before | Now |
 |---|---|---|
-| 400 | 25.8 ms -> 17.7 ms a step | 12.9 ms -> 1.4 ms |
-| 1,000 | 72.7 ms -> 52.0 ms | 35.6 ms -> 4.4 ms |
+| 400 boxes at rest | 12.9 | about 1.5 |
+| 1,000 boxes at rest | 35.6 | 3.7 |
+| 400 boxes falling and settling on a plane | 25.8 | 15.4 |
+| 1,000 boxes falling and settling | 72.7 | 39.3 |
+| A pile of 300 boxes and spheres that keeps moving | 131.8 | 36.7 |
 
-- The pair search (sweep and prune) runs as one compiled call on flat arrays instead of a Python test per candidate. It returns the same pairs in the same order, so the simulation is unchanged.
-- Collision and trigger events only go to the scripts on the two objects, so the contact of a pair without any script is no longer worked out a second time just for events. Scripts receive exactly the same events (`tests/test_physics_fast_paths.py` runs the old code next to the new one at every step). `engine.physics.events_for_all = True` brings the old bookkeeping back if you read `physics.events` yourself.
-- Contacts and the solver are still Python: that is what the "falling and settling" column still pays for.
+- The pair search (sweep and prune), the box-box and box-plane contacts and the contact solver (velocity iterations and position correction) are compiled Numba kernels. Each is a transcription of the Python code with the same operation order and the same precision, and the tests run both side by side: the pair sets are equal, the contacts and the solved velocities, positions and impulses are **bit-identical** (`tests/test_physics_fast_paths.py`, `tests/test_physics_kernels.py`). Without Numba the Python code runs; `HEAVEN3D_NO_PHYS_KERNELS=1` switches the kernels off.
+- Collision and trigger events only go to the scripts on the two objects, so the contact of a pair without any script is no longer worked out a second time just for events. Scripts receive exactly the same events. `engine.physics.events_for_all = True` brings the old bookkeeping back if you read `physics.events` yourself.
+- `on_collision_enter` / `on_collision_stay` get a contact you can read as `contact.point` (as the guides always said) or `contact["point"]` (what the engine really passed).
+- What is left is per-body Python (shapes, islands, writing transforms back): that is what the "falling and settling" rows still pay for.
+- Found while testing, not changed here because it would change how every game's physics behaves: boxes stacked more than two high never quite rest (they tremble, sink a little and don't fall asleep), because contact impulses are carried over between steps but not applied at the start of a step. It is described in the physics tutorial and the wiki.
 
 **The three view modes are back in the new editor.** *Lit*, *Lit + Wire* and *Wire* are buttons at the top-left of the 3D view again (they had moved into the View menu only), and **F4** goes to the next one. The wireframe is no longer drawn over a running game.
 
@@ -228,7 +233,8 @@ The 45,000-line engine is now kept as about 70 files in [`src/`](src/README.md) 
 ### Physics (pure CPU, no extra dependencies)
 - Rigid bodies with **box, sphere, capsule, plane, heightfield, and triangle-mesh** colliders (mesh colliders use the node's exact triangles, so low-poly buildings with interiors just work)
 - Sequential-impulse solver with friction and restitution
-- Broadphase sweep-and-prune, persistent contact manifolds, and simulation islands
+- Broadphase sweep-and-prune, persistent contact manifolds, and simulation islands (bodies at rest sleep and cost nothing)
+- With Numba (installed by default) the pair search, box contacts and the contact solver are compiled; the results are the same as the pure-Python code, which is used when Numba is missing
 - Raycasts, overlap queries, triggers, and collision events
 - Fixed-step simulation
 - Kinematic **CharacterController** with sliding, slopes, step-offset, and jumping
@@ -237,9 +243,9 @@ The 45,000-line engine is now kept as about 70 files in [`src/`](src/README.md) 
 ### Editor
 - Built-in scene editor with Inspector / properties panel
 - Transform gizmos, light gizmos, spawn gizmos, view gizmo, and a visual collider shape editor
-- **View menu** (top-left of the viewport): Lit, Lit + Wireframe and Wireframe (x-ray) shading, grid on/off
+- **View modes** (buttons at the top-left of the viewport, the View menu, F4): Lit, Lit + Wireframe and Wireframe (x-ray); grid on/off
 - Procedural terrain generation
-- **Building editor**: generate, paint, or manually place modular building sectors on a 2 m grid with a snapped ghost preview, across 5 biomes
+- **Building Maker**: paint rooms on a 2 m grid and get walls, floors, stairs and roofs; generate houses, villages and whole towns, drawn in districts with levels of detail ([docs/BUILDING_MAKER.md](docs/BUILDING_MAKER.md)). The older sector generator (5 biomes) is still there
 - Save and load projects as JSON (`.heaven3d`)
 
 ### Gameplay
@@ -252,7 +258,8 @@ The 45,000-line engine is now kept as about 70 files in [`src/`](src/README.md) 
 - **glTF / GLB**, full glTF 2.0: every accessor type (sparse, strided, normalized), all 7 primitive modes, skins (bind pose), morph targets, `EXT_mesh_gpu_instancing`, `KHR_meshopt_compression`, `KHR_draco_mesh_compression` (optional `DracoPy`), `KHR_texture_transform`, unlit, emissive strength, spec-gloss, transmission, punctual lights, texture wrap modes, vertex colours and a second UV set
 - **Blender `.blend`** read directly, no Blender install needed: Blender 2.5x up to **5.0**, gzip/zstd compressed, 32-bit and big-endian files, parented objects, linked duplicates, collection instances, lights, materials and textures (packed or external), colour attributes, 2 UV maps, custom/sharp normals and the modifiers Mirror, Array, Subdivision Surface, Solidify, Weld, Edge Split, Triangulate, Smooth by Angle and Multires (levels)
 - **OBJ + MTL** with texture resolution
-- **One model = one object**: every imported model shows as a single object in the Hierarchy; its children and material parts are locked to it, and colliders cover the whole model
+- **FBX** and **DirectX `.x`** models (no extra libraries)
+- **One model = one object**: every imported model shows as a single object in the Outliner; its children and material parts are locked to it, and colliders cover the whole model
 
 ### Performance
 - Optional **Numba** acceleration for hot paths, with automatic, bit-identical fallback to plain Python if Numba is unavailable
