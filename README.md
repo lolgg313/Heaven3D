@@ -25,6 +25,16 @@ Heaven3D is a from-scratch 3D game engine written in Python on top of [ModernGL]
 
 The whole engine ships as a single file, `Heaven3D.py`, so it is easy to bundle into your own projects; it is developed as modular source in `src/`. The editor's interface lives next to it in `h3d_editor/`.
 
+## 🌴 New demo: FarScream map generator
+
+**Packages > FarScream: generate new map**, or a project from the **FarScream** template: a whole island to fight over, made from one seed.
+
+- **Shoot, loot, drive.** You land on a beach with a pistol. Three military camps (bunkers, tents, campfire, crates, fuel drums, a checkpoint at the road) are guarded by soldiers with pistols and MP5s; they drop their MP5 and .45 ammo when they die. Islanders in the jungle villages run at you and punch when they see you. Red fuel drums explode in chains. **Both trucks drive in third person, Far Cry style** (weight, drifts on the handbrake, suspension, a camera you swing round with the mouse that settles back behind you); **F** gets in and out and opens supply crates.
+- **Reasons to explore:** a radio outpost on the high ground to blow up, a plane crash smoking in a jungle clearing, a cargo ship run aground, wrecked trucks along the roads, and objectives with distances and a marker. Clear the camps and the radio station to liberate the island.
+- **The 19 models optimized with no visible change:** merged vertices and edge collapses under 0.1 mm, lighter levels of detail drawn only from where they differ by less than a pixel, shared meshes (instanced drawing), low-poly collision copies, and **texture streaming**: each material uses the largest version of its (original) texture that could show at the camera's distance, so the props need a few hundred MB of video memory instead of about 5.7 GB. Characters are prepared on a worker thread before you meet them.
+- Bullet holes are capped at 40 on the map; a new one removes the oldest.
+- Guide: [docs/FARSCREAM.md](docs/FARSCREAM.md). The models were provided by the repository owner; check their licence before shipping them ([ASSETS_LICENSE.md](packages/farscream/ASSETS_LICENSE.md)).
+
 ## 🏙️ New since 3.1.4: whole towns, the view modes are back
 
 **Towns of painted buildings (Building Maker).** A house is a few meshes per storey; a town of a thousand was 20,000 draw calls. Buildings that just stand there are now drawn in **districts** (48 m squares), the way open-world games do it:
@@ -290,6 +300,7 @@ Packages add features to the Hub, the editor and your games, and they're plain P
 | Car Race Kit | Editor, Game | arcade car (use your own body and wheel models), checkpoints, race manager, and a *Race Track* template |
 | MakeHuman Characters | Editor, Game | CC0 MakeHuman people with a Character Creator, Mixamo animations, path-walking NPCs, enemies, foot IK and a *Character Town* template |
 | Tropical Islands | Editor, Game | one-click procedural tropical islands (9 shapes, any size) with beaches, jungle, flowers, rocks and dirt roads, slope-aware terrain materials, LOD vegetation with wind, and a *Tropical Island* template |
+| FarScream | Editor, Game | open-island shooter map generator: camps, villages, wrecks, soldiers and islanders, loot, drivable trucks, objectives, and a *FarScream* template (needs Tropical Islands, HQ FPS Weapons, MakeHuman Characters) |
 
 ```python
 # engine.py of a package
@@ -568,6 +579,7 @@ Heaven3D is licensed under the **Apache License, Version 2.0**. See the [LICENSE
 | MakeHuman Characters | CC0 ([ASSETS_LICENSE.md](packages/mh_characters/ASSETS_LICENSE.md)) |
 | Tropical Islands | CC0 ([ASSETS_LICENSE.md](packages/tropical_islands/ASSETS_LICENSE.md)) |
 | HQ FPS Weapons | made by lolgg313 · free in Heaven3D games only, no redistribution of the raw files ([ASSETS_LICENSE.md](packages/hqfps_weapons/ASSETS_LICENSE.md)) |
+| FarScream | models provided by lolgg313, original licence not recorded: check before shipping ([ASSETS_LICENSE.md](packages/farscream/ASSETS_LICENSE.md)) |
 
 ```
 Copyright 2026 Heaven3D Contributors

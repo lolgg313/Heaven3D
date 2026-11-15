@@ -1,0 +1,11 @@
+{
+ "title": "FarScream",
+ "order": 8,
+ "desc": "Open-island shooter: a generated island with military camps, a radio outpost, islander villages, a plane crash and a shipwreck. Shoot, loot the soldiers' MP5s and ammo, drive the trucks (F), liberate the island. Packages > FarScream: generate new map rolls a new island.",
+ "packages": [
+  "farscream",
+  "tropical_islands",
+  "hqfps_weapons",
+  "mh_characters"
+ ]
+}

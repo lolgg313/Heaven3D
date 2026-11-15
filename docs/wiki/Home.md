@@ -79,7 +79,7 @@ The whole engine is a single file, `Heaven3D.py`, so it is easy to read, hack on
 - One model = one object in the Outliner
 
 ### Packages — see [[Packages]]
-Light Theme · Physics Plus · Spline Roads · Car Race Kit · [[MakeHuman Characters]] · [[Tropical Islands]] · [[HQ FPS Weapons]]
+Light Theme · Physics Plus · Spline Roads · Car Race Kit · [[MakeHuman Characters]] · [[Tropical Islands]] · [[HQ FPS Weapons]] · FarScream
 
 ## Current version
 

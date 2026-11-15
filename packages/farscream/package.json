@@ -1,0 +1,12 @@
+{
+  "id": "farscream",
+  "name": "FarScream",
+  "version": "1.0.0",
+  "author": "Heaven3D (models: provided by lolgg313, see ASSETS_LICENSE.md)",
+  "category": "Gameplay",
+  "description": "An open-island shooter map generator. One click makes a tropical island with military camps, a radio outpost, islander villages in the jungle, a plane crash and a shipwreck, all furnished with bunkers, tents, barrels, crates and trucks. Shoot with a pistol, loot the MP5s and ammo soldiers drop, drive both trucks in third person, blow up fuel barrels and liberate the island. Includes the 'FarScream' template.",
+  "heaven3d": ">=3.1.0",
+  "targets": ["editor", "game"],
+  "engine": "engine.py",
+  "requires": ["tropical_islands", "hqfps_weapons", "mh_characters"]
+}

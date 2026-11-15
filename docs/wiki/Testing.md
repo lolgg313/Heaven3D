@@ -30,6 +30,8 @@ The folder holds more test files than this table (prefabs, visual scripts, node 
 | `python tests/test_hqfps_arms.py` | no | every clip of all 20 weapons: no hollow arms |
 | `python tests/test_hqfps_arena_fixes.py` | yes | 14 checks: zombie reach, hit/death, bullet holes, mouse-look, near plane |
 | `python tests/test_hqfps_old_arena.py <old main.heaven3d>` | yes | an older arena project gets its weapon and ammo pickups when opened |
+| `python tests/test_farscream_layout.py` | no | FarScream: the map layout on 3 island shapes (complete, deterministic, on land, flat sites, no piles) and the model files |
+| `python tests/test_farscream.py` | yes | FarScream in Play: pistol start, soldiers with pistols / MP5s, loot, driving, fuel drums, islanders, soldiers shooting, bullet-hole cap, Stop (slow on llvmpipe) |
 
 ## Package tests
 

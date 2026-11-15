@@ -15,8 +15,9 @@ Packages add features to **the Hub**, **the editor** and **your games**. They ar
 | **MakeHuman Characters** | 1.2.2 | Editor, Game | CC0 MakeHuman people, Character Creator, mocap animations, Mixamo retargeting, NPCs, enemies, foot IK, *Character Town* template | [[MakeHuman Characters]] |
 | **Tropical Islands** | 1.1.1 | Editor, Game | one-click procedural tropical islands with LOD vegetation, *Tropical Island* template | [[Tropical Islands]] |
 | **HQ FPS Weapons** | 0.4.0 | Editor, Game | 20 GPU-skinned first-person weapons with animations, sounds and stats, *HQ FPS Arena* template | [[HQ FPS Weapons]] |
+| **FarScream** | 1.0.0 | Editor, Game | open-island shooter map generator (camps, villages, wrecks, loot, drivable trucks, objectives), *FarScream* template; needs the three packages above | [FarScream guide](https://github.com/lolgg313/Heaven3D/blob/main/docs/FARSCREAM.md) |
 
-**Asset licences.** Package code is Apache 2.0 like the engine. Assets: MakeHuman Characters and Tropical Islands are **CC0**; HQ FPS Weapons assets are by lolgg313, **free in Heaven3D games only, no redistribution of the raw files** ([licence](https://github.com/lolgg313/Heaven3D/blob/main/packages/hqfps_weapons/ASSETS_LICENSE.md)).
+**Asset licences.** Package code is Apache 2.0 like the engine. Assets: MakeHuman Characters and Tropical Islands are **CC0**; HQ FPS Weapons assets are by lolgg313, **free in Heaven3D games only, no redistribution of the raw files** ([licence](https://github.com/lolgg313/Heaven3D/blob/main/packages/hqfps_weapons/ASSETS_LICENSE.md)). The FarScream models were provided by lolgg313; their original licence is not recorded ([note](https://github.com/lolgg313/Heaven3D/blob/main/packages/farscream/ASSETS_LICENSE.md)).
 
 ## Installing and using packages
 

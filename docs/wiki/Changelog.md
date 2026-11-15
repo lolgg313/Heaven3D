@@ -4,6 +4,13 @@ Engine **3.1.4** is the current version; the first section below is on `main` an
 
 ## After 3.1.4 (on `main`)
 
+**FarScream map generator (new demo package)**
+- one seed makes a furnished island: 3 military camps, a radio outpost, 2 islander villages, a plane crash, a shipwreck, road wrecks; *FarScream* template
+- pistol at the start; soldiers (pistol / MP5) drop their gun and .45 ammo; islanders run at you and punch; exploding fuel drums; supply crates; objectives with markers
+- both trucks drive in third person (weight, handbrake drifts, suspension, orbit camera that recentres), F to get in / out
+- the 19 models: invisible geometry optimization, sub-pixel LODs, shared meshes, low-poly collision copies, distance-based texture streaming (≈5.7 GB → a few hundred MB of textures), characters prepared on a worker thread
+- at most 40 bullet holes on the map, the oldest goes first
+
 **Towns of painted buildings**
 - buildings that stand still are drawn in 48 m districts: one vertex buffer, one draw call per material, one shadow caster (a 62-building town: 1,297 draw calls → 96, same picture)
 - three levels of detail by distance; far districts keep only their shell in video memory and detail streams in as the camera approaches

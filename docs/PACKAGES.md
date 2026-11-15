@@ -197,5 +197,6 @@ python Heaven3D_Hub.py --safe-mode
 | **Car Race Kit** | Editor, Game | arcade car, checkpoints, race manager (laps, countdown, best lap), *Race Track* template |
 | **MakeHuman Characters** | Editor, Game | MPFB2 / MakeHuman people (morphs, 175 CC0 clothes, hair, skins) with a Character Creator, Mixamo / glTF / BVH animation retargeting, path-walking NPCs, enemies, foot IK, *Character Town* template. See [CHARACTERS.md](CHARACTERS.md) |
 | **Tropical Islands** | Editor, Game | procedural tropical islands (9 shapes, any size): beaches, jungle, flowers, rocks, dirt roads, slope-aware 4-layer terrain material, LOD vegetation with wind, *Tropical Island* template. See [ISLANDS.md](ISLANDS.md) |
+| **FarScream** | Editor, Game | open-island shooter map generator on top of Tropical Islands, HQ FPS Weapons and MakeHuman Characters: camps, villages, wrecks, loot, drivable trucks, objectives, *FarScream* template. See [FARSCREAM.md](FARSCREAM.md) |
 
 Their source in `packages/` is a good place to learn from.

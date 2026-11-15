@@ -1,0 +1,203 @@
+{
+ "Barrel_Explosive_Red": {
+  "lod": [
+   {
+    "file": "Barrel_Explosive_Red_LOD1.glb",
+    "from_m": 2.3,
+    "tris": 17800
+   },
+   {
+    "file": "Barrel_Explosive_Red_LOD3.glb",
+    "from_m": 30.8,
+    "tris": 13666
+   }
+  ],
+  "seconds_lod0": 15.2,
+  "tris": 25428,
+  "tris_in": 26454
+ },
+ "Barrel_Yellow_Damaged": {
+  "lod": [
+   {
+    "file": "Barrel_Yellow_Damaged_LOD1.glb",
+    "from_m": 2.3,
+    "tris": 15418
+   },
+   {
+    "file": "Barrel_Yellow_Damaged_LOD3.glb",
+    "from_m": 30.8,
+    "tris": 11706
+   }
+  ],
+  "seconds_lod0": 72.3,
+  "tris": 30152,
+  "tris_in": 39776
+ },
+ "Barrel_Yellow_Lid": {
+  "lod": [],
+  "seconds_lod0": 2.9,
+  "tris": 9559,
+  "tris_in": 9716
+ },
+ "Barrier": {
+  "lod": [
+   {
+    "file": "Barrier_LOD3.glb",
+    "from_m": 30.8,
+    "tris": 1370
+   }
+  ],
+  "seconds_lod0": 0.6,
+  "tris": 1894,
+  "tris_in": 1894
+ },
+ "Bunker_A": {
+  "lod": [],
+  "seconds_lod0": 4.8,
+  "tris": 12098,
+  "tris_in": 12206
+ },
+ "Bunker_B": {
+  "lod": [
+   {
+    "file": "Bunker_B_LOD3.glb",
+    "from_m": 30.8,
+    "tris": 11478
+   }
+  ],
+  "seconds_lod0": 7.4,
+  "tris": 15686,
+  "tris_in": 15880
+ },
+ "Bunker_C": {
+  "lod": [
+   {
+    "file": "Bunker_C_LOD3.glb",
+    "from_m": 30.8,
+    "tris": 4304
+   }
+  ],
+  "seconds_lod0": 2.4,
+  "tris": 6478,
+  "tris_in": 6486
+ },
+ "Campfire": {
+  "lod": [
+   {
+    "file": "Campfire_LOD2.glb",
+    "from_m": 7.7,
+    "tris": 6188
+   },
+   {
+    "file": "Campfire_LOD3.glb",
+    "from_m": 30.8,
+    "tris": 4330
+   }
+  ],
+  "seconds_lod0": 6.1,
+  "tris": 8976,
+  "tris_in": 8980
+ },
+ "CargoShip": {
+  "lod": [
+   {
+    "file": "CargoShip_LOD2.glb",
+    "from_m": 7.7,
+    "tris": 22590
+   }
+  ],
+  "seconds_lod0": 19.3,
+  "tris": 28416,
+  "tris_in": 39244
+ },
+ "Chair": {
+  "lod": [
+   {
+    "file": "Chair_LOD2.glb",
+    "from_m": 7.7,
+    "tris": 2516
+   }
+  ],
+  "seconds_lod0": 1.0,
+  "tris": 3728,
+  "tris_in": 3728
+ },
+ "Li2": {
+  "lod": [
+   {
+    "file": "Li2_LOD2.glb",
+    "from_m": 7.7,
+    "tris": 64102
+   }
+  ],
+  "seconds_lod0": 71.5,
+  "tris": 90956,
+  "tris_in": 97012
+ },
+ "M3S": {
+  "lod": [],
+  "seconds_lod0": 24.4,
+  "tris": 78466,
+  "tris_in": 78714
+ },
+ "M3S_Wreck": {
+  "lod": [],
+  "seconds_lod0": 32.2,
+  "tris": 86448,
+  "tris_in": 86772
+ },
+ "SupplyCrate": {
+  "lod": [],
+  "seconds_lod0": 4.1,
+  "tris": 11574,
+  "tris_in": 11608
+ },
+ "Table": {
+  "lod": [
+   {
+    "file": "Table_LOD2.glb",
+    "from_m": 7.7,
+    "tris": 3672
+   }
+  ],
+  "seconds_lod0": 2.5,
+  "tris": 5532,
+  "tris_in": 5564
+ },
+ "Tent": {
+  "lod": [
+   {
+    "file": "Tent_LOD2.glb",
+    "from_m": 7.7,
+    "tris": 11846
+   }
+  ],
+  "seconds_lod0": 20.2,
+  "tris": 19960,
+  "tris_in": 21306
+ },
+ "pickup_healthy": {
+  "lod": [],
+  "seconds_lod0": 21.7,
+  "tris": 58147,
+  "tris_in": 58503
+ },
+ "pickup_wreck": {
+  "lod": [
+   {
+    "file": "pickup_wreck_LOD3.glb",
+    "from_m": 30.8,
+    "tris": 112722
+   }
+  ],
+  "seconds_lod0": 189.4,
+  "tris": 168376,
+  "tris_in": 179600
+ },
+ "soviet_radio_station": {
+  "lod": [],
+  "seconds_lod0": 18.6,
+  "tris": 42032,
+  "tris_in": 42284
+ }
+}
