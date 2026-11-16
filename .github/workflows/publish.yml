@@ -5,7 +5,7 @@
 #        PyPI project name: heaven3d   Owner: lolgg313   Repository: Heaven3D
 #        Workflow name: publish.yml    Environment name: pypi
 #   2. GitHub repo > Settings > Environments > New environment: "pypi"
-# Then: Releases > Draft a new release > tag v3.1.4 > Publish.
+# Then: Releases > Draft a new release > tag v3.2.0 (the engine's HEAVEN_VERSION) > Publish.
 name: Publish to PyPI
 
 on:
@@ -30,6 +30,12 @@ jobs:
           cd "$RUNNER_TEMP" && python -m build --outdir "$GITHUB_WORKSPACE/dist" "$GITHUB_WORKSPACE"
           python -m twine check "$GITHUB_WORKSPACE"/dist/*
           ls -la "$GITHUB_WORKSPACE/dist"
+      - name: Install the wheel and try it (no GPU needed)
+        run: |
+          cd "$RUNNER_TEMP"
+          python -m pip install "$GITHUB_WORKSPACE"/dist/*.whl
+          python -c "import heaven3d, os; assert os.path.isfile(heaven3d.engine_file()); print(heaven3d.engine_dir())"
+          heaven3d-packages list
       - uses: actions/upload-artifact@v4
         with:
           name: dist

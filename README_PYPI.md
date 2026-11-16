@@ -27,6 +27,7 @@ Then:
 | `heaven3d-hub` | the Hub: projects, templates, packages, tutorials |
 | `heaven3d` | the editor (`heaven3d --project game.heaven3d`) |
 | `heaven3d-runtime --project game.heaven3d` | play a project without the editor |
+| `heaven3d-packages install all` | the four big asset packs (see below) |
 
 Or use the engine as a module:
 
@@ -49,11 +50,14 @@ To fit PyPI's size limits, the big asset packs are downloaded separately from th
 | `tropical_islands` | procedural tropical islands: beaches, palms, jungle |
 | `farscream` | an open-island shooter map generator (needs the three packs above) |
 
-Install one in the Hub (**Packages > Install**) or from a terminal:
+The easy way, from a terminal:
 
 ```bash
-heaven3d-hub --install-package hqfps_weapons-0.4.1.h3dpkg
+heaven3d-packages install all          # or: heaven3d-packages install farscream  (brings what it needs)
+heaven3d-packages list                 # what is installed
 ```
+
+or download a `.h3dpkg` yourself and install it in the Hub (**Packages > Install**) or with `heaven3d-hub --install-package hqfps_weapons-0.4.1.h3dpkg`.
 
 The small code packages (Car Race Kit, Spline Roads, Physics Plus, Light Theme) are already included.
 

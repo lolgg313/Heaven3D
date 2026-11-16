@@ -1,8 +1,8 @@
 # Changelog
 
-Engine **3.1.4** is the current version; the first section below is on `main` and not in a release yet. The repository's README has the full notes of every version.
+Engine **3.2.0** is the current version. The repository's README has the full notes of every version.
 
-## After 3.1.4 (on `main`)
+## 3.2.0
 
 **FarScream map generator (new demo package)**
 - one seed makes a furnished island: 3 military camps, a radio outpost, 2 islander villages, a plane crash, a shipwreck, road wrecks; *FarScream* template
@@ -28,7 +28,9 @@ Engine **3.1.4** is the current version; the first section below is on `main` an
 - `on_collision_*` receive a contact that works as `contact.point` and as `contact["point"]`
 
 **Install**
-- `pip install git+https://github.com/lolgg313/Heaven3D` with the commands `heaven3d`, `heaven3d-hub`, `heaven3d-runtime`
+- `pip install heaven3d` from PyPI (engine, editor, Hub, small packages); `heaven3d-packages install all` gets the four asset packs (release `.h3dpkg` files, or the repository archive)
+- or everything from GitHub: `pip install git+https://github.com/lolgg313/Heaven3D`; commands `heaven3d`, `heaven3d-hub`, `heaven3d-runtime`, `heaven3d-packages`
+- new releases go to PyPI by themselves (`.github/workflows/publish.yml`, trusted publishing)
 
 ## 3.1.4 — bug-fix release
 

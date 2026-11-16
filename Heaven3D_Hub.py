@@ -319,7 +319,8 @@ def create_project(cfg, name, template_id, location):
             continue
         if find_package(pid) is None:
             raise ValueError(f"This template needs the package '{pid}'.\n\n"
-                             f"Download {pid}-<version>.h3dpkg from\n"
+                             f"Installed with pip? In a terminal:  heaven3d-packages install {pid}\n\n"
+                             f"Or download {pid}-<version>.h3dpkg from\n"
                              f"https://github.com/lolgg313/Heaven3D/releases\n"
                              f"and install it in Packages > Install (or: heaven3d-hub --install-package FILE).")
         if not os.path.isdir(os.path.join(PKG_LIB_DIR, pid)):

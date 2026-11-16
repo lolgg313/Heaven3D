@@ -361,7 +361,7 @@ Saves are written atomically (a crash can't corrupt them) with an automatic back
 pip install heaven3d
 ```
 
-The PyPI package leaves out the four big asset packs (HQ FPS Weapons, MakeHuman Characters, Tropical Islands, FarScream) to fit PyPI's size limits: download their `.h3dpkg` files from the [Releases page](https://github.com/lolgg313/Heaven3D/releases) and install them in **Packages > Install** or with `heaven3d-hub --install-package FILE`. To get everything in one go from GitHub instead: `pip install git+https://github.com/lolgg313/Heaven3D`.
+The PyPI package leaves out the four big asset packs (HQ FPS Weapons, MakeHuman Characters, Tropical Islands, FarScream) to fit PyPI's size limits. Get them with **`heaven3d-packages install all`** (or `install farscream`, which brings the three it needs; `heaven3d-packages list` shows what you have), or download their `.h3dpkg` files from the [Releases page](https://github.com/lolgg313/Heaven3D/releases) and install them in **Packages > Install** or with `heaven3d-hub --install-package FILE`. To get everything in one go from GitHub instead: `pip install git+https://github.com/lolgg313/Heaven3D`.
 
 That installs Heaven3D and the libraries it needs, and gives you three commands:
 
@@ -381,7 +381,7 @@ engine.run()
 
 - It is the same single-file engine, editor, templates and packages as this repository, kept together in one folder inside site-packages (`heaven3d.engine_dir()` tells you where). Nothing else changes: you can still download the repository or a standalone edition and run `Heaven3D.py`.
 - The asset packages are about 350 MB. Leave them out with `HEAVEN3D_PIP_LITE=1 pip install git+https://github.com/lolgg313/Heaven3D`.
-- Update with `pip install --upgrade --force-reinstall git+https://github.com/lolgg313/Heaven3D`; a release or branch with `...Heaven3D@v3.1.4`.
+- Update with `pip install --upgrade --force-reinstall git+https://github.com/lolgg313/Heaven3D`; a release or branch with `...Heaven3D@v3.2.0`.
 - The Hub and the file dialogs use tkinter, which pip can't install: on Linux add it with your package manager (`sudo apt install python3-tk`). A virtual environment keeps Heaven3D's libraries apart from your other projects.
 - Working on the engine: `pip install -e .` in a clone uses the files of the clone directly.
 

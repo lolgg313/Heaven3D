@@ -248,7 +248,7 @@ class Log:
 # --------------------------------------------------------------------------- #
 #  Constants
 # --------------------------------------------------------------------------- #
-HEAVEN_VERSION = "3.1.4"
+HEAVEN_VERSION = "3.2.0"
 PROJECT_EXT = ".heaven3d"
 
 
@@ -46449,7 +46449,7 @@ echo "Added "{sq(game)}" to the applications menu."
     # =================================================================
     #  Engine integration (runs at import time, before any shader compiles)
     # =================================================================
-    HEAVEN_VERSION = "3.1.4"
+    HEAVEN_VERSION = "3.2.0"
 
     class _H3D27Log:
         @staticmethod

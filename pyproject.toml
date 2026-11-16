@@ -56,6 +56,7 @@ Issues = "https://github.com/lolgg313/Heaven3D/issues"
 heaven3d = "heaven3d._cli:editor"
 heaven3d-runtime = "heaven3d._cli:runtime"
 heaven3d-hub = "heaven3d._cli:hub"
+heaven3d-packages = "heaven3d._packages:main"
 
 [tool.setuptools]
 packages = ["heaven3d"]

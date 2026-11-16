@@ -96,8 +96,11 @@ Next: [[Getting Started]].
 ## Option 3 — pip
 
 ```bash
-pip install git+https://github.com/lolgg313/Heaven3D
+pip install heaven3d                 # PyPI: engine, editor, Hub, templates, small packages
+heaven3d-packages install all        # HQ FPS Weapons, MakeHuman Characters, Tropical Islands, FarScream (~450 MB)
 ```
+
+or everything from GitHub in one go: `pip install git+https://github.com/lolgg313/Heaven3D`.
 
 This installs Heaven3D with the libraries it needs and three commands:
 
@@ -106,6 +109,7 @@ This installs Heaven3D with the libraries it needs and three commands:
 | `heaven3d` | the editor (same options as `python Heaven3D.py`) |
 | `heaven3d-hub` | the Hub |
 | `heaven3d-runtime --project game.heaven3d` | a project without the editor |
+| `heaven3d-packages list` / `install <id>` / `install all` | the asset packs for a PyPI install (too big for PyPI) |
 
 ```python
 import heaven3d
@@ -114,6 +118,6 @@ engine.run()
 ```
 
 - It is the same engine, editor, templates and packages as the repository, kept together inside site-packages (`heaven3d.engine_dir()` tells you where).
-- `HEAVEN3D_PIP_LITE=1 pip install git+https://github.com/lolgg313/Heaven3D` leaves the asset packages (about 350 MB) out.
+- `HEAVEN3D_PIP_LITE=1 pip install git+https://github.com/lolgg313/Heaven3D` leaves the asset packs (about 450 MB) out, like the PyPI package.
 - Update with `pip install --upgrade --force-reinstall git+https://github.com/lolgg313/Heaven3D`.
 - The Hub and the file dialogs need tkinter, which pip can't install (`sudo apt install python3-tk` on Debian / Ubuntu). A virtual environment keeps Heaven3D's libraries apart from your other projects.
