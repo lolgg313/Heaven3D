@@ -1,4 +1,4 @@
-include LICENSE README.md build.py
+include LICENSE README.md README_PYPI.md build.py
 include Heaven3D.py Heaven3D_runtime.py Heaven3D_Hub.py Heaven3D_Hub.pyw Play_HQFPS_Arena.py
 graft h3d_editor
 graft vitrail
@@ -7,3 +7,8 @@ graft branding
 graft tutorials
 graft packages
 global-exclude __pycache__/* *.pyc
+# the big asset packs are .h3dpkg downloads on the Releases page (PyPI allows 100 MB per file)
+prune packages/farscream
+prune packages/hqfps_weapons
+prune packages/mh_characters
+prune packages/tropical_islands

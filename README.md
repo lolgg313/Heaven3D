@@ -358,8 +358,10 @@ Saves are written atomically (a crash can't corrupt them) with an automatic back
 ## 🐍 Install with pip (an extra way)
 
 ```bash
-pip install git+https://github.com/lolgg313/Heaven3D
+pip install heaven3d
 ```
+
+The PyPI package leaves out the four big asset packs (HQ FPS Weapons, MakeHuman Characters, Tropical Islands, FarScream) to fit PyPI's size limits: download their `.h3dpkg` files from the [Releases page](https://github.com/lolgg313/Heaven3D/releases) and install them in **Packages > Install** or with `heaven3d-hub --install-package FILE`. To get everything in one go from GitHub instead: `pip install git+https://github.com/lolgg313/Heaven3D`.
 
 That installs Heaven3D and the libraries it needs, and gives you three commands:
 

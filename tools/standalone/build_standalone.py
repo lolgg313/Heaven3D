@@ -121,8 +121,16 @@ def build_linux_python(work):
         sh(mbin, "create", "-y", "-q", "-p", raw, "-c", "conda-forge", "--override-channels",
            f"python={PY_LIN}", "tk=8.6.13=xft*", env=env)
         sh("uv", "pip", "install", "--python", os.path.join(raw, "bin", "python3"), "--only-binary", ":all:", *PKGS)
+    # conda-forge's tk "xft" build no longer depends on xorg-libxft, so tkinter (the Hub)
+    # failed on systems without libXft.so.2.  Bundle libXft + libXrender next to libtk.
+    xft = os.path.join(work, "linpy-xft")
+    if not os.path.isdir(xft):
+        sh(mbin, "create", "-y", "-q", "-p", xft, "-c", "conda-forge", "--override-channels",
+           "xorg-libxft", "xorg-libxrender", env=env)
     shutil.rmtree(dst, ignore_errors=True)
     shutil.copytree(raw, dst, symlinks=True)
+    for lib in ("libXft.so.2", "libXrender.so.1"):
+        shutil.copy2(os.path.realpath(os.path.join(xft, "lib", lib)), os.path.join(dst, "lib", lib))
     # -- relocatable + lean ------------------------------------------------
     for d in ("conda-meta", "include", "man", "share/man", "share/doc", "share/info", "share/terminfo",
               "ssl/man", "lib/pkgconfig", "lib/cmake", "compiler_compat", "x86_64-conda-linux-gnu",
