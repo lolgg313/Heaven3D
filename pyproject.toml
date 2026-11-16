@@ -12,12 +12,17 @@ build-backend = "setuptools.build_meta"
 name = "heaven3d"
 dynamic = ["version"]
 description = "Heaven3D: a 3D game engine and editor written in Python on ModernGL"
-readme = "README.md"
+readme = "README_PYPI.md"
+authors = [{ name = "lolgg313" }]
 requires-python = ">=3.10"
 license = { text = "Apache-2.0" }
-keywords = ["game engine", "3d", "opengl", "moderngl", "editor", "pygame"]
+keywords = ["game engine", "3d", "opengl", "moderngl", "editor", "pygame", "gamedev", "pbr", "physics", "numba"]
 classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
     "Operating System :: Microsoft :: Windows",
     "Operating System :: POSIX :: Linux",
     "Operating System :: MacOS",
@@ -37,8 +42,14 @@ dependencies = [
     "trimesh>=4.0",
 ]
 
+[project.optional-dependencies]
+draco = ["DracoPy"]          # Draco-compressed glTF models
+
 [project.urls]
 Homepage = "https://github.com/lolgg313/Heaven3D"
+Documentation = "https://github.com/lolgg313/Heaven3D/tree/main/docs"
+Download = "https://github.com/lolgg313/Heaven3D/releases"
+Changelog = "https://github.com/lolgg313/Heaven3D#readme"
 Issues = "https://github.com/lolgg313/Heaven3D/issues"
 
 [project.scripts]

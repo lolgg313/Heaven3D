@@ -1,0 +1,66 @@
+# Publish Heaven3D to PyPI and attach the asset packs, whenever a GitHub Release is published.
+#
+# One-time setup (no passwords or tokens stored anywhere):
+#   1. pypi.org > Your account > Publishing > "Add a new pending publisher":
+#        PyPI project name: heaven3d   Owner: lolgg313   Repository: Heaven3D
+#        Workflow name: publish.yml    Environment name: pypi
+#   2. GitHub repo > Settings > Environments > New environment: "pypi"
+# Then: Releases > Draft a new release > tag v3.1.4 > Publish.
+name: Publish to PyPI
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Build the PyPI package (without the big asset packs)
+        env:
+          HEAVEN3D_PIP_LITE: "1"
+        run: |
+          python -m pip install --upgrade build twine
+          # run from outside the repo: the repo's own build.py would shadow the 'build' tool
+          cd "$RUNNER_TEMP" && python -m build --outdir "$GITHUB_WORKSPACE/dist" "$GITHUB_WORKSPACE"
+          python -m twine check "$GITHUB_WORKSPACE"/dist/*
+          ls -la "$GITHUB_WORKSPACE/dist"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  packs:
+    if: github.event_name == 'release'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Build the asset packs and attach them to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python tools/pypi/make_packs.py --out packs
+          gh release upload "${{ github.event.release.tag_name }}" packs/*.h3dpkg --clobber
+
+  pypi:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1

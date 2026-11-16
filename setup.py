@@ -7,7 +7,10 @@ exactly as in this repository, in  heaven3d/_engine/  inside site-packages:
     Heaven3D.py  Heaven3D_runtime.py  Heaven3D_Hub.py  Play_HQFPS_Arena.py
     h3d_editor/  vitrail/  templates/  branding/  tutorials/  packages/
 
-HEAVEN3D_PIP_LITE=1 leaves the asset packages (about 350 MB) out:
+HEAVEN3D_PIP_LITE=1 leaves the big asset packs (about 400 MB) out; the small
+code packages stay in.  This is the build published on PyPI (PyPI allows 100 MB
+per file).  The asset packs are .h3dpkg files on the GitHub Releases page:
+    heaven3d-hub --install-package hqfps_weapons-0.4.1.h3dpkg
     HEAVEN3D_PIP_LITE=1 pip install git+https://github.com/lolgg313/Heaven3D
 """
 import os
@@ -21,6 +24,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 FILES = ("Heaven3D.py", "Heaven3D_runtime.py", "Heaven3D_Hub.py", "Heaven3D_Hub.pyw", "Play_HQFPS_Arena.py",
          "LICENSE")
 FOLDERS = ("h3d_editor", "vitrail", "templates", "branding", "tutorials", "packages")
+ASSET_PACKS = ("farscream", "hqfps_weapons", "mh_characters", "tropical_islands")   # left out of the lite build
 SKIP = shutil.ignore_patterns("__pycache__", "*.pyc", "*.heaven3d.bak", ".heaven3d_logs")
 
 
@@ -44,11 +48,17 @@ class BuildWithEngine(build_py):
         for name in FILES:
             shutil.copy2(os.path.join(HERE, name), os.path.join(dst, name))
         for name in FOLDERS:
-            if lite and name == "packages":
-                continue
             src = os.path.join(HERE, name)
-            if os.path.isdir(src):
-                shutil.copytree(src, os.path.join(dst, name), ignore=SKIP)
+            if not os.path.isdir(src):
+                continue
+            ignore = SKIP
+            if lite and name == "packages":
+                def ignore(d, names, _src=src):
+                    out = set(SKIP(d, names))
+                    if os.path.abspath(d) == os.path.abspath(_src):
+                        out |= {n for n in names if n in ASSET_PACKS}
+                    return out
+            shutil.copytree(src, os.path.join(dst, name), ignore=ignore)
 
 
 setup(version=version(), cmdclass={"build_py": BuildWithEngine})
